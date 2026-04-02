@@ -1,28 +1,48 @@
 #!/usr/bin/env bash
-# Vercel build: install Flutter stable, then `flutter build web`.
-# Set SUPABASE_URL and SUPABASE_ANON_KEY in Vercel → Project → Environment Variables.
+# Runs on Vercel (Linux). Installs Flutter stable, then builds web.
+# Match flutter/scripts/vercel_build.sh. Set SUPABASE_* in Vercel env.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
 
-export PATH="${PATH}:${HOME}/flutter/bin"
+export FLUTTER_ROOT="${FLUTTER_ROOT:-$HOME/flutter_vercel}"
+export PATH="$FLUTTER_ROOT/bin:$PATH"
 
-if ! command -v flutter >/dev/null 2>&1; then
-  echo "Installing Flutter stable..."
-  git clone https://github.com/flutter/flutter.git -b stable --depth 1 "${HOME}/flutter"
+if [[ ! -x "$FLUTTER_ROOT/bin/flutter" ]]; then
+  echo ">>> Cloning Flutter (stable, shallow) into $FLUTTER_ROOT ..."
+  rm -rf "$FLUTTER_ROOT"
+  mkdir -p "$(dirname "$FLUTTER_ROOT")"
+  git clone https://github.com/flutter/flutter.git "$FLUTTER_ROOT" --branch stable --depth 1
 fi
 
-flutter config --no-analytics --enable-web
-flutter precache --web
+echo ">>> flutter --version"
+flutter --version
+
+echo ">>> flutter config (web, no analytics)"
+flutter config --no-analytics
+flutter config --enable-web
+
+# Project must include web/ (index.html). If missing, generate platform files.
+if [[ ! -f web/index.html ]]; then
+  echo ">>> web/ missing — flutter create . --platforms web"
+  flutter create . --platforms web
+fi
+
+echo ">>> flutter pub get"
 flutter pub get
 
 DEFINES=()
 if [[ -n "${SUPABASE_URL:-}" ]]; then
-  DEFINES+=(--dart-define="SUPABASE_URL=${SUPABASE_URL}")
+  DEFINES+=(--dart-define=SUPABASE_URL="$SUPABASE_URL")
 fi
 if [[ -n "${SUPABASE_ANON_KEY:-}" ]]; then
-  DEFINES+=(--dart-define="SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}")
+  DEFINES+=(--dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY")
 fi
 
+echo ">>> flutter build web --release"
 flutter build web --release "${DEFINES[@]}"
+
+echo ">>> build/web ready"
+ls -la build/web | head -20
