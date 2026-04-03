@@ -20,11 +20,11 @@ function showFromPayload(payload) {
   const n = payload.notification || {};
   const title = n.title || payload.data?.title || 'Jars';
   const body = n.body || payload.data?.body || '';
-  const icon = n.icon || '/icons/Icon-192.png';
+  const icon = n.icon || '/icons/jars-notification.svg';
   const options = {
     body,
     icon,
-    badge: '/icons/Icon-192.png',
+    badge: '/icons/jars-notification.svg',
     tag: payload.fcmMessageId || payload.data?.tag || 'jars-' + Date.now(),
     renotify: true,
     requireInteraction: false,

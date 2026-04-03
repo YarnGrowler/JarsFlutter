@@ -112,6 +112,9 @@ function getServiceAccount(): Record<string, string> {
   return serviceAccountBundled as unknown as Record<string, string>;
 }
 
+// Shown in browser/OS notification UI (app must serve this path, e.g. Vercel /web/icons).
+const PUSH_ICON_PATH = "/icons/jars-notification.svg";
+
 // ── Main handler ────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   try {
@@ -136,28 +139,42 @@ Deno.serve(async (req) => {
       throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
     }
 
-    // profiles.id === auth.users.id (notifications.user_id references auth.users)
-    const profileUrl = new URL(`${supabaseUrl}/rest/v1/profiles`);
-    profileUrl.searchParams.set("id", `eq.${userId}`);
-    profileUrl.searchParams.set("select", "fcm_token");
+    const headers = {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+    };
 
-    const profileRes = await fetch(profileUrl.toString(), {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-      },
-    });
+    // Multi-device: user_fcm_tokens (one row per browser / phone install)
+    const devicesUrl = new URL(`${supabaseUrl}/rest/v1/user_fcm_tokens`);
+    devicesUrl.searchParams.set("user_id", `eq.${userId}`);
+    devicesUrl.searchParams.set("select", "token");
 
-    if (!profileRes.ok) {
-      const errText = await profileRes.text();
-      throw new Error(`profiles fetch ${profileRes.status}: ${errText}`);
+    const devicesRes = await fetch(devicesUrl.toString(), { headers });
+    let tokens: string[] = [];
+
+    if (devicesRes.ok) {
+      const rows = await devicesRes.json() as Array<{ token: string }>;
+      tokens = rows.map((r) => r.token).filter((t) => t && t.length > 0);
     }
 
-    const profiles = await profileRes.json() as Array<{ fcm_token: string | null }>;
-    const fcmToken = profiles[0]?.fcm_token;
+    // Legacy: single token on profiles before migration
+    if (tokens.length === 0) {
+      const profileUrl = new URL(`${supabaseUrl}/rest/v1/profiles`);
+      profileUrl.searchParams.set("id", `eq.${userId}`);
+      profileUrl.searchParams.set("select", "fcm_token");
 
-    if (!fcmToken) {
-      console.log("push: no fcm_token for user", userId);
+      const profileRes = await fetch(profileUrl.toString(), { headers });
+      if (!profileRes.ok) {
+        const errText = await profileRes.text();
+        throw new Error(`profiles fetch ${profileRes.status}: ${errText}`);
+      }
+      const profiles = await profileRes.json() as Array<{ fcm_token: string | null }>;
+      const legacy = profiles[0]?.fcm_token;
+      if (legacy) tokens = [legacy];
+    }
+
+    if (tokens.length === 0) {
+      console.log("push: no FCM tokens for user", userId);
       return new Response(JSON.stringify({ ok: true, skipped: "no_fcm_token" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -167,9 +184,11 @@ Deno.serve(async (req) => {
     const accessToken = await getAccessToken(serviceAccount);
     const projectId = serviceAccount.project_id;
 
-    const fcmRes = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
-      {
+    const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
+    const results: Array<{ token: string; status: number; data: unknown }> = [];
+
+    for (const fcmToken of tokens) {
+      const fcmRes = await fetch(fcmUrl, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -186,28 +205,34 @@ Deno.serve(async (req) => {
               notification: {
                 title: "Jars",
                 body,
-                icon: "/icons/Icon-192.png",
+                icon: PUSH_ICON_PATH,
               },
             },
           },
         }),
-      }
-    );
-
-    const fcmData = await fcmRes.json();
-    console.log("FCM response:", fcmRes.status, JSON.stringify(fcmData));
-
-    if (!fcmRes.ok) {
-      return new Response(JSON.stringify(fcmData), {
-        status: 502,
-        headers: { "Content-Type": "application/json" },
+      });
+      const fcmData = await fcmRes.json();
+      console.log("FCM response:", fcmRes.status, JSON.stringify(fcmData));
+      results.push({
+        token: `${fcmToken.slice(0, 12)}…`,
+        status: fcmRes.status,
+        data: fcmData,
       });
     }
 
-    return new Response(JSON.stringify(fcmData), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    const anyOk = results.some((r) => r.status >= 200 && r.status <= 299);
+
+    return new Response(
+      JSON.stringify({
+        ok: anyOk,
+        devices: tokens.length,
+        results,
+      }),
+      {
+        status: anyOk ? 200 : 502,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error("push error:", message);

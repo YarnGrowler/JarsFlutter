@@ -100,3 +100,20 @@ create policy "Members can view reactions"
       where room_id in (select public.jars_room_ids_for_me())
     )
   );
+
+-- === 12 join by code (RPC) — run if join-with-code returns "room not found" ===
+create or replace function public.get_room_by_code(p_code text)
+returns setof public.rooms
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select *
+  from public.rooms
+  where upper(trim(room_code)) = upper(trim(p_code))
+  limit 1;
+$$;
+
+revoke all on function public.get_room_by_code(text) from public;
+grant execute on function public.get_room_by_code(text) to authenticated;

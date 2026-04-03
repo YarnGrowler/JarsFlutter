@@ -12,19 +12,39 @@ import 'supabase_service.dart';
 const _kVapidKey =
     'BObFaztoPMeW_PjcCJGMvRBTUGJ4Z7QvY6GhkiD8qVL5M7LklHmQ2iqDS9j0s4ZOBxVasoSvlCku_n-SHmHVqys';
 
+/// Push icon path on web (same origin as the app, e.g. Vercel).
+const kWebPushIconPath = '/icons/jars-notification.svg';
+
 /// Handles FCM token registration and push via Supabase `notifications` table.
+/// Tokens are stored in [user_fcm_tokens] so each user can have **multiple devices**.
 class NotificationService {
   static final _db = SupabaseService.client;
   static bool _tokenListenersAttached = false;
   static bool _foregroundWebAttached = false;
 
-  /// Idempotent: call after cold start / login. Uses [registerToken] when signed in.
   static Future<void> init() async {
     await registerToken();
   }
 
-  /// Get FCM token, save to [profiles.fcm_token] for the **current** Supabase user.
-  /// Call after sign-in (and after browser notification permission). Safe to call often.
+  static String _platformLabel() {
+    if (kIsWeb) return 'web';
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+        return 'ios';
+      case TargetPlatform.android:
+        return 'android';
+      case TargetPlatform.macOS:
+        return 'macos';
+      case TargetPlatform.windows:
+        return 'windows';
+      case TargetPlatform.linux:
+        return 'linux';
+      case TargetPlatform.fuchsia:
+        return 'fuchsia';
+    }
+  }
+
+  /// Registers this device’s FCM token (upsert). Safe after every sign-in / new browser.
   static Future<bool> registerToken() async {
     try {
       if (Firebase.apps.isEmpty) {
@@ -63,7 +83,7 @@ class NotificationService {
 
       if (token == null || token.isEmpty) {
         developer.log(
-          'NotificationService: getToken returned null (web: ensure web/firebase-messaging-sw.js exists and matches Firebase config)',
+          'NotificationService: getToken returned null (web: check firebase-messaging-sw.js)',
           name: 'Jars',
         );
         return false;
@@ -74,7 +94,6 @@ class NotificationService {
         messaging.onTokenRefresh.listen((t) => _saveFcmToken(t));
       }
 
-      // Web: while tab is focused, FCM delivers here — still show OS notification (not in-app UI).
       if (kIsWeb && !_foregroundWebAttached) {
         _foregroundWebAttached = true;
         attachForegroundWebPushDisplay();
@@ -83,7 +102,7 @@ class NotificationService {
       final saved = await _saveFcmToken(token);
       if (!saved) {
         developer.log(
-          'NotificationService: token received but not saved (signed in?)',
+          'NotificationService: token not saved (signed in?)',
           name: 'Jars',
         );
       }
@@ -94,31 +113,50 @@ class NotificationService {
     }
   }
 
-  /// Returns true if Supabase update applied to at least one row.
+  /// Saves to [user_fcm_tokens] (multi-device) and mirrors last token on [profiles] for legacy tools.
   static Future<bool> _saveFcmToken(String token) async {
     final userId = SupabaseService.currentUserId;
     if (userId == null) {
       developer.log(
-        'NotificationService._saveFcmToken: no Supabase user; token not saved',
+        'NotificationService._saveFcmToken: no Supabase user',
         name: 'Jars',
       );
       return false;
     }
+    final now = DateTime.now().toUtc().toIso8601String();
+    final platform = _platformLabel();
     try {
+      await _db.from('user_fcm_tokens').upsert(
+        {
+          'user_id': userId,
+          'token': token,
+          'platform': platform,
+          'last_seen_at': now,
+        },
+        onConflict: 'token',
+      );
       await _db
           .from('profiles')
           .update({'fcm_token': token})
           .eq('id', userId);
       if (kDebugMode) {
         developer.log(
-          'NotificationService: fcm_token saved (${token.length} chars)',
+          'NotificationService: token registered ($platform, ${token.length} chars)',
           name: 'Jars',
         );
       }
       return true;
     } catch (e) {
       developer.log('NotificationService._saveFcmToken: $e', name: 'Jars');
-      return false;
+      try {
+        await _db
+            .from('profiles')
+            .update({'fcm_token': token})
+            .eq('id', userId);
+        return true;
+      } catch (_) {
+        return false;
+      }
     }
   }
 

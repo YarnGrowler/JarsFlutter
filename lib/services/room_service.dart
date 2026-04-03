@@ -128,14 +128,28 @@ class RoomService {
     final userId = SupabaseService.currentUserId!;
     await ProfileService.ensureProfileRow();
 
-    final rows = await _db
-        .from('rooms')
-        .select()
-        .eq('room_code', code.toUpperCase().trim());
+    // Direct SELECT on rooms is blocked by RLS until you're a member.
+    // Use RPC: get_room_by_code (see supabase_patches/12_get_room_by_code_rpc.sql).
+    final normalized = code.toUpperCase().trim();
+    final dynamic raw = await _db.rpc(
+      'get_room_by_code',
+      params: {'p_code': normalized},
+    );
 
-    if (rows.isEmpty) return null;
+    Map<String, dynamic>? row;
+    if (raw == null) {
+      return null;
+    } else if (raw is List) {
+      if (raw.isEmpty) return null;
+      row = Map<String, dynamic>.from(raw.first as Map);
+    } else if (raw is Map) {
+      row = Map<String, dynamic>.from(raw);
+    } else {
+      _log('joinByCode unexpected rpc shape', raw);
+      return null;
+    }
 
-    final room = Room.fromJson(Map<String, dynamic>.from(rows.first as Map));
+    final room = Room.fromJson(row);
 
     final memberCount = await _db
         .from('room_members')

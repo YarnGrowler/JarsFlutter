@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background:#0e0a17;color:#f4f2ff;font-family:Inter,Arial,sans-serif;">
+    <div style="max-width:560px;margin:0 auto;background:#171126;border:1px solid #2b1f44;border-radius:16px;padding:24px;">
+      <h2 style="margin:0 0 12px 0;color:#c4a3ff;">Confirm your Jars signup</h2>
+      <p style="margin:0 0 12px 0;color:#d8d0f3;">
+        Enter this code in the app to finish creating your account:
+      </p>
+      <div style="margin:14px 0 18px 0;padding:14px 16px;background:#22173a;border-radius:12px;border:1px solid #5f3db5;">
+        <span style="font-size:30px;letter-spacing:6px;font-weight:700;color:#ffffff;">{{ .Token }}</span>
+      </div>
+      <p style="margin:0 0 10px 0;color:#b8b0d4;">This code expires in 1 hour.</p>
+      <p style="margin:0;color:#8f86b1;font-size:13px;">
+        If you prefer, you can still confirm via this link:
+        <a href="{{ .ConfirmationURL }}" style="color:#b996ff;">Confirm email</a>
+      </p>
+    </div>
+  </body>
+</html>
