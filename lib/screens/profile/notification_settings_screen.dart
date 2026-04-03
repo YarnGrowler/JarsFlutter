@@ -173,57 +173,123 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                         color: JarsColors.textPrimary,
                       ),
                     ),
-                    if (kIsWeb) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'iPhone / iPad: Apple only allows the notification prompt when you tap '
-                        '“Enable / register” below — not on page load or after sign-in. '
-                        'If you tapped before and never saw a prompt, check Settings → Notifications '
-                        'for this app or site, or re-add the Home Screen shortcut.',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: JarsColors.textSecondary,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: FilledButton.icon(
-                        onPressed: _busy ? null : _enableNotifications,
-                        icon: _busy
-                            ? SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
+                    // MagicBell-style: one obvious control = system “allow notifications?” sheet
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: JarsColors.surfaceRaised,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: JarsColors.border),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: JarsColors.primary
+                                        .withValues(alpha: 0.18),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Icon(
+                                    Icons.notifications_active_rounded,
+                                    color: JarsColors.primary,
+                                    size: 26,
+                                  ),
                                 ),
-                              )
-                            : const Icon(Icons.notifications_active_outlined),
-                        label: Text(
-                          status == AuthorizationStatus.denied
-                              ? 'Open settings — then try again'
-                              : (_settings == null
-                                  ? 'Enable / register (retry status)'
-                                  : 'Enable / register this device'),
-                          style: GoogleFonts.spaceGrotesk(
-                            fontWeight: FontWeight.w700,
-                          ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Allow notifications',
+                                        style: GoogleFonts.spaceGrotesk(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w700,
+                                          color: JarsColors.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        status == AuthorizationStatus.denied
+                                            ? 'This device blocked alerts before. Turn them on in Settings, then tap below to register with Jars.'
+                                            : 'Tap the button — your phone or browser will show the “allow notifications?” prompt (like other apps).',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          color: JarsColors.textSecondary,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 18),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: JarsColors.primary,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                onPressed: _busy ? null : _enableNotifications,
+                                child: _busy
+                                    ? SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Text(
+                                        status ==
+                                                AuthorizationStatus.denied
+                                            ? 'I turned them on in Settings — register'
+                                            : 'Show permission prompt',
+                                        textAlign: TextAlign.center,
+                                        style: GoogleFonts.spaceGrotesk(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'After you allow, we save this device for rank-ups, wake pings, and room activity.',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: JarsColors.textTertiary,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    if (status == AuthorizationStatus.denied) ...[
-                      const SizedBox(height: 8),
+                    if (kIsWeb) ...[
+                      const SizedBox(height: 14),
                       Text(
-                        'This OS already denied alerts. On iPhone: Settings → Apps (or Notifications) → '
-                        'Safari / your browser or the Jars app → allow notifications.',
+                        'iPhone / iPad (Home Screen): the prompt only appears from this button — '
+                        'not on login. Add Jars with “Add to Home Screen” and use a valid PWA '
+                        '(manifest + standalone) so Jars appears under Settings → Notifications.',
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           color: JarsColors.textTertiary,
-                          height: 1.35,
+                          height: 1.4,
                         ),
                       ),
                     ],

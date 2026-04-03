@@ -738,20 +738,24 @@ class _AdminRoomSettingsSheetState
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          12,
+          24,
+          bottomInset > 0 ? bottomInset + 16 : 24,
         ),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            12,
-            24,
-            bottomInset > 0 ? bottomInset + 16 : 24,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.52,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          child: SingleChildScrollView(
+            keyboardDismissBehavior:
+                ScrollViewKeyboardDismissBehavior.onDrag,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Center(
                 child: Container(
                   width: 40,
@@ -772,13 +776,6 @@ class _AdminRoomSettingsSheetState
                 ),
               ),
               const SizedBox(height: 16),
-              Expanded(
-                child: SingleChildScrollView(
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
                       _SettingsField(
                         label: 'Room name',
                         controller: nameController,
@@ -1021,11 +1018,8 @@ class _AdminRoomSettingsSheetState
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

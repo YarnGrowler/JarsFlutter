@@ -1,11 +1,14 @@
 {
+    "id": "/",
     "name": "Jars",
     "short_name": "Jars",
-    "start_url": ".",
+    "start_url": "/",
+    "scope": "/",
     "display": "standalone",
     "background_color": "#06060C",
     "theme_color": "#7C3AED",
     "description": "Jars — earn your rank.",
+    "lang": "en",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

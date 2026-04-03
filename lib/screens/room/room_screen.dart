@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -115,7 +116,15 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                         myScore: myScore,
                         allScores: scores,
                         onLogTap: () => context.go('/log'),
-                      ),
+                      )
+                          .animate()
+                          .fadeIn(
+                              duration: 380.ms, curve: Curves.easeOutCubic)
+                          .slideY(
+                              begin: 0.06,
+                              end: 0,
+                              duration: 380.ms,
+                              curve: Curves.easeOutCubic),
                     );
                   },
                   loading: () => const SizedBox.shrink(),
@@ -149,8 +158,21 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final row = items[index];
+                        final delayMs = (index * 42).clamp(0, 520);
                         return _buildFeedItem(
-                            context, row.log, row.reactions);
+                                context, row.log, row.reactions)
+                            .animate()
+                            .fadeIn(
+                              duration: 320.ms,
+                              delay: Duration(milliseconds: delayMs),
+                              curve: Curves.easeOutCubic,
+                            )
+                            .slideY(
+                              begin: 0.05,
+                              duration: 320.ms,
+                              delay: Duration(milliseconds: delayMs),
+                              curve: Curves.easeOutCubic,
+                            );
                       },
                     ),
                   );

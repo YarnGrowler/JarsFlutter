@@ -91,6 +91,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
   double _undoPoints = 0;
 
   double _sheetExtent = _kLogSheetMin;
+  final DraggableScrollableController _sheetCtrl = DraggableScrollableController();
 
   @override
   void initState() {
@@ -108,6 +109,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
   @override
   void dispose() {
+    _sheetCtrl.dispose();
     _holdCtrl?.dispose();
     _repBump.dispose();
     _searchController.dispose();
@@ -550,146 +552,143 @@ class _LogSheetState extends ConsumerState<LogSheet>
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      Listener(
-                        behavior: HitTestBehavior.translucent,
-                        onPointerDown: _onPointerDown,
-                        onPointerMove: _onPointerMove,
-                        onPointerUp: _onPointerUp,
-                        onPointerCancel: _onPointerCancel,
-                        child: Column(
-                          children: [
-                            Expanded(
-                              child: Stack(
+                      Column(
+                        children: [
+                          Expanded(
+                            child: Stack(
                               clipBehavior: Clip.none,
                               children: [
-                                Center(
-                                  child: Transform.scale(
-                                    scale: _bumpScale(),
-                                    child: Transform.rotate(
-                                      angle: _bumpTurn(),
-                                      child: Text(
-                                        '$_reps',
-                                        key: _numberKey,
-                                        style: GoogleFonts.spaceMono(
-                                          fontSize: 96,
-                                          fontWeight: FontWeight.w700,
-                                          color: (_holding || _sustainingFlood)
-                                              ? Colors.white
-                                              : (_selectedExercise != null
-                                                  ? kLogText
-                                                  : kLogText.withValues(
-                                                      alpha: 0.22)),
-                                          height: 1,
-                                        ),
-                                      ),
+                                Listener(
+                                  behavior: HitTestBehavior.translucent,
+                                  onPointerDown: _onPointerDown,
+                                  onPointerMove: _onPointerMove,
+                                  onPointerUp: _onPointerUp,
+                                  onPointerCancel: _onPointerCancel,
+                                  child: SizedBox.expand(
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        if (_holding && holdProgress > 0)
+                                          Positioned.fill(
+                                            child: IgnorePointer(
+                                              child: _HoldRing(
+                                                  progress: holdProgress),
+                                            ),
+                                          ),
+                                        if (_holding && holdProgress > 0.05)
+                                          Positioned(
+                                            bottom: 20,
+                                            left: 0,
+                                            right: 0,
+                                            child: IgnorePointer(
+                                              child: Center(
+                                                child: Text(
+                                                  secondsLeft > 0
+                                                      ? 'hold $secondsLeft more…'
+                                                      : 'releasing…',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 13,
+                                                    color: Colors.white
+                                                        .withValues(
+                                                            alpha: 0.75),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        if (_selectedExercise != null &&
+                                            _reps > 0 &&
+                                            !_holding)
+                                          Positioned(
+                                            top: 12,
+                                            left: 0,
+                                            right: 0,
+                                            child: IgnorePointer(
+                                              child: Center(
+                                                child: Text(
+                                                  '↑ swipe up here (or on points) to set reps',
+                                                  textAlign: TextAlign.center,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 11,
+                                                    color: Colors.white
+                                                        .withValues(
+                                                            alpha: 0.18),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        if (_selectedExercise == null)
+                                          Positioned(
+                                            bottom: 16,
+                                            left: 0,
+                                            right: 0,
+                                            child: IgnorePointer(
+                                              child: Center(
+                                                child: Text(
+                                                  'Pick an exercise in the sheet below',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 13,
+                                                    color: Colors.white
+                                                        .withValues(
+                                                            alpha: 0.22),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        if (_selectedExercise != null &&
+                                            _reps == 0)
+                                          Positioned(
+                                            bottom: 16,
+                                            left: 0,
+                                            right: 0,
+                                            child: IgnorePointer(
+                                              child: Center(
+                                                child: Text(
+                                                  'tap to count · hold 2s to log',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 13,
+                                                    color: Colors.white
+                                                        .withValues(
+                                                            alpha: 0.22),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
                                 ),
-                                if (_holding && holdProgress > 0)
-                                  Positioned.fill(
-                                    child: IgnorePointer(
-                                      child: _HoldRing(progress: holdProgress),
-                                    ),
-                                  ),
-                                if (_holding && holdProgress > 0.05)
-                                  Positioned(
-                                    bottom: 20,
-                                    left: 0,
-                                    right: 0,
-                                    child: IgnorePointer(
-                                      child: Center(
-                                        child: Text(
-                                          secondsLeft > 0
-                                              ? 'hold $secondsLeft more…'
-                                              : 'releasing…',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            color: Colors.white
-                                                .withValues(alpha: 0.75),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                if (_selectedExercise != null &&
-                                    _reps > 0 &&
-                                    !_holding)
-                                  Positioned(
-                                    top: 12,
-                                    left: 0,
-                                    right: 0,
-                                    child: IgnorePointer(
-                                      child: Center(
-                                        child: Text(
-                                          '↑ swipe up here (or on points) to set reps',
-                                          textAlign: TextAlign.center,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 11,
-                                            color: Colors.white
-                                                .withValues(alpha: 0.18),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                                 if (exercise != null && exercise.supportsWeight)
                                   Positioned(
                                     right: 16,
                                     bottom: 12,
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        setState(() => _weightPanelOpen = true);
-                                        showWeightPicker(
-                                          context: context,
-                                          initial: _weight,
-                                          onConfirm: (w) {
+                                    child: Material(
+                                      type: MaterialType.transparency,
+                                      child: InkWell(
+                                        onTap: () {
+                                          setState(
+                                              () => _weightPanelOpen = true);
+                                          showWeightPicker(
+                                            context: context,
+                                            initial: _weight,
+                                            onConfirm: (w) {
+                                              if (mounted) {
+                                                setState(() => _weight = w);
+                                              }
+                                            },
+                                          ).whenComplete(() {
                                             if (mounted) {
-                                              setState(() => _weight = w);
+                                              setState(() =>
+                                                  _weightPanelOpen = false);
                                             }
-                                          },
-                                        ).whenComplete(() {
-                                          if (mounted) {
-                                            setState(
-                                                () => _weightPanelOpen = false);
-                                          }
-                                        });
-                                      },
-                                      child: _WeightBadge(weight: _weight),
-                                    ),
-                                  ),
-                                if (_selectedExercise == null)
-                                  Positioned(
-                                    bottom: 16,
-                                    left: 0,
-                                    right: 0,
-                                    child: IgnorePointer(
-                                      child: Center(
-                                        child: Text(
-                                          'Pick an exercise in the sheet below',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            color: Colors.white
-                                                .withValues(alpha: 0.22),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                if (_selectedExercise != null && _reps == 0)
-                                  Positioned(
-                                    bottom: 16,
-                                    left: 0,
-                                    right: 0,
-                                    child: IgnorePointer(
-                                      child: Center(
-                                        child: Text(
-                                          'tap to count · hold 2s to log',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            color: Colors.white
-                                                .withValues(alpha: 0.22),
-                                          ),
-                                        ),
+                                          });
+                                        },
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                        child: _WeightBadge(weight: _weight),
                                       ),
                                     ),
                                   ),
@@ -708,7 +707,6 @@ class _LogSheetState extends ConsumerState<LogSheet>
                           ),
                         ],
                       ),
-                    ),
                       if (showFlood && floodOrigin != null)
                         Positioned.fill(
                           child: IgnorePointer(
@@ -718,6 +716,33 @@ class _LogSheetState extends ConsumerState<LogSheet>
                             ),
                           ),
                         ),
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Center(
+                            child: Transform.scale(
+                              scale: _bumpScale(),
+                              child: Transform.rotate(
+                                angle: _bumpTurn(),
+                                child: Text(
+                                  '$_reps',
+                                  key: _numberKey,
+                                  style: GoogleFonts.spaceMono(
+                                    fontSize: 96,
+                                    fontWeight: FontWeight.w700,
+                                    color: (_holding || _sustainingFlood)
+                                        ? Colors.white
+                                        : (_selectedExercise != null
+                                            ? kLogText
+                                            : kLogText.withValues(
+                                                alpha: 0.22)),
+                                    height: 1,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -733,19 +758,24 @@ class _LogSheetState extends ConsumerState<LogSheet>
               return false;
             },
             child: DraggableScrollableSheet(
+              controller: _sheetCtrl,
               initialChildSize: _kLogSheetMin,
               minChildSize: _kLogSheetMin,
               maxChildSize: _kLogSheetMax,
               snap: true,
               snapSizes: const [_kLogSheetMin, _kLogSheetMax],
               builder: (ctx, scrollController) {
+                final screenH = MediaQuery.sizeOf(ctx).height;
                 Widget fixedHeader({required Widget categoryPills}) {
                   return Padding(
                     padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const _SheetDragHandle(),
+                        _SheetDragHandle(
+                          controller: _sheetCtrl,
+                          screenHeight: screenH,
+                        ),
                         _SearchBar(
                           controller: _searchController,
                           onClear: () {
@@ -974,19 +1004,46 @@ class _LogSheetState extends ConsumerState<LogSheet>
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SheetDragHandle extends StatelessWidget {
-  const _SheetDragHandle();
+  final DraggableScrollableController controller;
+  final double screenHeight;
+
+  const _SheetDragHandle({
+    required this.controller,
+    required this.screenHeight,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 6),
-      child: Center(
-        child: Container(
-          width: 42,
-          height: 5,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.22),
-            borderRadius: BorderRadius.circular(3),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (details) {
+        if (!controller.isAttached) return;
+        final dy = details.primaryDelta ?? 0;
+        final next = (controller.size - dy / screenHeight)
+            .clamp(_kLogSheetMin, _kLogSheetMax);
+        controller.jumpTo(next);
+      },
+      onVerticalDragEnd: (_) {
+        if (!controller.isAttached) return;
+        final s = controller.size;
+        final mid = (_kLogSheetMin + _kLogSheetMax) / 2;
+        final target = s < mid ? _kLogSheetMin : _kLogSheetMax;
+        controller.animateTo(
+          target,
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(top: 10, bottom: 6),
+        child: Center(
+          child: Container(
+            width: 42,
+            height: 5,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.22),
+              borderRadius: BorderRadius.circular(3),
+            ),
           ),
         ),
       ),

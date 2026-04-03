@@ -7,6 +7,9 @@ import 'package:flutter/foundation.dart';
 
 import 'foreground_push_display_stub.dart'
     if (dart.library.html) 'foreground_push_display_web.dart';
+import 'web_dom_notification_permission_stub.dart'
+    if (dart.library.html) 'web_dom_notification_permission_web.dart'
+    as dom_notif;
 import '../models/fcm_device.dart';
 import 'supabase_service.dart';
 
@@ -257,9 +260,24 @@ class NotificationService {
   /// code does not show the system prompt and can leave permission denied.
   static Future<bool> registerToken() async {
     try {
+      // Web / iOS PWA: the **first** await in this handler must be the browser’s
+      // Notification.requestPermission — not Firebase.initializeApp. Otherwise
+      // WebKit leaves the user-gesture stack and the prompt never appears.
+      if (kIsWeb) {
+        final domOk = await dom_notif.requestDomNotificationPermission();
+        if (!domOk) {
+          developer.log(
+            'NotificationService: browser Notification.requestPermission denied',
+            name: 'Jars',
+          );
+          return false;
+        }
+      }
+
       await _ensureFirebaseInitialized();
 
       final messaging = FirebaseMessaging.instance;
+
       final settings = await messaging.requestPermission(
         alert: true,
         badge: true,
