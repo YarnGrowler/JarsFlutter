@@ -524,6 +524,10 @@ class _LogSheetState extends ConsumerState<LogSheet>
     final h = MediaQuery.sizeOf(context).height;
     final padBottom = MediaQuery.of(context).padding.bottom;
     final sheetPadBottom = h * _sheetExtent;
+    // Reserve space for the sheet's *peek* height only. Using [_sheetExtent] here
+    // would resize this column while dragging ("pushing" the UI). The sheet still
+    // paints on top when expanded past the peek.
+    final sheetPeekReserve = h * _kLogSheetMin;
 
     return Scaffold(
       backgroundColor: kLogNearBlack,
@@ -541,19 +545,21 @@ class _LogSheetState extends ConsumerState<LogSheet>
                 ),
               ),
               Expanded(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Listener(
-                      behavior: HitTestBehavior.translucent,
-                      onPointerDown: _onPointerDown,
-                      onPointerMove: _onPointerMove,
-                      onPointerUp: _onPointerUp,
-                      onPointerCancel: _onPointerCancel,
-                      child: Column(
-                        children: [
-                          Expanded(
-                            child: Stack(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: sheetPeekReserve),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerDown: _onPointerDown,
+                        onPointerMove: _onPointerMove,
+                        onPointerUp: _onPointerUp,
+                        onPointerCancel: _onPointerCancel,
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: Stack(
                               clipBehavior: Clip.none,
                               children: [
                                 Center(
@@ -703,16 +709,17 @@ class _LogSheetState extends ConsumerState<LogSheet>
                         ],
                       ),
                     ),
-                    if (showFlood && floodOrigin != null)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: _FloodOverlay(
-                            progress: floodProgress,
-                            originGlobal: floodOrigin!,
+                      if (showFlood && floodOrigin != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: _FloodOverlay(
+                              progress: floodProgress,
+                              originGlobal: floodOrigin!,
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -781,11 +788,20 @@ class _LogSheetState extends ConsumerState<LogSheet>
                           fixedHeader(
                             categoryPills: const SizedBox(height: 40),
                           ),
-                          const Expanded(
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: kLogPurple,
-                              ),
+                          Expanded(
+                            child: CustomScrollView(
+                              controller: scrollController,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              slivers: const [
+                                SliverFillRemaining(
+                                  hasScrollBody: false,
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      color: kLogPurple,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -795,12 +811,21 @@ class _LogSheetState extends ConsumerState<LogSheet>
                         children: [
                           fixedHeader(categoryPills: const SizedBox.shrink()),
                           Expanded(
-                            child: Center(
-                              child: Text(
-                                'Error: $e',
-                                style:
-                                    GoogleFonts.inter(color: Colors.white54),
-                              ),
+                            child: CustomScrollView(
+                              controller: scrollController,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              slivers: [
+                                SliverFillRemaining(
+                                  hasScrollBody: false,
+                                  child: Center(
+                                    child: Text(
+                                      'Error: $e',
+                                      style: GoogleFonts.inter(
+                                          color: Colors.white54),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -827,7 +852,9 @@ class _LogSheetState extends ConsumerState<LogSheet>
                             Expanded(
                               child: CustomScrollView(
                                 controller: scrollController,
-                                physics: const ClampingScrollPhysics(),
+                                physics: const AlwaysScrollableScrollPhysics(
+                                  parent: ClampingScrollPhysics(),
+                                ),
                                 slivers: [
                                   if (filtered.isEmpty)
                                     SliverFillRemaining(
