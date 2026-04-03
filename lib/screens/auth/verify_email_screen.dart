@@ -8,7 +8,6 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
-import '../../services/notification_service.dart';
 import '../../services/profile_service.dart';
 import '../../widgets/ui/auth_shell.dart';
 
@@ -80,7 +79,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         token: _codeController.text.trim(),
       );
       await ProfileService.ensureProfileRow();
-      await NotificationService.registerToken();
       if (!mounted) return;
       context.go(
         '/auth/room-entry?email=${Uri.encodeComponent(widget.email)}&username=${Uri.encodeComponent(widget.username)}',

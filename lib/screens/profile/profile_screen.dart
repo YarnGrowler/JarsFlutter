@@ -314,21 +314,25 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                   ),
                   onTap: () async {
-                    nav.pop();
                     final uid = SupabaseService.currentUserId;
                     if (uid == null) {
+                      nav.pop();
                       scaffoldMessenger.showSnackBar(
                         const SnackBar(content: Text('Not signed in.')),
                       );
                       return;
                     }
+                    // Register before closing the sheet so iOS WebKit still ties
+                    // requestPermission to this tap (no pop / await before it).
                     final regOk = await NotificationService.registerToken();
+                    nav.pop();
                     if (!regOk) {
                       scaffoldMessenger.showSnackBar(
                         SnackBar(
                           content: Text(
-                            'Could not save FCM token. Allow notifications, hard refresh, '
-                            'and ensure web/firebase-messaging-sw.js is deployed. Then try again.',
+                            'Could not save FCM token. On iPhone (Home Screen app), '
+                            'open Profile → Push notifications & devices and tap Enable there. '
+                            'Otherwise allow notifications and ensure firebase-messaging-sw.js is deployed.',
                             style: GoogleFonts.inter(),
                           ),
                           backgroundColor: JarsColors.red,

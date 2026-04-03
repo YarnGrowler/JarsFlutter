@@ -19,10 +19,26 @@ const kWebPushIconPath = '/icons/jars-notification.svg';
 
 /// Handles FCM token registration and push via Supabase `notifications` table.
 /// Tokens are stored in [user_fcm_tokens] so each user can have **multiple devices**.
+///
+/// **iOS Safari / “Add to Home Screen”:** `requestPermission()` is only honored when
+/// triggered from a **direct user gesture** (e.g. a button `onPressed`). Do **not**
+/// call [registerToken] from app init, sign-in, or `async` chains after navigation —
+/// use [syncTokenIfPermitted] there instead (no prompt; only refreshes token if
+/// already allowed). See [registerToken] for the explicit opt-in path.
 class NotificationService {
   static final _db = SupabaseService.client;
   static bool _tokenListenersAttached = false;
   static bool _foregroundWebAttached = false;
+
+  static const FirebaseOptions _firebaseOptions = FirebaseOptions(
+    apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
+    authDomain: 'jarsflutter.firebaseapp.com',
+    projectId: 'jarsflutter',
+    storageBucket: 'jarsflutter.firebasestorage.app',
+    messagingSenderId: '93048274469',
+    appId: '1:93048274469:web:dfc56256d2aeede1ad49cc',
+    measurementId: 'G-X14XTW7GJP',
+  );
 
   /// Last token obtained from FCM on this install (to mark "this device" in lists).
   static String? _lastKnownLocalToken;
@@ -30,26 +46,56 @@ class NotificationService {
   /// Exposed for settings UI to label the current install in [listMyDevices].
   static String? get cachedLocalFcmToken => _lastKnownLocalToken;
 
+  static Future<void> _ensureFirebaseInitialized() async {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(options: _firebaseOptions);
+    }
+  }
+
+  /// Safe on session restore / sign-in: **does not** call [requestPermission].
+  /// Re-fetches and saves the FCM token only if the user already allowed notifications.
+  static Future<bool> syncTokenIfPermitted() async {
+    try {
+      await _ensureFirebaseInitialized();
+      final messaging = FirebaseMessaging.instance;
+      final settings = await messaging
+          .getNotificationSettings()
+          .timeout(const Duration(seconds: 8));
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        return false;
+      }
+      final token = kIsWeb
+          ? await messaging.getToken(vapidKey: _kVapidKey)
+          : await messaging.getToken();
+      if (token == null || token.isEmpty) return false;
+      return _persistTokenAndAttachListeners(token);
+    } catch (e, st) {
+      developer.log(
+        'NotificationService.syncTokenIfPermitted: $e',
+        name: 'Jars',
+        error: e,
+        stackTrace: st,
+      );
+      return false;
+    }
+  }
+
+  /// After sign-in or cold start: Firebase ready + silent token sync if already allowed.
+  /// Never shows the permission dialog (unlike [registerToken]).
   static Future<void> init() async {
-    await registerToken();
+    try {
+      await _ensureFirebaseInitialized();
+      await syncTokenIfPermitted();
+    } catch (e, st) {
+      developer.log('NotificationService.init: $e', name: 'Jars', error: e, stackTrace: st);
+    }
   }
 
   /// Current OS / browser permission (no prompt). Times out so mobile never hangs forever.
   static Future<NotificationSettings?> getNotificationSettings() async {
     try {
-      if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(
-          options: const FirebaseOptions(
-            apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
-            authDomain: 'jarsflutter.firebaseapp.com',
-            projectId: 'jarsflutter',
-            storageBucket: 'jarsflutter.firebasestorage.app',
-            messagingSenderId: '93048274469',
-            appId: '1:93048274469:web:dfc56256d2aeede1ad49cc',
-            measurementId: 'G-X14XTW7GJP',
-          ),
-        ).timeout(const Duration(seconds: 8));
-      }
+      await _ensureFirebaseInitialized().timeout(const Duration(seconds: 8));
       return await FirebaseMessaging.instance
           .getNotificationSettings()
           .timeout(const Duration(seconds: 6));
@@ -67,19 +113,7 @@ class NotificationService {
   /// FCM token for this install, if permission allows (may be null on web).
   static Future<String?> getCurrentFcmToken() async {
     try {
-      if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(
-          options: const FirebaseOptions(
-            apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
-            authDomain: 'jarsflutter.firebaseapp.com',
-            projectId: 'jarsflutter',
-            storageBucket: 'jarsflutter.firebasestorage.app',
-            messagingSenderId: '93048274469',
-            appId: '1:93048274469:web:dfc56256d2aeede1ad49cc',
-            measurementId: 'G-X14XTW7GJP',
-          ),
-        );
-      }
+      await _ensureFirebaseInitialized();
       if (kIsWeb) {
         return FirebaseMessaging.instance.getToken(vapidKey: _kVapidKey);
       }
@@ -191,22 +225,39 @@ class NotificationService {
     }
   }
 
-  /// Registers this device’s FCM token (upsert). Safe after every sign-in / new browser.
+  static Future<bool> _persistTokenAndAttachListeners(String token) async {
+    final messaging = FirebaseMessaging.instance;
+    if (!_tokenListenersAttached) {
+      _tokenListenersAttached = true;
+      messaging.onTokenRefresh.listen((t) {
+        _lastKnownLocalToken = t;
+        _saveFcmToken(t);
+      });
+    }
+    if (kIsWeb && !_foregroundWebAttached) {
+      _foregroundWebAttached = true;
+      attachForegroundWebPushDisplay();
+    }
+    _lastKnownLocalToken = token;
+    final saved = await _saveFcmToken(token);
+    if (!saved) {
+      developer.log(
+        'NotificationService: token not saved (signed in?)',
+        name: 'Jars',
+      );
+    }
+    return saved;
+  }
+
+  /// Registers this device’s FCM token after **requesting permission**.
+  ///
+  /// **Must run from a direct user gesture** (e.g. `onPressed` on a button) —
+  /// especially on **iPhone Safari / Home Screen web apps**, where calling
+  /// [FirebaseMessaging.requestPermission] from init or post-login `async`
+  /// code does not show the system prompt and can leave permission denied.
   static Future<bool> registerToken() async {
     try {
-      if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(
-          options: const FirebaseOptions(
-            apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
-            authDomain: 'jarsflutter.firebaseapp.com',
-            projectId: 'jarsflutter',
-            storageBucket: 'jarsflutter.firebasestorage.app',
-            messagingSenderId: '93048274469',
-            appId: '1:93048274469:web:dfc56256d2aeede1ad49cc',
-            measurementId: 'G-X14XTW7GJP',
-          ),
-        );
-      }
+      await _ensureFirebaseInitialized();
 
       final messaging = FirebaseMessaging.instance;
       final settings = await messaging.requestPermission(
@@ -236,28 +287,7 @@ class NotificationService {
         return false;
       }
 
-      if (!_tokenListenersAttached) {
-        _tokenListenersAttached = true;
-        messaging.onTokenRefresh.listen((t) {
-          _lastKnownLocalToken = t;
-          _saveFcmToken(t);
-        });
-      }
-
-      if (kIsWeb && !_foregroundWebAttached) {
-        _foregroundWebAttached = true;
-        attachForegroundWebPushDisplay();
-      }
-
-      _lastKnownLocalToken = token;
-      final saved = await _saveFcmToken(token);
-      if (!saved) {
-        developer.log(
-          'NotificationService: token not saved (signed in?)',
-          name: 'Jars',
-        );
-      }
-      return saved;
+      return _persistTokenAndAttachListeners(token);
     } catch (e, st) {
       developer.log('NotificationService.registerToken: $e\n$st', name: 'Jars');
       return false;

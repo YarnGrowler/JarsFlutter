@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
-import '../../services/notification_service.dart';
 import '../../services/profile_service.dart';
 import '../../widgets/ui/auth_shell.dart';
 
@@ -52,7 +51,6 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _password.text,
       );
       await ProfileService.ensureProfileRow();
-      await NotificationService.registerToken();
       if (mounted) context.go('/');
     } catch (e) {
       if (mounted) {

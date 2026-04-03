@@ -60,6 +60,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
   Future<void> _enableNotifications() async {
     setState(() => _busy = true);
+    // Must be the first await after this tap — iOS WebKit only shows the
+    // permission prompt when requestPermission runs from a user gesture (not
+    // from sign-in / app init).
     final ok = await NotificationService.registerToken();
     if (!mounted) return;
     setState(() => _busy = false);
@@ -69,8 +72,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       SnackBar(
         content: Text(
           ok
-              ? 'This device was registered for push. If you use Safari / “Add to Home Screen”, approve the prompt when it appears.'
-              : 'Could not enable push. If permission was denied, open system settings for this app or site and allow notifications, then try again.',
+              ? 'This device was registered for push. On iPhone, the system prompt only appears when you tap this button — choose Allow.'
+              : 'Could not enable push. On iPhone (Home Screen): if you never saw a prompt, an older visit may have blocked it — try Settings → Apps → Jars / Safari → Notifications, or remove the Home Screen icon and add it again. Then open the app and tap this button once.',
           style: GoogleFonts.inter(),
         ),
         backgroundColor: ok ? null : JarsColors.red,
@@ -173,8 +176,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     if (kIsWeb) ...[
                       const SizedBox(height: 8),
                       Text(
-                        'If you added Jars to your iPhone Home Screen, open the app and tap '
-                        'the button below — iOS often will not show a notification prompt until you do.',
+                        'iPhone / iPad: Apple only allows the notification prompt when you tap '
+                        '“Enable / register” below — not on page load or after sign-in. '
+                        'If you tapped before and never saw a prompt, check Settings → Notifications '
+                        'for this app or site, or re-add the Home Screen shortcut.',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           color: JarsColors.textSecondary,
