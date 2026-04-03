@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import 'foreground_push_display_stub.dart'
     if (dart.library.html) 'foreground_push_display_web.dart';
+import '../models/fcm_device.dart';
 import 'supabase_service.dart';
 
 // ── VAPID key: Firebase Console → Cloud Messaging → Web Push certificates ──
@@ -22,8 +23,139 @@ class NotificationService {
   static bool _tokenListenersAttached = false;
   static bool _foregroundWebAttached = false;
 
+  /// Last token obtained from FCM on this install (to mark "this device" in lists).
+  static String? _lastKnownLocalToken;
+
+  /// Exposed for settings UI to label the current install in [listMyDevices].
+  static String? get cachedLocalFcmToken => _lastKnownLocalToken;
+
   static Future<void> init() async {
     await registerToken();
+  }
+
+  /// Current OS / browser permission (no prompt).
+  static Future<NotificationSettings> getNotificationSettings() async {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
+          authDomain: 'jarsflutter.firebaseapp.com',
+          projectId: 'jarsflutter',
+          storageBucket: 'jarsflutter.firebasestorage.app',
+          messagingSenderId: '93048274469',
+          appId: '1:93048274469:web:dfc56256d2aeede1ad49cc',
+          measurementId: 'G-X14XTW7GJP',
+        ),
+      );
+    }
+    return FirebaseMessaging.instance.getNotificationSettings();
+  }
+
+  /// FCM token for this install, if permission allows (may be null on web).
+  static Future<String?> getCurrentFcmToken() async {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: const FirebaseOptions(
+            apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
+            authDomain: 'jarsflutter.firebaseapp.com',
+            projectId: 'jarsflutter',
+            storageBucket: 'jarsflutter.firebasestorage.app',
+            messagingSenderId: '93048274469',
+            appId: '1:93048274469:web:dfc56256d2aeede1ad49cc',
+            measurementId: 'G-X14XTW7GJP',
+          ),
+        );
+      }
+      if (kIsWeb) {
+        return FirebaseMessaging.instance.getToken(vapidKey: _kVapidKey);
+      }
+      return FirebaseMessaging.instance.getToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<List<FcmDevice>> listMyDevices() async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return [];
+    try {
+      final rows = await _db
+          .from('user_fcm_tokens')
+          .select('id, platform, last_seen_at, token')
+          .eq('user_id', uid)
+          .order('last_seen_at', ascending: false);
+      return (rows as List)
+          .map((r) => FcmDevice.fromJson(Map<String, dynamic>.from(r as Map)))
+          .toList();
+    } catch (e) {
+      final s = e.toString();
+      if (s.contains('404') ||
+          s.contains('PGRST205') ||
+          s.contains('Could not find the table')) {
+        developer.log(
+          'user_fcm_tokens is missing — in Supabase SQL Editor run the '
+          '"11 user_fcm_tokens" block in supabase_patches/00_apply_all.sql '
+          '(or 11_fcm_multi_device.sql), then reload the app. ($e)',
+          name: 'Jars',
+        );
+      } else {
+        developer.log('NotificationService.listMyDevices: $e', name: 'Jars');
+      }
+      return [];
+    }
+  }
+
+  /// Removes a registered device from Supabase. If it matches this install, also calls [FirebaseMessaging.deleteToken].
+  static Future<bool> revokeDevice(FcmDevice device) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return false;
+    try {
+      await _db
+          .from('user_fcm_tokens')
+          .delete()
+          .eq('id', device.id)
+          .eq('user_id', uid);
+
+      if (_lastKnownLocalToken == device.token) {
+        try {
+          await FirebaseMessaging.instance.deleteToken();
+        } catch (_) {}
+        _lastKnownLocalToken = null;
+      }
+      await _syncProfileLegacyToken();
+      return true;
+    } catch (e) {
+      final s = e.toString();
+      if (s.contains('404') || s.contains('PGRST205')) {
+        developer.log(
+          'user_fcm_tokens missing — apply SQL patch (see listMyDevices log). $e',
+          name: 'Jars',
+        );
+      } else {
+        developer.log('NotificationService.revokeDevice: $e', name: 'Jars');
+      }
+      return false;
+    }
+  }
+
+  static Future<void> _syncProfileLegacyToken() async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return;
+    try {
+      final rows = await _db
+          .from('user_fcm_tokens')
+          .select('token')
+          .eq('user_id', uid)
+          .order('last_seen_at', ascending: false)
+          .limit(1);
+      final list = List<Map<String, dynamic>>.from(rows as List);
+      final next = list.isEmpty ? null : list.first['token'] as String?;
+      await _db.from('profiles').update({'fcm_token': next}).eq('id', uid);
+    } catch (e) {
+      developer.log('NotificationService._syncProfileLegacyToken: $e',
+          name: 'Jars');
+    }
   }
 
   static String _platformLabel() {
@@ -91,7 +223,10 @@ class NotificationService {
 
       if (!_tokenListenersAttached) {
         _tokenListenersAttached = true;
-        messaging.onTokenRefresh.listen((t) => _saveFcmToken(t));
+        messaging.onTokenRefresh.listen((t) {
+          _lastKnownLocalToken = t;
+          _saveFcmToken(t);
+        });
       }
 
       if (kIsWeb && !_foregroundWebAttached) {
@@ -99,6 +234,7 @@ class NotificationService {
         attachForegroundWebPushDisplay();
       }
 
+      _lastKnownLocalToken = token;
       final saved = await _saveFcmToken(token);
       if (!saved) {
         developer.log(
@@ -110,6 +246,20 @@ class NotificationService {
     } catch (e, st) {
       developer.log('NotificationService.registerToken: $e\n$st', name: 'Jars');
       return false;
+    }
+  }
+
+  /// Human-readable status for settings UI.
+  static String describeAuthorization(AuthorizationStatus s) {
+    switch (s) {
+      case AuthorizationStatus.authorized:
+        return 'Allowed';
+      case AuthorizationStatus.provisional:
+        return 'Provisional (quiet)';
+      case AuthorizationStatus.denied:
+        return 'Denied';
+      case AuthorizationStatus.notDetermined:
+        return 'Not asked yet';
     }
   }
 

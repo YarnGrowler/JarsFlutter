@@ -14,6 +14,7 @@ class JarsApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Jars',
       debugShowCheckedModeBanner: false,
+      color: JarsColors.background,
       builder: (context, child) => ReactionRainHost(
         child: child ?? const SizedBox.shrink(),
       ),

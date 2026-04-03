@@ -128,5 +128,31 @@ create policy "Room admin can delete room logs"
     room_id in (select id from public.rooms where admin_id = auth.uid())
   );
 
+-- === 11 user_fcm_tokens (multi-device FCM — fixes REST 404 on /user_fcm_tokens) ===
+-- Also in supabase_patches/11_fcm_multi_device.sql (same DDL).
+create table if not exists public.user_fcm_tokens (
+  id uuid not null default gen_random_uuid() primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  token text not null,
+  platform text not null default 'web',
+  last_seen_at timestamptz not null default now(),
+  constraint user_fcm_tokens_token_key unique (token)
+);
+
+create index if not exists idx_user_fcm_tokens_user_id on public.user_fcm_tokens(user_id);
+
+alter table public.user_fcm_tokens enable row level security;
+
+drop policy if exists "Users manage own fcm tokens" on public.user_fcm_tokens;
+create policy "Users manage own fcm tokens"
+  on public.user_fcm_tokens
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+grant select, insert, update, delete on table public.user_fcm_tokens to authenticated;
+grant select, insert, update, delete on table public.user_fcm_tokens to service_role;
+
 -- === 14 wake cards + join password: run supabase_patches/14_room_wake_password.sql ===
 -- === 15 wake room push + nudge limits + admin wake: run supabase_patches/15_wake_nudge_room_notify.sql ===

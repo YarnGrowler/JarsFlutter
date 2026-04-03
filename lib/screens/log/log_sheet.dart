@@ -39,6 +39,10 @@ const int _kMaxRecents = 10;
 const String _kRecentsCategory = 'Recents';
 const String _kDefaultCategory = 'Upper Body';
 
+/// Bottom exercise sheet: snapped between min (default peek) and max 75% screen.
+const double _kLogSheetMin = 0.42;
+const double _kLogSheetMax = 0.75;
+
 class LogSheet extends ConsumerStatefulWidget {
   const LogSheet({super.key});
 
@@ -85,6 +89,8 @@ class _LogSheetState extends ConsumerState<LogSheet>
   // undo
   String? _undoLogId;
   double _undoPoints = 0;
+
+  double _sheetExtent = _kLogSheetMin;
 
   @override
   void initState() {
@@ -140,20 +146,6 @@ class _LogSheetState extends ConsumerState<LogSheet>
   Future<void> _saveWeight(String exerciseId, double weight) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('$_kWeightKeyPrefix$exerciseId', weight);
-  }
-
-  // ── Rep number hit-test ────────────────────────────────────────────────────
-  bool _insideNumber(Offset global) {
-    final ctx = _numberKey.currentContext;
-    if (ctx == null) return false;
-    final box = ctx.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return false;
-    final local = box.globalToLocal(global);
-    return Rect.fromCenter(
-      center: Offset(box.size.width / 2, box.size.height / 2),
-      width: box.size.width + 64,
-      height: box.size.height + 64,
-    ).contains(local);
   }
 
   // ── Rep bump (~80% original shake, ~20% bigger scale/tilt + longer) ────────
@@ -281,7 +273,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
   //
   // Interaction logic:
   //   - Tap anywhere in top zone → increment rep
-  //   - Swipe UP on the number → open rep picker
+  //   - Swipe UP in rep + points area → open rep picker
   //   - Long press (hold ≥ 2s) anywhere → flood + confirm
   //   - Swipe sideways on number while holding → cancel hold
   //
@@ -300,12 +292,11 @@ class _LogSheetState extends ConsumerState<LogSheet>
     final delta = e.position - _pointerStart!;
     final dist = delta.distance;
 
-    // Swipe UP on the number to open rep picker
+    // Swipe UP anywhere in the rep + points listener zone → open rep picker
     if (!_movedEnoughForSwipe &&
         dist > _kSwipeUpThreshold &&
         delta.dy < 0 &&
-        delta.dy.abs() > delta.dx.abs() &&
-        _insideNumber(_pointerStart!)) {
+        delta.dy.abs() > delta.dx.abs()) {
       _movedEnoughForSwipe = true;
       _cancelHold();
       _openRepPicker();
@@ -530,306 +521,396 @@ class _LogSheetState extends ConsumerState<LogSheet>
         ? (_kHoldDuration.inSeconds * (1 - holdProgress)).ceil()
         : 0;
 
+    final h = MediaQuery.sizeOf(context).height;
+    final padBottom = MediaQuery.of(context).padding.bottom;
+    final sheetPadBottom = h * _sheetExtent;
+
     return Scaffold(
       backgroundColor: kLogNearBlack,
       body: Stack(
+        clipBehavior: Clip.none,
         children: [
-          SafeArea(
-            child: Column(
-              children: [
-                _TopBar(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SafeArea(
+                bottom: false,
+                child: _TopBar(
                   scoreAsync: scoreAsync,
                   onHistoryTap: () => context.push('/log-history'),
                 ),
-
-                // ZONE 1 — Rep Counter (50% of remaining)
-                Expanded(
-                  flex: 50,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      // Touch zone
-                      Positioned.fill(
-                        child: Listener(
-                          behavior: HitTestBehavior.translucent,
-                          onPointerDown: _onPointerDown,
-                          onPointerMove: _onPointerMove,
-                          onPointerUp: _onPointerUp,
-                          onPointerCancel: _onPointerCancel,
-                          child: const SizedBox.expand(),
-                        ),
-                      ),
-
-                      // Purple flood (grows during hold, full during sustain)
-                      if (showFlood && floodOrigin != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: _FloodOverlay(
-                              progress: floodProgress,
-                              originGlobal: floodOrigin,
-                            ),
-                          ),
-                        ),
-
-                      // Rep number
-                      Center(
-                        child: Transform.scale(
-                          scale: _bumpScale(),
-                          child: Transform.rotate(
-                            angle: _bumpTurn(),
-                            child: Text(
-                              '$_reps',
-                              key: _numberKey,
-                              style: GoogleFonts.spaceMono(
-                                fontSize: 96,
-                                fontWeight: FontWeight.w700,
-                                color: (_holding || _sustainingFlood)
-                                    ? Colors.white
-                                    : (_selectedExercise != null
-                                        ? kLogText
-                                        : kLogText.withValues(alpha: 0.22)),
-                                height: 1,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // Hold progress ring
-                      if (_holding && holdProgress > 0)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: _HoldRing(progress: holdProgress),
-                          ),
-                        ),
-
-                      // Countdown hint
-                      if (_holding && holdProgress > 0.05)
-                        Positioned(
-                          bottom: 20,
-                          left: 0,
-                          right: 0,
-                          child: IgnorePointer(
-                            child: Center(
-                              child: Text(
-                                secondsLeft > 0
-                                    ? 'hold $secondsLeft more…'
-                                    : 'releasing…',
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  color: Colors.white.withValues(alpha: 0.75),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: sheetPadBottom),
+                  child: Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: _onPointerDown,
+                    onPointerMove: _onPointerMove,
+                    onPointerUp: _onPointerUp,
+                    onPointerCancel: _onPointerCancel,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              if (showFlood && floodOrigin != null)
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: _FloodOverlay(
+                                      progress: floodProgress,
+                                      originGlobal: floodOrigin,
+                                    ),
+                                  ),
+                                ),
+                              Center(
+                                child: Transform.scale(
+                                  scale: _bumpScale(),
+                                  child: Transform.rotate(
+                                    angle: _bumpTurn(),
+                                    child: Text(
+                                      '$_reps',
+                                      key: _numberKey,
+                                      style: GoogleFonts.spaceMono(
+                                        fontSize: 96,
+                                        fontWeight: FontWeight.w700,
+                                        color: (_holding || _sustainingFlood)
+                                            ? Colors.white
+                                            : (_selectedExercise != null
+                                                ? kLogText
+                                                : kLogText.withValues(
+                                                    alpha: 0.22)),
+                                        height: 1,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              if (_holding && holdProgress > 0)
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: _HoldRing(progress: holdProgress),
+                                  ),
+                                ),
+                              if (_holding && holdProgress > 0.05)
+                                Positioned(
+                                  bottom: 20,
+                                  left: 0,
+                                  right: 0,
+                                  child: IgnorePointer(
+                                    child: Center(
+                                      child: Text(
+                                        secondsLeft > 0
+                                            ? 'hold $secondsLeft more…'
+                                            : 'releasing…',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.75),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (_selectedExercise != null &&
+                                  _reps > 0 &&
+                                  !_holding)
+                                Positioned(
+                                  top: 12,
+                                  left: 0,
+                                  right: 0,
+                                  child: IgnorePointer(
+                                    child: Center(
+                                      child: Text(
+                                        '↑ swipe up here (or on points) to set reps',
+                                        textAlign: TextAlign.center,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.18),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (exercise != null && exercise.supportsWeight)
+                                Positioned(
+                                  right: 16,
+                                  bottom: 12,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() => _weightPanelOpen = true);
+                                      showWeightPicker(
+                                        context: context,
+                                        initial: _weight,
+                                        onConfirm: (w) {
+                                          if (mounted) {
+                                            setState(() => _weight = w);
+                                          }
+                                        },
+                                      ).whenComplete(() {
+                                        if (mounted) {
+                                          setState(
+                                              () => _weightPanelOpen = false);
+                                        }
+                                      });
+                                    },
+                                    child: _WeightBadge(weight: _weight),
+                                  ),
+                                ),
+                              if (_selectedExercise == null)
+                                Positioned(
+                                  bottom: 16,
+                                  left: 0,
+                                  right: 0,
+                                  child: IgnorePointer(
+                                    child: Center(
+                                      child: Text(
+                                        'Pick an exercise in the sheet below',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.22),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (_selectedExercise != null && _reps == 0)
+                                Positioned(
+                                  bottom: 16,
+                                  left: 0,
+                                  right: 0,
+                                  child: IgnorePointer(
+                                    child: Center(
+                                      child: Text(
+                                        'tap to count · hold 2s to log',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.22),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-
-                      // Swipe up hint on the number
-                      if (_selectedExercise != null && _reps > 0 && !_holding)
-                        Positioned(
-                          top: 16,
-                          left: 0,
-                          right: 0,
+                        SizedBox(
+                          height: h * 0.12,
                           child: Center(
-                            child: Text(
-                              '↑ swipe to set reps',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: Colors.white.withValues(alpha: 0.18),
-                              ),
+                            child: AnimatedPointsDisplay(
+                              key: ValueKey(exercise?.id ?? 'none'),
+                              targetPoints: ptsPreview,
+                              visible: exercise != null,
                             ),
                           ),
                         ),
-
-                      // Weight badge
-                      if (exercise != null && exercise.supportsWeight)
-                        Positioned(
-                          right: 16,
-                          bottom: 12,
-                          child: GestureDetector(
-                            onTap: () {
-                            setState(() => _weightPanelOpen = true);
-                            showWeightPicker(
-                              context: context,
-                              initial: _weight,
-                              onConfirm: (w) {
-                                if (mounted) setState(() => _weight = w);
-                              },
-                            ).whenComplete(() {
-                              if (mounted) setState(() => _weightPanelOpen = false);
-                            });
-                          },
-                            child: _WeightBadge(weight: _weight),
-                          ),
-                        ),
-
-                      // Hold hint (when reps > 0, no exercise selected prompt)
-                      if (_selectedExercise == null)
-                        Positioned(
-                          bottom: 16,
-                          left: 0,
-                          right: 0,
-                          child: Center(
-                            child: Text(
-                              'Pick an exercise below',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: Colors.white.withValues(alpha: 0.22),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                      if (_selectedExercise != null && _reps == 0)
-                        Positioned(
-                          bottom: 16,
-                          left: 0,
-                          right: 0,
-                          child: Center(
-                            child: Text(
-                              'tap to count · hold 2s to log',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: Colors.white.withValues(alpha: 0.22),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-
-                // ZONE 2 — Points Display
-                SizedBox(
-                  height: MediaQuery.sizeOf(context).height * 0.12,
-                  child: Center(
-                    child: AnimatedPointsDisplay(
-                      key: ValueKey(exercise?.id ?? 'none'),
-                      targetPoints: ptsPreview,
-                      visible: exercise != null,
+                      ],
                     ),
                   ),
                 ),
+              ),
+            ],
+          ),
 
-                // ZONE 3 — Exercise Grid
-                Expanded(
-                  flex: 38,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Search bar
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
-                        child: _SearchBar(
-                          controller: _searchController,
-                          onClear: () {
-                            _searchController.clear();
-                            setState(() {
-                              _searchQuery = '';
-                              _searchActive = false;
-                            });
-                          },
-                        ),
-                      ),
-
-                      // Category pills
-                      if (_searchQuery.isEmpty)
-                        exercisesAsync.when(
-                          data: (exercises) => _CategoryPills(
-                            exercises: exercises,
-                            recentIds: _recentIds,
-                            selected: _selectedCategory ??
-                                (_recentIds.isNotEmpty
-                                    ? _kRecentsCategory
-                                    : _kDefaultCategory),
-                            onSelect: (c) =>
-                                setState(() => _selectedCategory = c),
-                          ),
-                          loading: () => const SizedBox(height: 40),
-                          error: (_, __) => const SizedBox(height: 40),
-                        ),
-
-                      const SizedBox(height: 8),
-
-                      Expanded(
-                        child: exercisesAsync.when(
-                          data: (exercises) {
-                            final filtered = _filterExercises(exercises);
-
-                            if (filtered.isEmpty) {
-                              return Center(
-                                child: Text(
-                                  _searchQuery.isNotEmpty
-                                      ? 'No results for "$_searchQuery"'
-                                      : 'No exercises yet',
-                                  style: GoogleFonts.inter(
-                                      color: Colors.white38, fontSize: 13),
-                                ),
-                              );
-                            }
-
-                            return AnimatedSwitcher(
-                              duration: kLogCrossfade,
-                              child: GridView.builder(
-                                key: ValueKey(_searchQuery.isNotEmpty
-                                    ? 'search:$_searchQuery'
-                                    : _selectedCategory ?? 'default'),
-                                padding:
-                                    const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  mainAxisSpacing: 8,
-                                  crossAxisSpacing: 8,
-                                  mainAxisExtent: 80,
-                                ),
-                                itemCount: filtered.length,
-                                itemBuilder: (_, i) {
-                                  final ex = filtered[i];
-                                  return LogExerciseCard(
-                                    exercise: ex,
-                                    selected: exercise?.id == ex.id,
-                                    onTap: () async {
-                                      final saved = await _loadWeight(ex.id);
-                                      if (!mounted) return;
-                                      setState(() {
-                                        _selectedExercise = ex;
-                                        _reps = 0;
-                                        _weight = saved;
-                                        if (_searchQuery.isNotEmpty) {
-                                          _searchController.clear();
-                                          _searchQuery = '';
-                                          _searchActive = false;
-                                        }
-                                      });
-                                      await _saveRecent(ex);
-                                    },
-                                  );
-                                },
-                              ),
-                            );
-                          },
-                          loading: () => const Center(
-                            child:
-                                CircularProgressIndicator(color: kLogPurple),
-                          ),
-                          error: (e, _) => Center(
-                            child: Text('Error: $e',
-                                style:
-                                    GoogleFonts.inter(color: Colors.white54)),
-                          ),
-                        ),
+          NotificationListener<DraggableScrollableNotification>(
+            onNotification: (n) {
+              if (mounted && (n.extent - _sheetExtent).abs() > 0.001) {
+                setState(() => _sheetExtent = n.extent);
+              }
+              return false;
+            },
+            child: DraggableScrollableSheet(
+              initialChildSize: _kLogSheetMin,
+              minChildSize: _kLogSheetMin,
+              maxChildSize: _kLogSheetMax,
+              snap: true,
+              snapSizes: const [_kLogSheetMin, _kLogSheetMax],
+              builder: (ctx, scrollController) {
+                return DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: kLogSurface,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(22),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        blurRadius: 24,
+                        offset: const Offset(0, -6),
                       ),
                     ],
                   ),
-                ),
-
-                if (_undoLogId != null) _UndoBar(onUndo: _undoLog),
-              ],
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(22),
+                    ),
+                    child: exercisesAsync.when(
+                      loading: () => CustomScrollView(
+                        controller: scrollController,
+                        physics: const ClampingScrollPhysics(),
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: _LogSheetSliverHeader(
+                              sheetHandle: const _SheetDragHandle(),
+                              searchBar: _SearchBar(
+                                controller: _searchController,
+                                onClear: () {
+                                  _searchController.clear();
+                                  setState(() {
+                                    _searchQuery = '';
+                                    _searchActive = false;
+                                  });
+                                },
+                              ),
+                              categoryPills: const SizedBox(height: 40),
+                            ),
+                          ),
+                          const SliverFillRemaining(
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: kLogPurple,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      error: (e, _) => CustomScrollView(
+                        controller: scrollController,
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: _LogSheetSliverHeader(
+                              sheetHandle: const _SheetDragHandle(),
+                              searchBar: _SearchBar(
+                                controller: _searchController,
+                                onClear: () {
+                                  _searchController.clear();
+                                  setState(() {
+                                    _searchQuery = '';
+                                    _searchActive = false;
+                                  });
+                                },
+                              ),
+                              categoryPills: const SizedBox.shrink(),
+                            ),
+                          ),
+                          SliverFillRemaining(
+                            child: Center(
+                              child: Text(
+                                'Error: $e',
+                                style: GoogleFonts.inter(color: Colors.white54),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      data: (exercises) {
+                        final filtered = _filterExercises(exercises);
+                        return CustomScrollView(
+                          controller: scrollController,
+                          physics: const ClampingScrollPhysics(),
+                          slivers: [
+                            SliverToBoxAdapter(
+                              child: _LogSheetSliverHeader(
+                                sheetHandle: const _SheetDragHandle(),
+                                searchBar: _SearchBar(
+                                  controller: _searchController,
+                                  onClear: () {
+                                    _searchController.clear();
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _searchActive = false;
+                                    });
+                                  },
+                                ),
+                                categoryPills: _searchQuery.isEmpty
+                                    ? _CategoryPills(
+                                        exercises: exercises,
+                                        recentIds: _recentIds,
+                                        selected: _selectedCategory ??
+                                            (_recentIds.isNotEmpty
+                                                ? _kRecentsCategory
+                                                : _kDefaultCategory),
+                                        onSelect: (c) => setState(
+                                            () => _selectedCategory = c),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                            ),
+                            if (filtered.isEmpty)
+                              SliverFillRemaining(
+                                child: Center(
+                                  child: Text(
+                                    _searchQuery.isNotEmpty
+                                        ? 'No results for "$_searchQuery"'
+                                        : 'No exercises yet',
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white38,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              SliverPadding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(14, 6, 14, 24),
+                                sliver: SliverGrid(
+                                  gridDelegate:
+                                      const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    mainAxisSpacing: 8,
+                                    crossAxisSpacing: 8,
+                                    mainAxisExtent: 80,
+                                  ),
+                                  delegate: SliverChildBuilderDelegate(
+                                    (context, i) {
+                                      final ex = filtered[i];
+                                      return LogExerciseCard(
+                                        exercise: ex,
+                                        selected: exercise?.id == ex.id,
+                                        onTap: () async {
+                                          final saved =
+                                              await _loadWeight(ex.id);
+                                          if (!mounted) return;
+                                          setState(() {
+                                            _selectedExercise = ex;
+                                            _reps = 0;
+                                            _weight = saved;
+                                            if (_searchQuery.isNotEmpty) {
+                                              _searchController.clear();
+                                              _searchQuery = '';
+                                              _searchActive = false;
+                                            }
+                                          });
+                                          await _saveRecent(ex);
+                                        },
+                                      );
+                                    },
+                                    childCount: filtered.length,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
             ),
           ),
 
-          // (weight picker is shown via showWeightPicker full-screen dialog)
+          if (_undoLogId != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: padBottom + sheetPadBottom + 8,
+              child: _UndoBar(onUndo: _undoLog),
+            ),
         ],
       ),
     );
@@ -870,46 +951,142 @@ class _LogSheetState extends ConsumerState<LogSheet>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Bottom sheet chrome
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SheetDragHandle extends StatelessWidget {
+  const _SheetDragHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10, bottom: 6),
+      child: Center(
+        child: Container(
+          width: 42,
+          height: 5,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LogSheetSliverHeader extends StatelessWidget {
+  final Widget sheetHandle;
+  final Widget searchBar;
+  final Widget categoryPills;
+
+  const _LogSheetSliverHeader({
+    required this.sheetHandle,
+    required this.searchBar,
+    required this.categoryPills,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          sheetHandle,
+          searchBar,
+          const SizedBox(height: 10),
+          categoryPills,
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Search bar
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _SearchBar extends StatelessWidget {
+class _SearchBar extends StatefulWidget {
   final TextEditingController controller;
   final VoidCallback onClear;
 
   const _SearchBar({required this.controller, required this.onClear});
 
   @override
+  State<_SearchBar> createState() => _SearchBarState();
+}
+
+class _SearchBarState extends State<_SearchBar> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onText);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onText);
+    super.dispose();
+  }
+
+  void _onText() => setState(() {});
+
+  @override
   Widget build(BuildContext context) {
+    final hasText = widget.controller.text.isNotEmpty;
     return TextField(
-      controller: controller,
+      controller: widget.controller,
       style: GoogleFonts.inter(fontSize: 14, color: Colors.white),
       cursorColor: kLogPurple,
       decoration: InputDecoration(
-        hintText: 'Search exercises…',
+        isDense: true,
+        hintText: 'Search',
         hintStyle: GoogleFonts.inter(
-            fontSize: 14, color: Colors.white.withValues(alpha: 0.3)),
-        prefixIcon: Icon(Icons.search_rounded,
-            color: Colors.white.withValues(alpha: 0.3), size: 18),
-        suffixIcon: controller.text.isNotEmpty
-            ? GestureDetector(
-                onTap: onClear,
-                child: Icon(Icons.close_rounded,
-                    size: 18, color: Colors.white.withValues(alpha: 0.4)))
+          fontSize: 14,
+          color: Colors.white.withValues(alpha: 0.32),
+        ),
+        prefixIcon: Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: Icon(
+            Icons.search_rounded,
+            color: Colors.white.withValues(alpha: 0.35),
+            size: 22,
+          ),
+        ),
+        prefixIconConstraints:
+            const BoxConstraints(minWidth: 40, minHeight: 44),
+        suffixIcon: hasText
+            ? IconButton(
+                onPressed: widget.onClear,
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 20,
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+              )
             : null,
         filled: true,
-        fillColor: kLogSurface,
-        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        fillColor: Colors.white.withValues(alpha: 0.06),
+        contentPadding:
+            const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
         border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none),
+          borderRadius: BorderRadius.circular(26),
+          borderSide: BorderSide.none,
+        ),
         enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide:
-                BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+          borderRadius: BorderRadius.circular(26),
+          borderSide: BorderSide(
+            color: Colors.white.withValues(alpha: 0.09),
+          ),
+        ),
         focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: kLogPurple.withValues(alpha: 0.5))),
+          borderRadius: BorderRadius.circular(26),
+          borderSide: BorderSide(
+            color: kLogPurple.withValues(alpha: 0.55),
+            width: 1.2,
+          ),
+        ),
       ),
     );
   }
@@ -1158,17 +1335,21 @@ class _TopBar extends StatelessWidget {
               ),
               RankBadge(level: level, size: 26, totalScore: total),
               const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onHistoryTap,
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(10),
+              Material(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(9),
+                child: InkWell(
+                  onTap: onHistoryTap,
+                  borderRadius: BorderRadius.circular(9),
+                  child: const SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Icon(
+                      Icons.history_rounded,
+                      size: 17,
+                      color: Colors.white54,
+                    ),
                   ),
-                  child: const Icon(Icons.history_rounded,
-                      size: 20, color: Colors.white54),
                 ),
               ),
             ],

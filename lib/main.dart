@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
+import 'core/theme.dart';
 import 'bootstrap/config_error_app.dart';
 import 'bootstrap/local_env.dart' show readLocalEnvPairs;
 import 'bootstrap/supabase_public_config.dart';
@@ -41,7 +42,12 @@ Future<void> main() async {
 
   await Supabase.initialize(url: url, anonKey: anonKey);
 
-  runApp(const ProviderScope(child: JarsApp()));
+  runApp(
+    const ColoredBox(
+      color: JarsColors.background,
+      child: ProviderScope(child: JarsApp()),
+    ),
+  );
 }
 
 String _configHelpMessage() {

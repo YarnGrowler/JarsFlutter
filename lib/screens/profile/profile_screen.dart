@@ -24,6 +24,7 @@ import '../../providers/goal_provider.dart';
 import '../../providers/profile_provider.dart';
 import '../../core/user_display_name.dart';
 import '../../widgets/ui/rank_badge.dart';
+import 'notification_settings_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -260,6 +261,34 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
+                ListTile(
+                  leading: Icon(Icons.notifications_outlined,
+                      color: JarsColors.primary.withValues(alpha: 0.9)),
+                  title: Text(
+                    'Push notifications & devices',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: JarsColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Request permission (iPhone Home Screen), see registered devices, revoke old ones.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: JarsColors.textSecondary,
+                      height: 1.35,
+                    ),
+                  ),
+                  onTap: () {
+                    nav.pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const NotificationSettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 24),
                 ListTile(
                   leading: Icon(Icons.notifications_active_outlined,
                       color: JarsColors.primary.withValues(alpha: 0.9)),

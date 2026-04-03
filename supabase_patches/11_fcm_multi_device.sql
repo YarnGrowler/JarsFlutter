@@ -1,5 +1,6 @@
 -- One row per FCM installation; users can have many devices (phone + laptop + tablet).
 -- Upsert from the app on token; edge function sends to all tokens for the user.
+-- Same DDL is embedded in 00_apply_all.sql (section "11 user_fcm_tokens") for one-shot apply.
 
 CREATE TABLE IF NOT EXISTS public.user_fcm_tokens (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
