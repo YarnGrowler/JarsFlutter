@@ -145,9 +145,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   @override
   Widget build(BuildContext context) {
     final status = _settings?.authorizationStatus;
-    final statusLabel = _settings == null
+    final statusLabel = status == null
         ? 'Unknown — tap Enable to refresh'
-        : NotificationService.describeAuthorization(status!);
+        : NotificationService.describeAuthorization(status);
 
     return Scaffold(
       backgroundColor: JarsColors.surface,
@@ -333,8 +333,11 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       )
                     else
                       ..._devices.map((d) {
-                        final seen = d.lastSeenAt != null
-                            ? DateFormat.MMMd().add_jm().format(d.lastSeenAt!.toLocal())
+                        final seenAt = d.lastSeenAt;
+                        final seen = seenAt != null
+                            ? DateFormat.MMMd()
+                                .add_jm()
+                                .format(seenAt.toLocal())
                             : '—';
                         final here = _isThisDevice(d);
                         return Card(

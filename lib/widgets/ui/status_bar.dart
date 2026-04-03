@@ -12,8 +12,10 @@ import '../../services/supabase_service.dart';
 
 class StatusBar extends ConsumerWidget {
   final VoidCallback? onLogTap;
+  /// Room admin: tap the group goal strip to open set-goal sheet (Room screen).
+  final VoidCallback? onGroupGoalTap;
 
-  const StatusBar({super.key, this.onLogTap});
+  const StatusBar({super.key, this.onLogTap, this.onGroupGoalTap});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,6 +42,7 @@ class StatusBar extends ConsumerWidget {
                 ? _GroupGoalProgressStrip(
                     progress: data,
                     isRoomAdmin: isRoomAdmin,
+                    onAdminRowTap: isRoomAdmin ? onGroupGoalTap : null,
                     onCancelGoal: isRoomAdmin
                         ? () async {
                             final g = data.goal;
@@ -189,11 +192,13 @@ class StatusBar extends ConsumerWidget {
 class _GroupGoalProgressStrip extends StatelessWidget {
   final GroupGoalProgress progress;
   final bool isRoomAdmin;
+  final VoidCallback? onAdminRowTap;
   final VoidCallback? onCancelGoal;
 
   const _GroupGoalProgressStrip({
     required this.progress,
     required this.isRoomAdmin,
+    this.onAdminRowTap,
     this.onCancelGoal,
   });
 
@@ -206,7 +211,7 @@ class _GroupGoalProgressStrip extends StatelessWidget {
     final pct = (p.progress * 100).clamp(0, 100).round();
     final fill = p.progress.clamp(0.0, 1.0);
 
-    final body = Column(
+    final core = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -274,6 +279,27 @@ class _GroupGoalProgressStrip extends StatelessWidget {
             height: 1.3,
           ),
         ),
+      ],
+    );
+
+    final tappableCore = onAdminRowTap != null
+        ? Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onAdminRowTap,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: core,
+              ),
+            ),
+          )
+        : core;
+
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        tappableCore,
         if (isRoomAdmin && onCancelGoal != null) ...[
           const SizedBox(height: 8),
           Align(

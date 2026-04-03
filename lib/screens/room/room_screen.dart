@@ -18,6 +18,7 @@ import '../../services/reaction_service.dart';
 import '../../services/supabase_service.dart';
 import '../../services/wake_nudge_service.dart';
 import '../../widgets/feed/feed_card.dart';
+import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../widgets/sheets/room_sheets.dart';
 import '../../widgets/ui/rivalry_banner.dart';
 import '../../widgets/ui/status_bar.dart';
@@ -158,21 +159,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final row = items[index];
-                        final delayMs = (index * 42).clamp(0, 520);
                         return _buildFeedItem(
-                                context, row.log, row.reactions)
-                            .animate()
-                            .fadeIn(
-                              duration: 320.ms,
-                              delay: Duration(milliseconds: delayMs),
-                              curve: Curves.easeOutCubic,
-                            )
-                            .slideY(
-                              begin: 0.05,
-                              duration: 320.ms,
-                              delay: Duration(milliseconds: delayMs),
-                              curve: Curves.easeOutCubic,
-                            );
+                          context,
+                          row.log,
+                          row.reactions,
+                        );
                       },
                     ),
                   );
@@ -192,8 +183,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             // Status Bar
             myScoreAsync.when(
               data: (score) {
+                final uid = SupabaseService.currentUserId;
+                final isAdmin =
+                    uid != null && uid == room.adminId;
                 return StatusBar(
                   onLogTap: () => context.go('/log'),
+                  onGroupGoalTap: isAdmin
+                      ? () => showGroupGoalSheet(context, ref, room.id)
+                      : null,
                 );
               },
               loading: () => const SizedBox.shrink(),

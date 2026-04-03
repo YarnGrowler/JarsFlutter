@@ -260,16 +260,7 @@ class _BreakdownTab extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(
             children: [
-              RankProgressArc(totalScore: score.totalScore)
-                  .animate()
-                  .fadeIn(
-                      duration: 420.ms, curve: Curves.easeOutCubic)
-                  .scale(
-                    begin: const Offset(0.88, 0.88),
-                    end: const Offset(1, 1),
-                    duration: 520.ms,
-                    curve: Curves.easeOutCubic,
-                  ),
+              RankProgressArc(totalScore: score.totalScore),
               const SizedBox(height: 24),
 
               Row(
@@ -278,50 +269,20 @@ class _BreakdownTab extends ConsumerWidget {
                     label: 'Total Points',
                     value: '${score.totalScore.toInt()}',
                     color: JarsColors.gold,
-                  )
-                      .animate()
-                      .fadeIn(
-                          delay: 80.ms,
-                          duration: 350.ms,
-                          curve: Curves.easeOutCubic)
-                      .slideY(
-                          begin: 0.08,
-                          delay: 80.ms,
-                          duration: 350.ms,
-                          curve: Curves.easeOutCubic),
+                  ),
                   const SizedBox(width: 12),
                   _StatBox(
                     label: 'Streak',
                     value: '${score.streakCurrent}',
                     icon: '🔥',
                     color: JarsColors.green,
-                  )
-                      .animate()
-                      .fadeIn(
-                          delay: 140.ms,
-                          duration: 350.ms,
-                          curve: Curves.easeOutCubic)
-                      .slideY(
-                          begin: 0.08,
-                          delay: 140.ms,
-                          duration: 350.ms,
-                          curve: Curves.easeOutCubic),
+                  ),
                   const SizedBox(width: 12),
                   _StatBox(
                     label: 'Best Streak',
                     value: '${score.streakHighest}',
                     color: JarsColors.primary,
-                  )
-                      .animate()
-                      .fadeIn(
-                          delay: 200.ms,
-                          duration: 350.ms,
-                          curve: Curves.easeOutCubic)
-                      .slideY(
-                          begin: 0.08,
-                          delay: 200.ms,
-                          duration: 350.ms,
-                          curve: Curves.easeOutCubic),
+                  ),
                 ],
               ),
               const SizedBox(height: 24),
@@ -526,7 +487,6 @@ class _ExerciseBreakdownChartState extends State<_ExerciseBreakdownChart> {
         const SizedBox(height: 12),
         ...List.generate(_breakdowns.length, (i) {
           final b = _breakdowns[i];
-          final d = (i * 55).ms;
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Column(
@@ -564,15 +524,7 @@ class _ExerciseBreakdownChartState extends State<_ExerciseBreakdownChart> {
                 ),
               ],
             ),
-          )
-              .animate()
-              .fadeIn(delay: d, duration: 320.ms, curve: Curves.easeOutCubic)
-              .slideX(
-                begin: -0.03,
-                delay: d,
-                duration: 320.ms,
-                curve: Curves.easeOutCubic,
-              );
+          );
         }),
       ],
     );

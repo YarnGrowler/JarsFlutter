@@ -15,7 +15,6 @@ import '../../providers/feed_provider.dart';
 import '../../services/log_service.dart';
 import '../../services/room_service.dart';
 import '../../services/exercise_service.dart';
-import '../../services/goal_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/supabase_service.dart';
 import '../../models/badge.dart';
@@ -457,10 +456,6 @@ class ProfileScreen extends ConsumerWidget {
           Navigator.pop(sheetCtx);
           _showCreateExercise(context, ref, room.id);
         },
-        onGroupGoal: () {
-          Navigator.pop(sheetCtx);
-          _showGroupGoal(context, ref, room.id);
-        },
       ),
     );
   }
@@ -564,116 +559,17 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  void _showGroupGoal(
-      BuildContext context, WidgetRef ref, String roomId) {
-    final targetController = TextEditingController();
-    final daysController = TextEditingController(text: '7');
-    final descController = TextEditingController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: JarsColors.surfaceRaised,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              24,
-              24,
-              24,
-              MediaQuery.of(context).viewInsets.bottom + 24,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: JarsColors.border,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Group Goal',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: JarsColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _SettingsField(
-                  label: 'Target Points (total)',
-                  controller: targetController,
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 16),
-                _SettingsField(
-                  label: 'Duration (days)',
-                  controller: daysController,
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 16),
-                _SettingsField(
-                  label: 'Description (optional)',
-                  controller: descController,
-                  keyboardType: TextInputType.text,
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final target =
-                          int.tryParse(targetController.text);
-                      final days =
-                          int.tryParse(daysController.text);
-                      if (target == null || days == null) return;
-
-                      await GoalService.createGoal(
-                        roomId: roomId,
-                        targetPoints: target,
-                        durationDays: days,
-                        description: descController.text.isEmpty
-                            ? null
-                            : descController.text,
-                      );
-                      ref.invalidate(groupGoalProvider);
-                      ref.invalidate(groupGoalProgressProvider);
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: const Text('Set Goal'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
 }
 
 class _AdminRoomSettingsSheet extends ConsumerStatefulWidget {
   final Room room;
   final BuildContext dialogContext;
   final VoidCallback onCreateExercise;
-  final VoidCallback onGroupGoal;
 
   const _AdminRoomSettingsSheet({
     required this.room,
     required this.dialogContext,
     required this.onCreateExercise,
-    required this.onGroupGoal,
   });
 
   @override
@@ -840,10 +736,6 @@ class _AdminRoomSettingsSheetState
                                 Navigator.pop(ctx);
                                 widget.onCreateExercise();
                               },
-                              onGroupGoal: () {
-                                Navigator.pop(ctx);
-                                widget.onGroupGoal();
-                              },
                             ),
                           );
                         },
@@ -872,7 +764,7 @@ class _AdminRoomSettingsSheetState
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Wake card, goals, exercises, group goal',
+                                    'Wake card, goals, exercises',
                                     style: GoogleFonts.inter(
                                       fontSize: 12,
                                       color: JarsColors.textTertiary,
@@ -1030,12 +922,10 @@ class _AdminRoomSettingsSheetState
 class _RoomCustomizationSheet extends ConsumerStatefulWidget {
   final Room room;
   final VoidCallback onCreateExercise;
-  final VoidCallback onGroupGoal;
 
   const _RoomCustomizationSheet({
     required this.room,
     required this.onCreateExercise,
-    required this.onGroupGoal,
   });
 
   @override
@@ -1286,15 +1176,6 @@ class _RoomCustomizationSheetState
                 onPressed: widget.onCreateExercise,
                 icon: const Icon(Icons.add),
                 label: const Text('Add Custom Exercise'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                ),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: widget.onGroupGoal,
-                icon: const Icon(Icons.flag_outlined),
-                label: const Text('Set Group Goal'),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 48),
                 ),

@@ -3,7 +3,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
-import '../../widgets/debug/raw_notification_dom_test_button.dart';
 import '../../widgets/ui/auth_shell.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -132,7 +131,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                         duration: 1800.ms,
                         color: JarsColors.primary.withValues(alpha: 0.25),
                       ),
-                  const RawNotificationDomTestButton(),
                   const SizedBox(height: 36),
                   Text(
                     'Earn your rank',
