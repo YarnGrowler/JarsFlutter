@@ -26,6 +26,32 @@ class LogService {
     return ExerciseLog.fromJson(data);
   }
 
+  /// Server may insert idle "__WAKE__" feed rows (see [ensureIdleWakeCards]).
+  static Future<void> ensureIdleWakeCards(String roomId) async {
+    try {
+      await _db.rpc('ensure_idle_wake_cards', params: {'p_room_id': roomId});
+    } catch (_) {}
+  }
+
+  /// Max 2 pings per member per wake card (enforced by [send_wake_nudge] RPC).
+  static Future<void> sendWakeNudge(String logId) async {
+    await _db.rpc('send_wake_nudge', params: {'p_log_id': logId});
+  }
+
+  /// Room admin: insert a wake card for [targetUserId] (cooldown in SQL).
+  static Future<void> adminPostWakeReminder({
+    required String roomId,
+    required String targetUserId,
+  }) async {
+    await _db.rpc(
+      'admin_post_wake_reminder',
+      params: {
+        'p_room_id': roomId,
+        'p_target_user_id': targetUserId,
+      },
+    );
+  }
+
   static Future<List<ExerciseLog>> getRoomFeed(String roomId, {int limit = 50}) async {
     final rows = await _db
         .from('exercise_logs')
@@ -114,13 +140,15 @@ class LogService {
       String roomId, String userId) async {
     final rows = await _db
         .from('exercise_logs')
-        .select('points_earned, created_at')
+        .select('points_earned, created_at, exercise_name')
         .eq('room_id', roomId)
         .eq('user_id', userId)
         .order('created_at', ascending: true);
 
     final map = <DateTime, double>{};
     for (final row in rows) {
+      final name = row['exercise_name'] as String? ?? '';
+      if (name.startsWith('__')) continue;
       final pts = (row['points_earned'] as num?)?.toDouble() ?? 0.0;
       final raw = row['created_at'] as String?;
       if (raw == null) continue;

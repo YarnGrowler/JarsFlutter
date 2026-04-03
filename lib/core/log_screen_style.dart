@@ -13,6 +13,7 @@ const Color kLogNearBlack = Color(0xFF08080E);
 
 const Duration kLogCrossfade = Duration(milliseconds: 150);
 const Duration kRepBumpTotal = Duration(milliseconds: 180);
+const Duration kRepBumpPower = Duration(milliseconds: 260);
 const Duration kPointsAnimUp = Duration(milliseconds: 300);
 const Duration kPointsAnimDown = Duration(milliseconds: 150);
 

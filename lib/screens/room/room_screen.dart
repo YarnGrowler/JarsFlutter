@@ -6,11 +6,16 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
 import '../../models/exercise_log.dart';
 import '../../models/reaction.dart';
+import '../../models/room.dart';
 import '../../providers/active_room_provider.dart';
 import '../../providers/feed_provider.dart';
+import '../../providers/goal_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/room_provider.dart';
+import '../../services/log_service.dart';
 import '../../services/reaction_service.dart';
+import '../../services/supabase_service.dart';
+import '../../services/wake_nudge_service.dart';
 import '../../widgets/feed/feed_card.dart';
 import '../../widgets/sheets/room_sheets.dart';
 import '../../widgets/ui/rivalry_banner.dart';
@@ -59,7 +64,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        _buildMemberAvatars(),
+                        _buildMemberAvatars(room),
                       ],
                     ),
                   ),
@@ -136,6 +141,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       ref.invalidate(roomFeedProvider);
                       ref.invalidate(roomScoresProvider);
                       ref.invalidate(myScoreProvider);
+                      ref.invalidate(groupGoalProgressProvider);
                     },
                     child: ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -143,7 +149,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final row = items[index];
-                        return _buildFeedItem(row.log, row.reactions);
+                        return _buildFeedItem(
+                            context, row.log, row.reactions);
                       },
                     ),
                   );
@@ -176,10 +183,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     );
   }
 
-  Widget _buildMemberAvatars() {
-    final membersAsync = ref.watch(roomMembersProvider(
-      ref.watch(activeRoomProvider)?.id ?? '',
-    ));
+  Widget _buildMemberAvatars(Room room) {
+    final uid = SupabaseService.currentUserId;
+    final isAdmin = uid != null && uid == room.adminId;
+
+    final membersAsync = ref.watch(roomMembersProvider(room.id));
 
     return membersAsync.when(
       data: (members) {
@@ -192,7 +200,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           const Color(0xFFBA55D3),
         ];
 
-        return SizedBox(
+        return GestureDetector(
+          onTap: isAdmin && members.isNotEmpty
+              ? () => showRoomMembersAdminSheet(context, ref, room)
+              : null,
+          behavior: HitTestBehavior.translucent,
+          child: SizedBox(
           height: 24,
           child: Row(
             children: [
@@ -235,6 +248,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 ),
             ],
           ),
+        ),
         );
       },
       loading: () => const SizedBox(height: 24),
@@ -250,11 +264,21 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     return '?';
   }
 
-  Widget _buildFeedItem(ExerciseLog log, List<Reaction> reactions) {
-    return FeedCard(
+  Widget _buildFeedItem(
+      BuildContext context, ExerciseLog log, List<Reaction> reactions) {
+    final room = ref.watch(activeRoomProvider);
+    final uid = SupabaseService.currentUserId;
+    final isAdmin =
+        room != null && uid != null && uid == room.adminId;
+
+    final card = FeedCard(
       log: log,
       reactions: reactions,
-      onReact: log.isRankUpBroadcast
+      onReact: (log.isRankUpBroadcast ||
+              log.isWakeCard ||
+              log.isFirstLog ||
+              log.isMemberJoin ||
+              log.isMemberKick)
           ? null
           : (emoji) async {
               try {
@@ -271,6 +295,76 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 );
               }
             },
+      onWakeNudge: log.isWakeCard && uid != null && uid != log.userId
+          ? () async {
+              final err = await WakeNudgeService.nudgeAbsentMember(log);
+              if (!context.mounted) return;
+              if (err != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(err)),
+                );
+                return;
+              }
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Ping sent to ${log.username ?? 'them'}',
+                    style: GoogleFonts.inter(),
+                  ),
+                ),
+              );
+            }
+          : null,
+    );
+
+    if (!isAdmin) return card;
+
+    return Dismissible(
+      key: ValueKey('admin-dismiss-${log.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 22),
+        decoration: BoxDecoration(
+          color: const Color(0xFFC43C3C),
+          borderRadius: BorderRadius.circular(JarsRadius.card),
+        ),
+        child: Text(
+          'Delete',
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ),
+        ),
+      ),
+      confirmDismiss: (direction) async {
+        try {
+          await LogService.deleteLog(log.id);
+          ref.invalidate(roomFeedWithReactionsProvider);
+          ref.invalidate(roomFeedProvider);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Message removed from room feed'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+          return true;
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Could not delete: $e'),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+          return false;
+        }
+      },
+      child: card,
     );
   }
 

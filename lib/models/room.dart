@@ -8,6 +8,10 @@ class Room {
   final DateTime? dailyGoalSetAt;
   final int streakMinimum;
   final DateTime createdAt;
+  /// Hours without a real log before a wake/ghost card. `0` = disabled.
+  final int idleNudgeHours;
+  /// True when the room requires a password to join (from safe RPC projection).
+  final bool requiresJoinPassword;
 
   const Room({
     required this.id,
@@ -19,6 +23,8 @@ class Room {
     this.dailyGoalSetAt,
     this.streakMinimum = 10,
     required this.createdAt,
+    this.idleNudgeHours = 48,
+    this.requiresJoinPassword = false,
   });
 
   factory Room.fromJson(Map<String, dynamic> json) {
@@ -49,6 +55,10 @@ class Room {
       throw FormatException('Room JSON missing created_at: $json');
     }
 
+    final idle = asInt(json['idle_nudge_hours']);
+    final needsPw = json['join_password_required'] == true ||
+        json['requires_join_password'] == true;
+
     return Room(
       id: reqStr('id'),
       name: reqStr('name'),
@@ -59,6 +69,8 @@ class Room {
       dailyGoalSetAt: parseTs(json['daily_goal_set_at']),
       streakMinimum: asInt(json['streak_minimum']) ?? 10,
       createdAt: created,
+      idleNudgeHours: idle ?? 48,
+      requiresJoinPassword: needsPw,
     );
   }
 
@@ -72,6 +84,8 @@ class Room {
         'daily_goal_set_at': dailyGoalSetAt?.toIso8601String(),
         'streak_minimum': streakMinimum,
         'created_at': createdAt.toIso8601String(),
+        'idle_nudge_hours': idleNudgeHours,
+        'join_password_required': requiresJoinPassword,
       };
 
   Room copyWith({
@@ -80,6 +94,8 @@ class Room {
     int? dailyGoalPoints,
     DateTime? dailyGoalSetAt,
     int? streakMinimum,
+    int? idleNudgeHours,
+    bool? requiresJoinPassword,
   }) {
     return Room(
       id: id,
@@ -91,6 +107,9 @@ class Room {
       dailyGoalSetAt: dailyGoalSetAt ?? this.dailyGoalSetAt,
       streakMinimum: streakMinimum ?? this.streakMinimum,
       createdAt: createdAt,
+      idleNudgeHours: idleNudgeHours ?? this.idleNudgeHours,
+      requiresJoinPassword:
+          requiresJoinPassword ?? this.requiresJoinPassword,
     );
   }
 }

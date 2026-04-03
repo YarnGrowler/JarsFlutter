@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ExerciseLog {
   final String id;
   final String roomId;
@@ -33,6 +35,9 @@ class ExerciseLog {
   static const kDeadPrefix     = '__DEAD__|';
   static const kFirstLogPrefix = '__FIRSTLOG__|';
   static const kCloseGapPrefix = '__CLOSEGAP__|';
+  static const kWakePrefix = '__WAKE__|';
+  static const kMemberJoinPrefix = '__JOIN__|';
+  static const kMemberKickPrefix = '__KICK__|';
 
   bool get isRankUpBroadcast    => exerciseName.startsWith(kRankUpPrefix);
   bool get isOvertake           => exerciseName.startsWith(kOvertakePrefix);
@@ -41,6 +46,9 @@ class ExerciseLog {
   bool get isDeadStreak         => exerciseName.startsWith(kDeadPrefix);
   bool get isFirstLog           => exerciseName.startsWith(kFirstLogPrefix);
   bool get isCloseGap           => exerciseName.startsWith(kCloseGapPrefix);
+  bool get isWakeCard           => exerciseName.startsWith(kWakePrefix);
+  bool get isMemberJoin        => exerciseName.startsWith(kMemberJoinPrefix);
+  bool get isMemberKick        => exerciseName.startsWith(kMemberKickPrefix);
 
   bool get isAnyBroadcast =>
       isRankUpBroadcast ||
@@ -49,7 +57,10 @@ class ExerciseLog {
       isPersonalRecord ||
       isDeadStreak ||
       isFirstLog ||
-      isCloseGap;
+      isCloseGap ||
+      isWakeCard ||
+      isMemberJoin ||
+      isMemberKick;
 
   String? get rankUpTitle {
     if (!isRankUpBroadcast) return null;
@@ -64,12 +75,33 @@ class ExerciseLog {
       kDeadPrefix,
       kFirstLogPrefix,
       kCloseGapPrefix,
+      kMemberJoinPrefix,
+      kMemberKickPrefix,
     ]) {
       if (exerciseName.startsWith(prefix)) {
         return exerciseName.substring(prefix.length);
       }
     }
     return null;
+  }
+
+  /// Parsed payload for [isWakeCard] rows (JSON after [kWakePrefix]).
+  WakeFeedPayload? get wakeFeedPayload {
+    if (!isWakeCard) return null;
+    final raw = exerciseName.length > kWakePrefix.length
+        ? exerciseName.substring(kWakePrefix.length)
+        : '';
+    try {
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      return WakeFeedPayload(
+        days: (m['days'] as num?)?.toInt() ?? 1,
+        rank: (m['rank'] as num?)?.toInt() ?? 0,
+        lastSeenIso: m['lastSeen'] as String? ?? '',
+        pick: (m['pick'] as num?)?.toInt() ?? 0,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   factory ExerciseLog.fromJson(Map<String, dynamic> json) {
@@ -102,3 +134,23 @@ class ExerciseLog {
         'points_earned': pointsEarned,
       };
 }
+
+class WakeFeedPayload {
+  final int days;
+  final int rank;
+  final String lastSeenIso;
+  final int pick;
+
+  const WakeFeedPayload({
+    required this.days,
+    required this.rank,
+    required this.lastSeenIso,
+    required this.pick,
+  });
+
+  DateTime? get lastSeenUtc {
+    if (lastSeenIso.isEmpty) return null;
+    return DateTime.tryParse(lastSeenIso);
+  }
+}
+

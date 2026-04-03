@@ -7,9 +7,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
+import '../../models/room.dart';
 import '../../providers/active_room_provider.dart';
+import '../../providers/feed_provider.dart';
+import '../../providers/goal_provider.dart';
 import '../../providers/room_provider.dart';
+import '../../providers/score_provider.dart';
+import '../../services/event_service.dart';
 import '../../services/room_service.dart';
+import '../../services/supabase_service.dart';
 
 class _SheetHandle extends StatelessWidget {
   const _SheetHandle();
@@ -65,11 +71,14 @@ class _JoinRoomSheet extends ConsumerStatefulWidget {
 
 class _JoinRoomSheetState extends ConsumerState<_JoinRoomSheet> {
   final _code = TextEditingController();
+  final _password = TextEditingController();
   bool _loading = false;
+  Room? _preview;
 
   @override
   void dispose() {
     _code.dispose();
+    _password.dispose();
     super.dispose();
   }
 
@@ -78,16 +87,28 @@ class _JoinRoomSheetState extends ConsumerState<_JoinRoomSheet> {
     if (code.length < 6) return;
     setState(() => _loading = true);
     try {
-      final room = await RoomService.joinByCode(code);
+      final pw = _password.text.trim();
+      final room = await RoomService.joinByCode(
+        code,
+        password: pw.isEmpty ? null : pw,
+      );
       if (!mounted) return;
       if (room != null) {
         ref.read(activeRoomProvider.notifier).setRoom(room);
         ref.invalidate(userRoomsProvider);
+        ref.invalidate(roomFeedWithReactionsProvider);
+        ref.invalidate(roomFeedProvider);
         Navigator.of(context).pop();
         context.go('/');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Room not found or full')),
+        );
+      }
+    } on InvalidRoomPasswordException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Wrong room password')),
         );
       }
     } catch (e) {
@@ -202,11 +223,48 @@ class _JoinRoomSheetState extends ConsumerState<_JoinRoomSheet> {
                             ),
                           ),
                         ),
-                        onChanged: (v) {
+                        onChanged: (v) async {
                           setState(() {});
-                          if (v.length == 6) _join();
+                          if (v.length < 6) {
+                            setState(() => _preview = null);
+                            return;
+                          }
+                          final r = await RoomService.peekRoomByCode(v);
+                          if (!mounted) return;
+                          setState(() => _preview = r);
+                          if (r != null && !r.requiresJoinPassword) {
+                            _join();
+                          }
                         },
                       ),
+                      if (_preview != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _preview!.name,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: JarsColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                      if (_preview?.requiresJoinPassword == true) ...[
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _password,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            labelText: 'Room password',
+                            hintText: 'Required for this room',
+                            filled: true,
+                            fillColor: JarsColors.background,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 28),
                       SizedBox(
                         width: double.infinity,
@@ -478,4 +536,377 @@ class _CreateRoomSheetState extends ConsumerState<_CreateRoomSheet> {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: room member list (kick / reset)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void _invalidateRoomLists(WidgetRef ref, String roomId) {
+  ref.invalidate(roomMembersProvider(roomId));
+  ref.invalidate(roomScoresProvider);
+  ref.invalidate(myScoreProvider);
+  ref.invalidate(groupGoalProgressProvider);
+  ref.invalidate(roomFeedProvider);
+  ref.invalidate(roomFeedWithReactionsProvider);
+}
+
+Future<void> showRoomMembersAdminSheet(
+  BuildContext context,
+  WidgetRef ref,
+  Room room,
+) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: JarsColors.surfaceRaised,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+    ),
+    builder: (sheetCtx) {
+      final maxH = MediaQuery.sizeOf(sheetCtx).height * 0.62;
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: JarsColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Members',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: JarsColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    color: JarsColors.textSecondary,
+                    onPressed: () => Navigator.pop(sheetCtx),
+                  ),
+                ],
+              ),
+              Text(
+                'Remove from room or reset their logs & points.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: JarsColors.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: maxH,
+                child: Consumer(
+                  builder: (_, cref, __) {
+                    final async = cref.watch(roomMembersProvider(room.id));
+                    return async.when(
+                      data: (members) {
+                        if (members.isEmpty) {
+                          return Center(
+                            child: Text(
+                              'No members',
+                              style: GoogleFonts.inter(
+                                color: JarsColors.textTertiary,
+                              ),
+                            ),
+                          );
+                        }
+                        return ListView.separated(
+                          itemCount: members.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1),
+                          itemBuilder: (_, i) {
+                            final m = members[i];
+                            final userId = m['user_id'] as String;
+                            final profiles = m['profiles'];
+                            final username = profiles is Map
+                                ? (profiles['username'] as String? ??
+                                    userId.substring(0, 8))
+                                : userId.substring(0, 8);
+                            final me = SupabaseService.currentUserId;
+                            final isSelf = me == userId;
+                            final isRoomAdmin = userId == room.adminId;
+
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                username,
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                  color: JarsColors.textPrimary,
+                                ),
+                              ),
+                              subtitle: Text(
+                                isRoomAdmin
+                                    ? 'Admin'
+                                    : (isSelf ? 'You' : 'Member'),
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: JarsColors.textTertiary,
+                                ),
+                              ),
+                              trailing: (isSelf || isRoomAdmin)
+                                  ? null
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        TextButton(
+                                          onPressed: () async {
+                                            final ok =
+                                                await showDialog<bool>(
+                                              context: sheetCtx,
+                                              builder: (dCtx) =>
+                                                  AlertDialog(
+                                                backgroundColor:
+                                                    JarsColors
+                                                        .surfaceRaised,
+                                                title: Text(
+                                                  'Reset $username?',
+                                                  style: GoogleFonts
+                                                      .spaceGrotesk(
+                                                    color: JarsColors
+                                                        .textPrimary,
+                                                  ),
+                                                ),
+                                                content: Text(
+                                                  'Deletes their workout logs in this room and sets their score to 0.',
+                                                  style:
+                                                      GoogleFonts.inter(
+                                                    color: JarsColors
+                                                        .textSecondary,
+                                                  ),
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            dCtx, false),
+                                                    child: const Text(
+                                                        'Cancel'),
+                                                  ),
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            dCtx, true),
+                                                    child: Text(
+                                                      'Reset',
+                                                      style: GoogleFonts
+                                                          .inter(
+                                                        color: JarsColors
+                                                            .gold,
+                                                        fontWeight:
+                                                            FontWeight
+                                                                .w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                            if (ok != true ||
+                                                !sheetCtx.mounted) {
+                                              return;
+                                            }
+                                            try {
+                                              await RoomService
+                                                  .adminResetRoomMember(
+                                                room.id,
+                                                userId,
+                                              );
+                                              _invalidateRoomLists(
+                                                  cref, room.id);
+                                              if (sheetCtx.mounted) {
+                                                ScaffoldMessenger.of(
+                                                        sheetCtx)
+                                                    .showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      '$username reset',
+                                                      style:
+                                                          GoogleFonts
+                                                              .inter(),
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            } catch (e) {
+                                              if (sheetCtx.mounted) {
+                                                ScaffoldMessenger.of(
+                                                        sheetCtx)
+                                                    .showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                        'Reset failed: $e'),
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                          },
+                                          child: Text(
+                                            'Reset',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: JarsColors.gold,
+                                            ),
+                                          ),
+                                        ),
+                                        TextButton(
+                                          onPressed: () async {
+                                            final ok =
+                                                await showDialog<bool>(
+                                              context: sheetCtx,
+                                              builder: (dCtx) =>
+                                                  AlertDialog(
+                                                backgroundColor:
+                                                    JarsColors
+                                                        .surfaceRaised,
+                                                title: Text(
+                                                  'Remove $username?',
+                                                  style: GoogleFonts
+                                                      .spaceGrotesk(
+                                                    color: JarsColors
+                                                        .textPrimary,
+                                                  ),
+                                                ),
+                                                content: Text(
+                                                  'They can re-join with the room code if you allow it.',
+                                                  style:
+                                                      GoogleFonts.inter(
+                                                    color: JarsColors
+                                                        .textSecondary,
+                                                  ),
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            dCtx, false),
+                                                    child: const Text(
+                                                        'Cancel'),
+                                                  ),
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            dCtx, true),
+                                                    child: Text(
+                                                      'Remove',
+                                                      style: GoogleFonts
+                                                          .inter(
+                                                        color: JarsColors
+                                                            .red,
+                                                        fontWeight:
+                                                            FontWeight
+                                                                .w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                            if (ok != true ||
+                                                !sheetCtx.mounted) {
+                                              return;
+                                            }
+                                            try {
+                                              await EventService
+                                                  .roomMemberKicked(
+                                                roomId: room.id,
+                                                removedUserId: userId,
+                                                removedUsername: username,
+                                                roomName: room.name,
+                                              );
+                                              await RoomService.kickMember(
+                                                room.id,
+                                                userId,
+                                              );
+                                              _invalidateRoomLists(
+                                                  cref, room.id);
+                                              cref.invalidate(
+                                                  roomFeedWithReactionsProvider);
+                                              cref.invalidate(
+                                                  roomFeedProvider);
+                                              if (sheetCtx.mounted) {
+                                                ScaffoldMessenger.of(
+                                                        sheetCtx)
+                                                    .showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      '$username removed',
+                                                      style:
+                                                          GoogleFonts
+                                                              .inter(),
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            } catch (e) {
+                                              if (sheetCtx.mounted) {
+                                                ScaffoldMessenger.of(
+                                                        sheetCtx)
+                                                    .showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                        'Remove failed: $e'),
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                          },
+                                          child: Text(
+                                            'Remove',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: JarsColors.red,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            );
+                          },
+                        );
+                      },
+                      loading: () => const Center(
+                        child: CircularProgressIndicator(
+                          color: JarsColors.primary,
+                        ),
+                      ),
+                      error: (e, _) => Center(
+                        child: Text(
+                          'Error: $e',
+                          style: GoogleFonts.inter(
+                            color: JarsColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }

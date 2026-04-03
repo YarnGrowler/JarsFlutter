@@ -392,7 +392,7 @@ class _ExerciseBreakdownChartState extends State<_ExerciseBreakdownChart> {
 
       final map = <String, double>{};
       for (final log in logs) {
-        if (log.isRankUpBroadcast) continue;
+        if (log.isAnyBroadcast) continue;
         map[log.exerciseName] =
             (map[log.exerciseName] ?? 0) + log.pointsEarned;
       }

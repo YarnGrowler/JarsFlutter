@@ -1,3 +1,4 @@
+import 'notification_service.dart';
 import 'supabase_service.dart';
 import '../models/reaction.dart';
 
@@ -65,7 +66,30 @@ class ReactionService {
       'emoji': emoji,
     }).select().single();
 
-    return Reaction.fromJson(data);
+    final reaction = Reaction.fromJson(data);
+
+    final logRow = await _db
+        .from('exercise_logs')
+        .select('user_id')
+        .eq('id', logId)
+        .maybeSingle();
+    final ownerId = logRow?['user_id'] as String?;
+    if (ownerId != null && ownerId != userId) {
+      String reactorLabel = 'Someone';
+      final me = await _db
+          .from('profiles')
+          .select('username')
+          .eq('id', userId)
+          .maybeSingle();
+      final u = me?['username'] as String?;
+      if (u != null && u.isNotEmpty) reactorLabel = u;
+      await NotificationService.sendNotification(
+        targetUserId: ownerId,
+        body: '$reactorLabel reacted $emoji on your log.',
+      );
+    }
+
+    return reaction;
   }
 
   static Future<void> removeReaction(String reactionId) async {

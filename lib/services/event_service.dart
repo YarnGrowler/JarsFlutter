@@ -4,6 +4,7 @@ import 'supabase_service.dart';
 import 'log_service.dart';
 import 'notification_service.dart';
 import 'score_service.dart';
+import '../core/member_feed_quips.dart';
 import '../models/exercise_log.dart';
 import '../models/score.dart';
 
@@ -24,11 +25,19 @@ class EventService {
     required double pointsAfter,
     required int streakBefore,
     required int streakAfter,
+    required String currentLogId,
   }) async {
     try {
       await Future.wait([
         _checkOvertake(roomId, userId, username, pointsBefore, pointsAfter),
-        _checkPersonalRecord(roomId, userId, username, exerciseName, repCount),
+        _checkPersonalRecord(
+          roomId,
+          userId,
+          username,
+          exerciseName,
+          repCount,
+          currentLogId,
+        ),
         _checkFirstLogOfDay(roomId, userId, username),
         _checkStreakMilestone(roomId, userId, username, streakBefore, streakAfter),
         _checkDeadStreak(roomId, userId, username, streakBefore, streakAfter),
@@ -67,6 +76,13 @@ class EventService {
           targetUserId: score.userId,
           body: '$username just passed you. You\'re losing ground.',
         );
+        // Everyone else in the room (rivalry feed on phone too)
+        await NotificationService.notifyRoomMembersExceptIds(
+          roomId: roomId,
+          excludeUserIds: {userId, score.userId},
+          body:
+              '$username overtook $overtakenName — $gap pts now separate them.',
+        );
         break; // one card per log is enough
       }
     }
@@ -80,32 +96,37 @@ class EventService {
     String username,
     String exerciseName,
     int repCount,
+    String currentLogId,
   ) async {
     final logs = await LogService.getUserLogs(roomId, userId, limit: 500);
-    int prevBest = 0;
-    for (final log in logs) {
-      if (log.exerciseName == exerciseName && !log.isAnyBroadcast) {
-        if (log.count > prevBest) prevBest = log.count;
-      }
+    final prior = logs
+        .where(
+          (l) =>
+              l.exerciseName == exerciseName &&
+              !l.isAnyBroadcast &&
+              l.id != currentLogId,
+        )
+        .toList();
+    if (prior.isEmpty) return;
+
+    var prevBest = 0;
+    for (final log in prior) {
+      if (log.count > prevBest) prevBest = log.count;
     }
-    // The current log is the latest so prevBest includes this one.
-    // Only broadcast if it's strictly greater than ALL previous.
-    // We already included the current log in getUserLogs, so compare > prevBest
-    // means the current log exceeds all history → that would always be true on
-    // the first log. Filter: only broadcast if prevBest exists (sessions > 1).
-    final previousSessions = logs
-        .where((l) => l.exerciseName == exerciseName && !l.isAnyBroadcast)
-        .length;
-    if (previousSessions <= 1) return; // first ever session — skip
-    if (repCount >= prevBest) {
-      await _insertBroadcast(
-        roomId: roomId,
-        userId: userId,
-        prefix: ExerciseLog.kPrPrefix,
-        payload:
-            '💥 $username set a new record · $repCount $exerciseName (was ${prevBest - 1})',
-      );
-    }
+    if (repCount <= prevBest) return;
+
+    await _insertBroadcast(
+      roomId: roomId,
+      userId: userId,
+      prefix: ExerciseLog.kPrPrefix,
+      payload:
+          '💥 $username set a new record · $repCount $exerciseName (was $prevBest)',
+    );
+    await NotificationService.notifyRoomMembersExcept(
+      roomId: roomId,
+      excludeUserId: userId,
+      body: '$username PR · $repCount× $exerciseName (prev $prevBest)',
+    );
   }
 
   // ── First Log of Day ───────────────────────────────────────────────────────
@@ -144,6 +165,11 @@ class EventService {
         prefix: ExerciseLog.kFirstLogPrefix,
         payload: '⚡ $username just woke up · $timeStr',
       );
+      await NotificationService.notifyRoomMembersExcept(
+        roomId: roomId,
+        excludeUserId: userId,
+        body: '$username\'s first log today · $timeStr',
+      );
     }
   }
 
@@ -164,6 +190,11 @@ class EventService {
           userId: userId,
           prefix: ExerciseLog.kStreakPrefix,
           payload: '🔥 $username is on a $m-day streak',
+        );
+        await NotificationService.notifyRoomMembersExcept(
+          roomId: roomId,
+          excludeUserId: userId,
+          body: '$username hit a $m-day streak 🔥',
         );
         break;
       }
@@ -186,6 +217,11 @@ class EventService {
         userId: userId,
         prefix: ExerciseLog.kDeadPrefix,
         payload: "💀 $username's $streakBefore-day streak just ended",
+      );
+      await NotificationService.notifyRoomMembersExcept(
+        roomId: roomId,
+        excludeUserId: userId,
+        body: '$username\'s $streakBefore-day streak ended',
       );
     }
   }
@@ -261,6 +297,67 @@ class EventService {
       'weight': 0,
       'points_earned': 0,
     });
+  }
+
+  /// Feed + push when someone joins via room code.
+  static Future<void> roomMemberJoined({
+    required String roomId,
+    required String userId,
+    required String username,
+    required String roomName,
+  }) async {
+    try {
+      final pick =
+          (userId.hashCode ^ roomId.hashCode).abs() % 8;
+      await _insertBroadcast(
+        roomId: roomId,
+        userId: userId,
+        prefix: ExerciseLog.kMemberJoinPrefix,
+        payload: MemberFeedQuips.joinFeedLine(username, pick),
+      );
+      await NotificationService.notifyRoomMembersExcept(
+        roomId: roomId,
+        excludeUserId: userId,
+        body: '$username joined $roomName',
+      );
+    } catch (e, st) {
+      developer.log('EventService.roomMemberJoined: $e',
+          name: 'Jars', error: e, stackTrace: st);
+    }
+  }
+
+  /// Feed + push when a member is removed (admin kick).
+  static Future<void> roomMemberKicked({
+    required String roomId,
+    required String removedUserId,
+    required String removedUsername,
+    required String roomName,
+  }) async {
+    try {
+      final actorId = SupabaseService.currentUserId;
+      if (actorId == null) return;
+
+      final pick =
+          (removedUserId.hashCode ^ roomId.hashCode).abs() % 8;
+      await _insertBroadcast(
+        roomId: roomId,
+        userId: actorId,
+        prefix: ExerciseLog.kMemberKickPrefix,
+        payload: MemberFeedQuips.kickFeedLine(removedUsername, pick),
+      );
+      await NotificationService.notifyRoomMembersExceptIds(
+        roomId: roomId,
+        excludeUserIds: {removedUserId},
+        body: '$removedUsername was removed from $roomName',
+      );
+      await NotificationService.sendNotification(
+        targetUserId: removedUserId,
+        body: 'You were removed from $roomName.',
+      );
+    } catch (e, st) {
+      developer.log('EventService.roomMemberKicked: $e',
+          name: 'Jars', error: e, stackTrace: st);
+    }
   }
 }
 

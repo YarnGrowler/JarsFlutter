@@ -14,9 +14,11 @@ import '../../core/theme.dart';
 import '../../models/exercise.dart';
 import '../../providers/active_room_provider.dart';
 import '../../providers/exercise_provider.dart';
+import '../../providers/goal_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../services/event_service.dart';
 import '../../services/log_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/score_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/ui/rank_badge.dart';
@@ -57,11 +59,11 @@ class _LogSheetState extends ConsumerState<LogSheet>
   String _searchQuery = '';
   bool _searchActive = false;
 
-  // rep number bump animation
   final _numberKey = GlobalKey();
   final _random = math.Random();
   late AnimationController _repBump;
   double _repBumpTurn = 0;
+  bool _powerRepBump = false;
 
   // weight picker
   bool _weightPanelOpen = false;
@@ -154,12 +156,18 @@ class _LogSheetState extends ConsumerState<LogSheet>
     ).contains(local);
   }
 
-  // ── Rep bump animation ─────────────────────────────────────────────────────
+  // ── Rep bump (~80% original shake, ~20% bigger scale/tilt + longer) ────────
+  Duration get _repBumpDuration =>
+      _powerRepBump ? kRepBumpPower : kRepBumpTotal;
+
+  double _bumpPeak() => _powerRepBump ? 0.28 : 0.18;
+
   double _bumpScale() {
     final t = _repBump.value;
-    if (t < 60 / 180) return 1 + 0.18 * (t / (60 / 180));
+    final peak = _bumpPeak();
+    if (t < 60 / 180) return 1 + peak * (t / (60 / 180));
     final t2 = (t - 60 / 180) / (120 / 180);
-    return 1.18 - 0.18 * Curves.easeOut.transform(t2.clamp(0.0, 1.0));
+    return 1 + peak - peak * Curves.easeOut.transform(t2.clamp(0.0, 1.0));
   }
 
   double _bumpTurn() {
@@ -168,16 +176,26 @@ class _LogSheetState extends ConsumerState<LogSheet>
       return _repBumpTurn * (t / (60 / 180)).clamp(0.0, 1.0);
     }
     final t2 = (t - 60 / 180) / (120 / 180);
-    return _repBumpTurn * (1 - Curves.easeOut.transform(t2.clamp(0.0, 1.0)));
+    return _repBumpTurn *
+        (1 - Curves.easeOut.transform(t2.clamp(0.0, 1.0)));
   }
 
   void _incrementRep() {
     if (_selectedExercise == null) return;
-    HapticFeedback.lightImpact();
+    final power = _random.nextDouble() < 0.2;
+    if (power) {
+      HapticFeedback.mediumImpact();
+    } else {
+      HapticFeedback.lightImpact();
+    }
+    final deg = power ? 6.0 : 2.0;
     setState(() {
       _reps++;
-      _repBumpTurn = (_random.nextBool() ? 1 : -1) * 2 * math.pi / 180;
+      _powerRepBump = power;
+      _repBumpTurn =
+          (_random.nextBool() ? 1 : -1) * deg * math.pi / 180;
     });
+    _repBump.duration = _repBumpDuration;
     _repBump.forward(from: 0);
   }
 
@@ -334,17 +352,23 @@ class _LogSheetState extends ConsumerState<LogSheet>
     if (_pickerOpen) return;
     _pickerOpen = true;
     HapticFeedback.mediumImpact();
-    showGeneralDialog<void>(
+    showModalBottomSheet<void>(
       context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.transparent,
-      pageBuilder: (ctx, _, __) => RadialRepPicker(
-        initialValue: _reps,
-        onClose: (v) {
-          Navigator.of(ctx).pop();
-          if (mounted) setState(() => _reps = v);
-        },
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF111118),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      builder: (ctx) {
+        return SafeArea(
+          child: RadialRepPicker(
+            initialValue: _reps,
+            onRepsChanged: (v) {
+              if (mounted) setState(() => _reps = v);
+            },
+          ),
+        );
+      },
     ).whenComplete(() {
       if (mounted) setState(() => _pickerOpen = false);
     });
@@ -384,6 +408,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
       );
       ref.invalidate(myScoreProvider);
       ref.invalidate(roomScoresProvider);
+      ref.invalidate(groupGoalProgressProvider);
 
       final after = await ScoreService.getUserScore(room.id, userId);
       final totalAfter = after?.totalScore ?? totalBefore + pts;
@@ -400,11 +425,19 @@ class _LogSheetState extends ConsumerState<LogSheet>
         pointsAfter: totalAfter,
         streakBefore: before?.streakCurrent ?? 0,
         streakAfter: after?.streakCurrent ?? 0,
+        currentLogId: log.id,
       ));
 
       if (newLevel.level > oldLevel.level) {
         await LogService.insertRankUpBroadcast(
             roomId: room.id, rankTitle: newLevel.title);
+        unawaited(
+          NotificationService.notifyRoomMembersExcept(
+            roomId: room.id,
+            excludeUserId: userId,
+            body: '$username leveled up to ${newLevel.title}!',
+          ),
+        );
         if (mounted) {
           await Navigator.of(context, rootNavigator: true).push(
             PageRouteBuilder<void>(
@@ -463,6 +496,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
       await ScoreService.subtractPoints(roomId: room.id, points: _undoPoints);
       ref.invalidate(myScoreProvider);
       ref.invalidate(roomScoresProvider);
+      ref.invalidate(groupGoalProgressProvider);
       if (mounted) setState(() => _undoLogId = null);
     } catch (_) {}
   }

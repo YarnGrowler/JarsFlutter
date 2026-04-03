@@ -1,13 +1,32 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-
+import 'event_service.dart';
 import 'profile_service.dart';
 import 'supabase_service.dart';
 import '../models/room.dart';
 import '../core/constants.dart';
 import '../core/exercise_data.dart';
+
+class InvalidRoomPasswordException implements Exception {}
+
+Future<void> _emitMemberJoinedFeed(Room room, String userId) async {
+  try {
+    final p = await ProfileService.getByUserId(userId);
+    final name = p?.username ?? 'Someone';
+    await EventService.roomMemberJoined(
+      roomId: room.id,
+      userId: userId,
+      username: name,
+      roomName: room.name,
+    );
+  } catch (e, st) {
+    developer.log('RoomService._emitMemberJoinedFeed: $e',
+        name: 'Jars', error: e, stackTrace: st);
+  }
+}
 
 class RoomService {
   static final _db = SupabaseService.client;
@@ -124,18 +143,12 @@ class RoomService {
     return room;
   }
 
-  static Future<Room?> joinByCode(String code) async {
-    final userId = SupabaseService.currentUserId!;
+  /// Preview room metadata by code (no membership). Returns null if code invalid.
+  static Future<Room?> peekRoomByCode(String code) async {
     await ProfileService.ensureProfileRow();
-
-    // Direct SELECT on rooms is blocked by RLS until you're a member.
-    // Use RPC: get_room_by_code (see supabase_patches/12_get_room_by_code_rpc.sql).
     final normalized = code.toUpperCase().trim();
-    final dynamic raw = await _db.rpc(
-      'get_room_by_code',
-      params: {'p_code': normalized},
-    );
-
+    final dynamic raw =
+        await _db.rpc('get_room_by_code', params: {'p_code': normalized});
     Map<String, dynamic>? row;
     if (raw == null) {
       return null;
@@ -145,36 +158,75 @@ class RoomService {
     } else if (raw is Map) {
       row = Map<String, dynamic>.from(raw);
     } else {
-      _log('joinByCode unexpected rpc shape', raw);
       return null;
     }
+    return Room.fromJson(row);
+  }
 
-    final room = Room.fromJson(row);
+  /// Join with optional [password] when [Room.requiresJoinPassword].
+  static Future<Room?> joinByCode(String code, {String? password}) async {
+    if (SupabaseService.currentUserId == null) {
+      throw StateError('Not signed in');
+    }
+    await ProfileService.ensureProfileRow();
 
-    final memberCount = await _db
-        .from('room_members')
-        .select()
-        .eq('room_id', room.id);
+    final normalized = code.toUpperCase().trim();
+    try {
+      final dynamic raw = await _db.rpc(
+        'join_room_with_code',
+        params: {
+          'p_code': normalized,
+          'p_password': password,
+        },
+      );
 
-    if (memberCount.length >= room.maxParticipants) return null;
+      Map<String, dynamic>? row;
+      if (raw == null) {
+        return null;
+      } else if (raw is List) {
+        if (raw.isEmpty) return null;
+        row = Map<String, dynamic>.from(raw.first as Map);
+      } else if (raw is Map) {
+        row = Map<String, dynamic>.from(raw);
+      } else {
+        _log('joinByCode unexpected rpc shape', raw);
+        return null;
+      }
 
-    await _db.from('room_members').upsert({
-      'room_id': room.id,
-      'user_id': userId,
-    });
+      final joined = Room.fromJson(row);
+      final uid = SupabaseService.currentUserId!;
+      unawaited(_emitMemberJoinedFeed(joined, uid));
+      return joined;
+    } catch (e) {
+      if (e.toString().contains('invalid_password')) {
+        throw InvalidRoomPasswordException();
+      }
+      rethrow;
+    }
+  }
 
-    await _db.from('scores').upsert({
-      'room_id': room.id,
-      'user_id': userId,
-      'total_score': 0,
-      'daily_points': 0,
-      'last_daily_reset': DateTime.now().toIso8601String().split('T')[0],
-      'streak_current': 0,
-      'streak_highest': 0,
-      'updated_at': DateTime.now().toIso8601String(),
-    });
+  /// Admin: set [plainPassword] empty/null to clear protection.
+  static Future<void> setRoomJoinPassword(
+    String roomId,
+    String? plainPassword,
+  ) async {
+    await _db.rpc(
+      'set_room_join_password',
+      params: {
+        'p_room_id': roomId,
+        'p_password': plainPassword ?? '',
+      },
+    );
+  }
 
-    return room;
+  /// Prefer this over parsing full [Room] rows when the join-password flag is all you need.
+  static Future<bool> getJoinPasswordRequired(String roomId) async {
+    final row = await _db
+        .from('rooms')
+        .select('join_password_required')
+        .eq('id', roomId)
+        .maybeSingle();
+    return row?['join_password_required'] == true;
   }
 
   static Future<List<Room>> getUserRooms() async {
@@ -224,6 +276,20 @@ class RoomService {
         .delete()
         .eq('room_id', roomId)
         .eq('user_id', userId);
+  }
+
+  /// Admin only: delete this member's logs in the room and zero their score.
+  static Future<void> adminResetRoomMember(
+    String roomId,
+    String userId,
+  ) async {
+    await _db.rpc(
+      'admin_reset_room_member',
+      params: {
+        'p_room_id': roomId,
+        'p_user_id': userId,
+      },
+    );
   }
 
   static Future<List<Map<String, dynamic>>> getRoomMembers(String roomId) async {

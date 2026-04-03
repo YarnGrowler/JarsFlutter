@@ -9,6 +9,7 @@ final roomFeedProvider =
     FutureProvider<List<ExerciseLog>>((ref) async {
   final room = ref.watch(activeRoomProvider);
   if (room == null) return [];
+  await LogService.ensureIdleWakeCards(room.id);
   return LogService.getRoomFeed(room.id);
 });
 
@@ -20,6 +21,7 @@ final roomFeedWithReactionsProvider =
         (ref) async {
   final room = ref.watch(activeRoomProvider);
   if (room == null) return [];
+  await LogService.ensureIdleWakeCards(room.id);
   final logs = await LogService.getRoomFeed(room.id);
   if (logs.isEmpty) return [];
   final ids = logs.map((l) => l.id).toList();

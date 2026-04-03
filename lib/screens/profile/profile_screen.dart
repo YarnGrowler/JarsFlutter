@@ -11,6 +11,8 @@ import '../../providers/score_provider.dart';
 import '../../providers/streak_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/badge_service.dart';
+import '../../providers/feed_provider.dart';
+import '../../services/log_service.dart';
 import '../../services/room_service.dart';
 import '../../services/exercise_service.dart';
 import '../../services/goal_service.dart';
@@ -352,246 +354,25 @@ class ProfileScreen extends ConsumerWidget {
 
   void _showAdminSettings(
       BuildContext context, WidgetRef ref, Room room) {
-    final goalController = TextEditingController(
-      text: room.dailyGoalPoints?.toString() ?? '',
-    );
-    final streakController = TextEditingController(
-      text: room.streakMinimum.toString(),
-    );
-    final maxController = TextEditingController(
-      text: room.maxParticipants.toString(),
-    );
-
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: JarsColors.surfaceRaised,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              24,
-              24,
-              24,
-              MediaQuery.of(context).viewInsets.bottom + 24,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: JarsColors.border,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Room Settings',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: JarsColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _SettingsField(
-                  label: 'Daily Goal (pts)',
-                  controller: goalController,
-                ),
-                const SizedBox(height: 16),
-                _SettingsField(
-                  label: 'Streak Minimum (pts)',
-                  controller: streakController,
-                ),
-                const SizedBox(height: 16),
-                _SettingsField(
-                  label: 'Max Participants',
-                  controller: maxController,
-                ),
-                const SizedBox(height: 24),
-
-                // Custom exercise creation
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _showCreateExercise(context, ref, room.id);
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Custom Exercise'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Group goal
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _showGroupGoal(context, ref, room.id);
-                  },
-                  icon: const Icon(Icons.flag_outlined),
-                  label: const Text('Set Group Goal'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Save button
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final updates = <String, dynamic>{};
-                      final goal =
-                          int.tryParse(goalController.text);
-                      final streak =
-                          int.tryParse(streakController.text);
-                      final max =
-                          int.tryParse(maxController.text);
-
-                      if (goal != null) {
-                        updates['daily_goal_points'] = goal;
-                        updates['daily_goal_set_at'] =
-                            DateTime.now().toIso8601String();
-                      }
-                      if (streak != null) {
-                        updates['streak_minimum'] = streak;
-                      }
-                      if (max != null) {
-                        updates['max_participants'] = max;
-                      }
-
-                      if (updates.isNotEmpty) {
-                        await RoomService.updateRoom(
-                            room.id, updates);
-                        ref.invalidate(userRoomsProvider);
-                        ref
-                            .read(activeRoomProvider.notifier)
-                            .refresh();
-                      }
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: Text('Save',
-                        style: GoogleFonts.spaceGrotesk(
-                            fontWeight: FontWeight.w600)),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Reset room scores
-                Center(
-                  child: TextButton(
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          backgroundColor: JarsColors.surfaceRaised,
-                          title: Text('Reset Room Scores?',
-                              style: GoogleFonts.spaceGrotesk(
-                                  color: JarsColors.textPrimary)),
-                          content: Text(
-                              'All scores, streaks, and daily points will be set to 0. This cannot be undone.',
-                              style: GoogleFonts.inter(
-                                  color: JarsColors.textSecondary)),
-                          actions: [
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(ctx, false),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(ctx, true),
-                              child: Text('Reset',
-                                  style: GoogleFonts.inter(
-                                      color: JarsColors.red)),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirmed == true) {
-                        await RoomService.resetRoomScores(room.id);
-                        ref.invalidate(myScoreProvider);
-                        ref.invalidate(roomScoresProvider);
-                      }
-                    },
-                    child: Text(
-                      'Reset Room Scores',
-                      style: GoogleFonts.inter(
-                        color: JarsColors.red,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-
-                // Delete room
-                Center(
-                  child: TextButton(
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          backgroundColor: JarsColors.surfaceRaised,
-                          title: Text('Delete Room?',
-                              style: GoogleFonts.spaceGrotesk(
-                                  color: JarsColors.textPrimary)),
-                          content: Text(
-                              'This will remove the room and all data.',
-                              style: GoogleFonts.inter(
-                                  color: JarsColors.textSecondary)),
-                          actions: [
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(ctx, false),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(ctx, true),
-                              child: Text('Delete',
-                                  style: GoogleFonts.inter(
-                                      color: JarsColors.red)),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirmed == true) {
-                        await RoomService.deleteRoom(room.id);
-                        ref.invalidate(userRoomsProvider);
-                        ref
-                            .read(activeRoomProvider.notifier)
-                            .clear();
-                      }
-                    },
-                    child: Text(
-                      'Delete Room',
-                      style: GoogleFonts.inter(
-                        color: JarsColors.red,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (sheetCtx) => _AdminRoomSettingsSheet(
+        room: room,
+        dialogContext: context,
+        onCreateExercise: () {
+          Navigator.pop(sheetCtx);
+          _showCreateExercise(context, ref, room.id);
+        },
+        onGroupGoal: () {
+          Navigator.pop(sheetCtx);
+          _showGroupGoal(context, ref, room.id);
+        },
+      ),
     );
   }
 
@@ -774,6 +555,7 @@ class ProfileScreen extends ConsumerWidget {
                             : descController.text,
                       );
                       ref.invalidate(groupGoalProvider);
+                      ref.invalidate(groupGoalProgressProvider);
                       if (context.mounted) Navigator.pop(context);
                     },
                     child: const Text('Set Goal'),
@@ -784,6 +566,853 @@ class ProfileScreen extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _AdminRoomSettingsSheet extends ConsumerStatefulWidget {
+  final Room room;
+  final BuildContext dialogContext;
+  final VoidCallback onCreateExercise;
+  final VoidCallback onGroupGoal;
+
+  const _AdminRoomSettingsSheet({
+    required this.room,
+    required this.dialogContext,
+    required this.onCreateExercise,
+    required this.onGroupGoal,
+  });
+
+  @override
+  ConsumerState<_AdminRoomSettingsSheet> createState() =>
+      _AdminRoomSettingsSheetState();
+}
+
+class _AdminRoomSettingsSheetState
+    extends ConsumerState<_AdminRoomSettingsSheet> {
+  late final TextEditingController nameController;
+
+  bool _joinPasswordRequired = false;
+
+  Future<void> _refreshJoinPasswordFlag() async {
+    final v = await RoomService.getJoinPasswordRequired(widget.room.id);
+    if (mounted) setState(() => _joinPasswordRequired = v);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final room = widget.room;
+    _joinPasswordRequired = room.requiresJoinPassword;
+    RoomService.getJoinPasswordRequired(room.id).then((required) {
+      if (!mounted) return;
+      setState(() => _joinPasswordRequired = required);
+    });
+    nameController = TextEditingController(text: room.name);
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openJoinPasswordSheet() async {
+    final room = widget.room;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: JarsColors.surfaceRaised,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _RoomJoinPasswordSheet(
+        roomId: room.id,
+        joinPasswordOn: _joinPasswordRequired,
+        onChanged: () async {
+          await _refreshJoinPasswordFlag();
+          ref.invalidate(userRoomsProvider);
+          ref.read(activeRoomProvider.notifier).refresh();
+        },
+      ),
+    );
+    await _refreshJoinPasswordFlag();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final room = widget.room;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+        ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            12,
+            24,
+            bottomInset > 0 ? bottomInset + 16 : 24,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: JarsColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Room Settings',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: JarsColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SettingsField(
+                        label: 'Room name',
+                        controller: nameController,
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _joinPasswordRequired
+                                ? Icons.lock_outline_rounded
+                                : Icons.lock_open_rounded,
+                            size: 18,
+                            color: JarsColors.textSecondary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Join password',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: JarsColors.textSecondary,
+                                  ),
+                                ),
+                                Text(
+                                  _joinPasswordRequired
+                                      ? 'On — required for new members'
+                                      : 'Off — room code only',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: JarsColors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _openJoinPasswordSheet,
+                            child: const Text('Change'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      OutlinedButton(
+                        onPressed: () {
+                          showModalBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: JarsColors.surfaceRaised,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(20)),
+                            ),
+                            builder: (ctx) => _RoomCustomizationSheet(
+                              room: room,
+                              onCreateExercise: () {
+                                Navigator.pop(ctx);
+                                widget.onCreateExercise();
+                              },
+                              onGroupGoal: () {
+                                Navigator.pop(ctx);
+                                widget.onGroupGoal();
+                              },
+                            ),
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: JarsColors.textPrimary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 14),
+                          side: const BorderSide(color: JarsColors.border),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.tune_rounded,
+                                color: JarsColors.primary),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Customization',
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: JarsColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Wake card, goals, exercises, group goal',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: JarsColors.textTertiary,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.chevron_right_rounded,
+                                color: JarsColors.textTertiary),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            final name = nameController.text.trim();
+                            if (name.isNotEmpty) {
+                              await RoomService.updateRoom(room.id, {
+                                'name': name,
+                              });
+                            }
+                            ref.invalidate(userRoomsProvider);
+                            ref.invalidate(groupGoalProgressProvider);
+                            ref.read(activeRoomProvider.notifier).refresh();
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                          child: Text(
+                            'Save',
+                            style: GoogleFonts.spaceGrotesk(
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Center(
+                        child: TextButton(
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            final parent = widget.dialogContext;
+                            final confirmed = await showDialog<bool>(
+                              context: parent,
+                              builder: (ctx) => AlertDialog(
+                                backgroundColor: JarsColors.surfaceRaised,
+                                title: Text(
+                                  'Reset Room Scores?',
+                                  style: GoogleFonts.spaceGrotesk(
+                                    color: JarsColors.textPrimary,
+                                  ),
+                                ),
+                                content: Text(
+                                  'All scores, streaks, and daily points will be set to 0. This cannot be undone.',
+                                  style: GoogleFonts.inter(
+                                    color: JarsColors.textSecondary,
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: Text(
+                                      'Reset',
+                                      style: GoogleFonts.inter(
+                                          color: JarsColors.red),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed == true) {
+                              await RoomService.resetRoomScores(room.id);
+                              ref.invalidate(myScoreProvider);
+                              ref.invalidate(roomScoresProvider);
+                              ref.invalidate(groupGoalProgressProvider);
+                            }
+                          },
+                          child: Text(
+                            'Reset Room Scores',
+                            style: GoogleFonts.inter(
+                              color: JarsColors.red,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Center(
+                        child: TextButton(
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            final parent = widget.dialogContext;
+                            final confirmed = await showDialog<bool>(
+                              context: parent,
+                              builder: (ctx) => AlertDialog(
+                                backgroundColor: JarsColors.surfaceRaised,
+                                title: Text(
+                                  'Delete Room?',
+                                  style: GoogleFonts.spaceGrotesk(
+                                    color: JarsColors.textPrimary,
+                                  ),
+                                ),
+                                content: Text(
+                                  'This will remove the room and all data.',
+                                  style: GoogleFonts.inter(
+                                    color: JarsColors.textSecondary,
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: Text(
+                                      'Delete',
+                                      style: GoogleFonts.inter(
+                                          color: JarsColors.red),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed == true) {
+                              await RoomService.deleteRoom(room.id);
+                              ref.invalidate(userRoomsProvider);
+                              ref.read(activeRoomProvider.notifier).clear();
+                            }
+                          },
+                          child: Text(
+                            'Delete Room',
+                            style: GoogleFonts.inter(
+                              color: JarsColors.red,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoomCustomizationSheet extends ConsumerStatefulWidget {
+  final Room room;
+  final VoidCallback onCreateExercise;
+  final VoidCallback onGroupGoal;
+
+  const _RoomCustomizationSheet({
+    required this.room,
+    required this.onCreateExercise,
+    required this.onGroupGoal,
+  });
+
+  @override
+  ConsumerState<_RoomCustomizationSheet> createState() =>
+      _RoomCustomizationSheetState();
+}
+
+class _RoomCustomizationSheetState
+    extends ConsumerState<_RoomCustomizationSheet> {
+  late final TextEditingController idleNudgeController;
+  late final TextEditingController goalController;
+  late final TextEditingController streakController;
+  late final TextEditingController maxController;
+  bool _wakeBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final room = widget.room;
+    idleNudgeController =
+        TextEditingController(text: room.idleNudgeHours.toString());
+    goalController = TextEditingController(
+      text: room.dailyGoalPoints?.toString() ?? '',
+    );
+    streakController =
+        TextEditingController(text: room.streakMinimum.toString());
+    maxController =
+        TextEditingController(text: room.maxParticipants.toString());
+  }
+
+  @override
+  void dispose() {
+    idleNudgeController.dispose();
+    goalController.dispose();
+    streakController.dispose();
+    maxController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _postWakeReminderNow() async {
+    if (_wakeBusy) return;
+    final room = widget.room;
+    setState(() => _wakeBusy = true);
+    try {
+      final rows = await RoomService.getRoomMembers(room.id);
+      if (!mounted) return;
+      final choices = <({String id, String name})>[];
+      for (final r in rows) {
+        final id = r['user_id'] as String?;
+        if (id == null) continue;
+        final p = r['profiles'];
+        var name = 'Member';
+        if (p is Map && p['username'] is String) {
+          name = p['username'] as String;
+        }
+        choices.add((id: id, name: name));
+      }
+      choices.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+      final picked = await showModalBottomSheet<({String id, String name})>(
+        context: context,
+        backgroundColor: JarsColors.surfaceRaised,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (ctx) => SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Text(
+                    'Post wake card for…',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: JarsColors.textPrimary,
+                    ),
+                  ),
+                ),
+                for (final c in choices)
+                  ListTile(
+                    title: Text(
+                      c.name,
+                      style: GoogleFonts.inter(
+                        color: JarsColors.textPrimary,
+                      ),
+                    ),
+                    onTap: () => Navigator.pop(ctx, c),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (picked == null || !mounted) return;
+      await LogService.adminPostWakeReminder(
+        roomId: room.id,
+        targetUserId: picked.id,
+      );
+      ref.invalidate(roomFeedWithReactionsProvider);
+      ref.invalidate(roomFeedProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Wake card posted for ${picked.name}',
+            style: GoogleFonts.inter(),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      var msg = e.toString();
+      if (msg.contains('wake_recently_posted')) {
+        msg =
+            'A wake card for that member was already posted in the last hour.';
+      } else if (msg.contains('not_room_admin')) {
+        msg = 'Only the room admin can post this.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
+    } finally {
+      if (mounted) setState(() => _wakeBusy = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final room = widget.room;
+    final updates = <String, dynamic>{};
+    final idle = int.tryParse(idleNudgeController.text.trim());
+    if (idle != null && idle >= 0 && idle <= 8760) {
+      updates['idle_nudge_hours'] = idle;
+    }
+    final goal = int.tryParse(goalController.text);
+    final streak = int.tryParse(streakController.text);
+    final max = int.tryParse(maxController.text);
+    if (goal != null) {
+      updates['daily_goal_points'] = goal;
+      updates['daily_goal_set_at'] = DateTime.now().toIso8601String();
+    }
+    if (streak != null) {
+      updates['streak_minimum'] = streak;
+    }
+    if (max != null) {
+      updates['max_participants'] = max;
+    }
+    if (updates.isNotEmpty) {
+      await RoomService.updateRoom(room.id, updates);
+    }
+    ref.invalidate(userRoomsProvider);
+    ref.invalidate(groupGoalProgressProvider);
+    ref.read(activeRoomProvider.notifier).refresh();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(24, 12, 24, bottom + 24),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: JarsColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Customization',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: JarsColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              _SettingsField(
+                label: 'Wake card after (hours idle, 0 = off)',
+                controller: idleNudgeController,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'While someone is past this idle time with no real workout log, the server can add a wake card about once every 20 hours (not strictly once per calendar day). New wake cards notify everyone in the room except that person so they can open the feed. Each member can send at most two wake pings per card.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: JarsColors.textTertiary,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _wakeBusy ? null : _postWakeReminderNow,
+                icon: _wakeBusy
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: JarsColors.primary,
+                        ),
+                      )
+                    : const Icon(Icons.notifications_active_outlined, size: 20),
+                label: Text(
+                  'Post wake reminder now',
+                  style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 48),
+                  foregroundColor: JarsColors.textPrimary,
+                  side: const BorderSide(color: JarsColors.border),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _SettingsField(
+                label: 'Daily Goal (pts)',
+                controller: goalController,
+              ),
+              const SizedBox(height: 16),
+              _SettingsField(
+                label: 'Streak Minimum (pts)',
+                controller: streakController,
+              ),
+              const SizedBox(height: 16),
+              _SettingsField(
+                label: 'Max Participants',
+                controller: maxController,
+              ),
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: widget.onCreateExercise,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Custom Exercise'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: widget.onGroupGoal,
+                icon: const Icon(Icons.flag_outlined),
+                label: const Text('Set Group Goal'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: _save,
+                  child: Text(
+                    'Save',
+                    style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Stacked above the room settings sheet — set / change / remove join password.
+class _RoomJoinPasswordSheet extends StatefulWidget {
+  final String roomId;
+  final bool joinPasswordOn;
+  final Future<void> Function() onChanged;
+
+  const _RoomJoinPasswordSheet({
+    required this.roomId,
+    required this.joinPasswordOn,
+    required this.onChanged,
+  });
+
+  @override
+  State<_RoomJoinPasswordSheet> createState() =>
+      _RoomJoinPasswordSheetState();
+}
+
+class _RoomJoinPasswordSheetState extends State<_RoomJoinPasswordSheet> {
+  late final TextEditingController _pw;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pw = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _pw.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveNewPassword() async {
+    final t = _pw.text.trim();
+    if (t.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a password to save')),
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await RoomService.setRoomJoinPassword(widget.roomId, t);
+      await widget.onChanged();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _removePassword() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text(
+          'Remove password?',
+          style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary),
+        ),
+        content: Text(
+          'Anyone with the room code will be able to join.',
+          style: GoogleFonts.inter(color: JarsColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Remove',
+                style: GoogleFonts.inter(color: JarsColors.red)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _busy = true);
+    try {
+      await RoomService.setRoomJoinPassword(widget.roomId, null);
+      await widget.onChanged();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not remove: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 16, 24, bottom + 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: JarsColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Room join password',
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: JarsColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            widget.joinPasswordOn
+                ? 'Enter a new password to replace the current one.'
+                : 'Set a password newcomers must enter after the room code.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: JarsColors.textSecondary,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _pw,
+            obscureText: true,
+            decoration: InputDecoration(
+              hintText: 'Password',
+              filled: true,
+              fillColor: JarsColors.background,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: _busy ? null : _saveNewPassword,
+              child: Text(
+                widget.joinPasswordOn
+                    ? 'Update password'
+                    : 'Turn on password',
+                style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          if (widget.joinPasswordOn) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton(
+                onPressed: _busy ? null : _removePassword,
+                child: Text(
+                  'Turn off password',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontWeight: FontWeight.w600,
+                    color: JarsColors.red,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

@@ -48,3 +48,22 @@ class GroupGoal {
     return remaining.clamp(0, durationDays);
   }
 }
+
+/// Room aggregate progress toward an active [GroupGoal] (sum of log points since [GroupGoal.startDate]).
+class GroupGoalProgress {
+  final GroupGoal goal;
+  final double earnedPoints;
+
+  const GroupGoalProgress({
+    required this.goal,
+    required this.earnedPoints,
+  });
+
+  double get progress =>
+      goal.targetPoints > 0 ? (earnedPoints / goal.targetPoints).clamp(0.0, 1.0) : 0;
+
+  int get pointsRemaining =>
+      (goal.targetPoints - earnedPoints.floor()).clamp(0, goal.targetPoints);
+
+  int get earnedRounded => earnedPoints.round();
+}

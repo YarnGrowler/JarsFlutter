@@ -280,6 +280,13 @@ create policy "Users can delete own logs"
   to authenticated
   using (user_id = auth.uid());
 
+create policy "Room admin can delete room logs"
+  on public.exercise_logs for delete
+  to authenticated
+  using (
+    room_id in (select id from public.rooms where admin_id = auth.uid())
+  );
+
 -- Scores: members can read; users update own
 create policy "Members can view room scores"
   on public.scores for select

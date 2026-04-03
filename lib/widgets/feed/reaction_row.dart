@@ -5,14 +5,142 @@ import '../../core/theme.dart';
 import '../../models/reaction.dart';
 import '../../services/supabase_service.dart';
 
-/// Discord-style reactions.
-/// - Shows existing reaction chips with counts.
-/// - Current user's own reactions are highlighted (active state).
-/// - Tap existing chip → toggle off (if yours) or add same emoji.
-/// - Tap "+" → bottom sheet grid to pick any emoji.
-/// - Multiple distinct emojis per user are allowed.
+/// Opens the curated emoji grid (compact picker, no full “react” chrome).
+Future<void> showReactionEmojiPicker(
+  BuildContext context,
+  ValueChanged<String> onPicked,
+) async {
+  HapticFeedback.mediumImpact();
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: JarsColors.surfaceRaised,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => ReactionPickerSheet(
+      onPick: (e) {
+        Navigator.pop(ctx);
+        onPicked(e);
+      },
+    ),
+  );
+}
+
+/// Small [+] only (broadcast cards / tight spaces).
+class ReactPlusButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const ReactPlusButton({super.key, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: JarsColors.background,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onPressed();
+        },
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(
+            Icons.add_rounded,
+            size: 18,
+            color: JarsColors.textSecondary.withValues(alpha: 0.85),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Purple “+ React” pill (primary feed control).
+class PurpleReactButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const PurpleReactButton({super.key, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: JarsColors.primary.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onPressed();
+        },
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_rounded, size: 16, color: JarsColors.primary),
+              const SizedBox(width: 3),
+              Text(
+                'React',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: JarsColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Reaction chips only (counts + toggle). No add pill.
+class ReactionChipStrip extends StatelessWidget {
+  final List<Reaction> reactions;
+  final ValueChanged<String> onReact;
+
+  const ReactionChipStrip({
+    super.key,
+    required this.reactions,
+    required this.onReact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final myUserId = SupabaseService.currentUserId;
+    final emojiMap = <String, _EmojiData>{};
+    for (final r in reactions) {
+      final data = emojiMap.putIfAbsent(r.emoji, () => _EmojiData());
+      data.count++;
+      if (r.userId == myUserId) data.isMine = true;
+    }
+    final sorted = emojiMap.entries.toList()
+      ..sort((a, b) => b.value.count.compareTo(a.value.count));
+
+    return Wrap(
+      alignment: WrapAlignment.start,
+      spacing: 6,
+      runSpacing: 6,
+      children: sorted.map((e) {
+        return _ReactionChip(
+          emoji: e.key,
+          count: e.value.count,
+          isMine: e.value.isMine,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onReact(e.key);
+          },
+        );
+      }).toList(),
+    );
+  }
+}
+
+/// Discord-style reactions including a legacy “+ React” chip (avoid in new UI).
 class ReactionRow extends StatelessWidget {
-  /// All reaction objects for this log (including userId info).
   final List<Reaction> reactions;
   final ValueChanged<String> onReact;
 
@@ -22,78 +150,16 @@ class ReactionRow extends StatelessWidget {
     required this.onReact,
   });
 
-  static Future<void> _openPicker(BuildContext context, ValueChanged<String> onPick) async {
-    HapticFeedback.mediumImpact();
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: JarsColors.surfaceRaised,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => _EmojiPickerSheet(onPick: (e) {
-        Navigator.pop(ctx);
-        onPick(e);
-      }),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final myUserId = SupabaseService.currentUserId;
-
-    // Group by emoji; track counts and whether current user reacted with this emoji
-    final emojiMap = <String, _EmojiData>{};
-    for (final r in reactions) {
-      final data = emojiMap.putIfAbsent(r.emoji, () => _EmojiData());
-      data.count++;
-      if (r.userId == myUserId) data.isMine = true;
-    }
-
-    final sorted = emojiMap.entries.toList()
-      ..sort((a, b) => b.value.count.compareTo(a.value.count));
-
     return Wrap(
       alignment: WrapAlignment.start,
       spacing: 6,
       runSpacing: 6,
       children: [
-        ...sorted.take(8).map((e) {
-          return _ReactionChip(
-            emoji: e.key,
-            count: e.value.count,
-            isMine: e.value.isMine,
-            onTap: () {
-              HapticFeedback.lightImpact();
-              onReact(e.key);
-            },
-          );
-        }),
-        Material(
-          color: JarsColors.primary.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(999),
-          child: InkWell(
-            onTap: () => _openPicker(context, onReact),
-            borderRadius: BorderRadius.circular(999),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.add_rounded, size: 16, color: JarsColors.primary),
-                  const SizedBox(width: 3),
-                  Text(
-                    'React',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: JarsColors.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        ReactionChipStrip(reactions: reactions, onReact: onReact),
+        PurpleReactButton(
+          onPressed: () => showReactionEmojiPicker(context, onReact),
         ),
       ],
     );
@@ -162,10 +228,10 @@ class _ReactionChip extends StatelessWidget {
   }
 }
 
-class _EmojiPickerSheet extends StatelessWidget {
+class ReactionPickerSheet extends StatelessWidget {
   final ValueChanged<String> onPick;
 
-  const _EmojiPickerSheet({required this.onPick});
+  const ReactionPickerSheet({super.key, required this.onPick});
 
   @override
   Widget build(BuildContext context) {

@@ -175,4 +175,51 @@ class NotificationService {
       return false;
     }
   }
+
+  /// One row per member except [excludeUserId] (typically the actor). Use for
+  /// room-visible events (first log, PR, streak, rank-up, etc.).
+  static Future<void> notifyRoomMembersExcept({
+    required String roomId,
+    required String excludeUserId,
+    required String body,
+  }) async {
+    await notifyRoomMembersExceptIds(
+      roomId: roomId,
+      excludeUserIds: {excludeUserId},
+      body: body,
+    );
+  }
+
+  /// Same as [notifyRoomMembersExcept] but skips multiple users (e.g. overtaker + overtaken).
+  static Future<void> notifyRoomMembersExceptIds({
+    required String roomId,
+    required Set<String> excludeUserIds,
+    required String body,
+  }) async {
+    try {
+      final rows = await _db
+          .from('room_members')
+          .select('user_id')
+          .eq('room_id', roomId);
+      final targets = <String>[];
+      for (final r in rows) {
+        final uid = r['user_id'] as String?;
+        if (uid != null && !excludeUserIds.contains(uid)) {
+          targets.add(uid);
+        }
+      }
+      await Future.wait(
+        targets.map(
+          (id) => sendNotification(targetUserId: id, body: body),
+        ),
+      );
+    } catch (e, st) {
+      developer.log(
+        'NotificationService.notifyRoomMembersExceptIds: $e',
+        name: 'Jars',
+        error: e,
+        stackTrace: st,
+      );
+    }
+  }
 }

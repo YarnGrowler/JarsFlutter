@@ -101,7 +101,7 @@ create policy "Members can view reactions"
     )
   );
 
--- === 12 join by code (RPC) — run if join-with-code returns "room not found" ===
+-- === 12 join by code (RPC) — baseline; 14_room_wake_password.sql upgrades this (safe projection) ===
 create or replace function public.get_room_by_code(p_code text)
 returns setof public.rooms
 language sql
@@ -117,3 +117,16 @@ $$;
 
 revoke all on function public.get_room_by_code(text) from public;
 grant execute on function public.get_room_by_code(text) to authenticated;
+
+-- === 13 room admin can delete feed rows (moderation) ===
+drop policy if exists "Room admin can delete room logs" on public.exercise_logs;
+
+create policy "Room admin can delete room logs"
+  on public.exercise_logs for delete
+  to authenticated
+  using (
+    room_id in (select id from public.rooms where admin_id = auth.uid())
+  );
+
+-- === 14 wake cards + join password: run supabase_patches/14_room_wake_password.sql ===
+-- === 15 wake room push + nudge limits + admin wake: run supabase_patches/15_wake_nudge_room_notify.sql ===
