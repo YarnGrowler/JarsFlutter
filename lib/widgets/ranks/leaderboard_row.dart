@@ -9,19 +9,41 @@ class LeaderboardRow extends StatelessWidget {
   final int rank;
   final LeaderboardEntry entry;
   final double maxScore;
+  final LeaderboardPeriod period;
+  final int? dailyGoalPoints;
 
   const LeaderboardRow({
     super.key,
     required this.rank,
     required this.entry,
     required this.maxScore,
+    required this.period,
+    this.dailyGoalPoints,
   });
+
+  /// Bar fill: goal-based when [dailyGoalPoints] is set; otherwise relative to [maxScore].
+  double get _barFraction {
+    final g = dailyGoalPoints;
+    if (g != null && g > 0) {
+      switch (period) {
+        case LeaderboardPeriod.today:
+          return (entry.score / g).clamp(0.0, 1.0);
+        case LeaderboardPeriod.week:
+          return (entry.score / (g * 7)).clamp(0.0, 1.0);
+        case LeaderboardPeriod.month:
+          return (entry.score / (g * 30)).clamp(0.0, 1.0);
+        case LeaderboardPeriod.allTime:
+          break;
+      }
+    }
+    if (maxScore <= 0) return 0.0;
+    return (entry.score / maxScore).clamp(0.0, 1.0);
+  }
 
   @override
   Widget build(BuildContext context) {
     final isMe = entry.userId == SupabaseService.currentUserId;
     final level = getLevelForScore(entry.score);
-    final barWidth = maxScore > 0 ? (entry.score / maxScore).clamp(0.0, 1.0) : 0.0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -29,7 +51,9 @@ class LeaderboardRow extends StatelessWidget {
         color: isMe ? JarsColors.primaryDim : JarsColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isMe ? JarsColors.primary.withValues(alpha: 0.4) : JarsColors.border,
+          color: isMe
+              ? JarsColors.primary.withValues(alpha: 0.4)
+              : JarsColors.border,
         ),
       ),
       child: Column(
@@ -115,7 +139,7 @@ class LeaderboardRow extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-              value: barWidth,
+              value: _barFraction,
               minHeight: 4,
               backgroundColor: JarsColors.border,
               valueColor: AlwaysStoppedAnimation(

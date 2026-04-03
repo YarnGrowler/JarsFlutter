@@ -10,10 +10,13 @@ import '../../providers/room_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/streak_provider.dart';
 import '../../services/auth_service.dart';
+import '../../services/badge_service.dart';
 import '../../services/room_service.dart';
 import '../../services/exercise_service.dart';
 import '../../services/goal_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/supabase_service.dart';
+import '../../models/badge.dart';
 import '../../providers/exercise_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../providers/profile_provider.dart';
@@ -206,6 +209,10 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 error: (e, _) => Text('Error: $e'),
               ),
+              const SizedBox(height: 28),
+
+              // Badges section
+              _BadgesSection(),
               const SizedBox(height: 16),
 
               // Join / Create room button
@@ -226,13 +233,16 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   void _showSettings(BuildContext context, WidgetRef ref) {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final nav = Navigator.of(context);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: JarsColors.surfaceRaised,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -249,13 +259,83 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
                 ListTile(
+                  leading: Icon(Icons.notifications_active_outlined,
+                      color: JarsColors.primary.withValues(alpha: 0.9)),
+                  title: Text(
+                    'Test push notification',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: JarsColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Triggers your notifications webhook → Edge Function → FCM. '
+                    'On web, keep this tab focused or check the system tray.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: JarsColors.textSecondary,
+                      height: 1.35,
+                    ),
+                  ),
+                  onTap: () async {
+                    nav.pop();
+                    final uid = SupabaseService.currentUserId;
+                    if (uid == null) {
+                      scaffoldMessenger.showSnackBar(
+                        const SnackBar(content: Text('Not signed in.')),
+                      );
+                      return;
+                    }
+                    final regOk = await NotificationService.registerToken();
+                    if (!regOk) {
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Could not save FCM token. Allow notifications, hard refresh, '
+                            'and ensure web/firebase-messaging-sw.js is deployed. Then try again.',
+                            style: GoogleFonts.inter(),
+                          ),
+                          backgroundColor: JarsColors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    final ok = await NotificationService.sendNotification(
+                      targetUserId: uid,
+                      body:
+                          'Jars test — webhook → Edge Function → FCM. Pipeline OK.',
+                    );
+                    if (ok) {
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Test sent. Check for a system notification.',
+                            style: GoogleFonts.inter(),
+                          ),
+                        ),
+                      );
+                    } else {
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Insert failed (RLS or network). Check Supabase logs.',
+                            style: GoogleFonts.inter(),
+                          ),
+                          backgroundColor: JarsColors.red,
+                        ),
+                      );
+                    }
+                  },
+                ),
+                const Divider(height: 32),
+                ListTile(
                   leading: const Icon(Icons.logout, color: JarsColors.red),
                   title: Text(
                     'Sign Out',
                     style: GoogleFonts.inter(color: JarsColors.red),
                   ),
                   onTap: () async {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     await AuthService.signOut();
                     if (context.mounted) {
                       context.go('/auth');
@@ -408,6 +488,55 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
+
+                // Reset room scores
+                Center(
+                  child: TextButton(
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: JarsColors.surfaceRaised,
+                          title: Text('Reset Room Scores?',
+                              style: GoogleFonts.spaceGrotesk(
+                                  color: JarsColors.textPrimary)),
+                          content: Text(
+                              'All scores, streaks, and daily points will be set to 0. This cannot be undone.',
+                              style: GoogleFonts.inter(
+                                  color: JarsColors.textSecondary)),
+                          actions: [
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(ctx, false),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(ctx, true),
+                              child: Text('Reset',
+                                  style: GoogleFonts.inter(
+                                      color: JarsColors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) {
+                        await RoomService.resetRoomScores(room.id);
+                        ref.invalidate(myScoreProvider);
+                        ref.invalidate(roomScoresProvider);
+                      }
+                    },
+                    child: Text(
+                      'Reset Room Scores',
+                      style: GoogleFonts.inter(
+                        color: JarsColors.red,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
 
                 // Delete room
                 Center(
@@ -791,6 +920,104 @@ class _StatCard extends StatelessWidget {
               style: GoogleFonts.spaceMono(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
+                color: JarsColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BadgesSection extends StatefulWidget {
+  @override
+  State<_BadgesSection> createState() => _BadgesSectionState();
+}
+
+class _BadgesSectionState extends State<_BadgesSection> {
+  List<AppBadge> _badges = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    BadgeService.getMyBadges().then((b) {
+      if (mounted) setState(() { _badges = b; _loading = false; });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Badges',
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: JarsColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_loading)
+          const SizedBox(height: 40)
+        else if (_badges.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: JarsColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: JarsColors.border),
+            ),
+            child: Text(
+              'No badges yet — keep competing!',
+              style: GoogleFonts.inter(
+                color: JarsColors.textSecondary,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _badges.map((b) => _BadgeChip(badge: b)).toList(),
+          ),
+      ],
+    );
+  }
+}
+
+class _BadgeChip extends StatelessWidget {
+  final AppBadge badge;
+  const _BadgeChip({required this.badge});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: badge.displayLabel +
+          (badge.displayRank != null ? ' · Rank #${badge.displayRank}' : ''),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: JarsColors.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: JarsColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(badge.displayEmoji, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 6),
+            Text(
+              badge.displayLabel,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
                 color: JarsColors.textPrimary,
               ),
             ),

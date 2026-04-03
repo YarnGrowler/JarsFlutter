@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
 import '../../models/exercise_log.dart';
+import '../../models/reaction.dart';
 import '../../providers/active_room_provider.dart';
 import '../../providers/feed_provider.dart';
 import '../../providers/score_provider.dart';
@@ -28,7 +29,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final room = ref.watch(activeRoomProvider);
     final scoresAsync = ref.watch(roomScoresProvider);
     final myScoreAsync = ref.watch(myScoreProvider);
-    final feedAsync = ref.watch(roomFeedProvider);
+    final feedAsync = ref.watch(roomFeedWithReactionsProvider);
 
     if (room == null) {
       return _buildNoRoom(context);
@@ -124,24 +125,25 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             // Live Feed
             Expanded(
               child: feedAsync.when(
-                data: (logs) {
-                  if (logs.isEmpty) {
+                data: (items) {
+                  if (items.isEmpty) {
                     return _buildEmptyFeed();
                   }
                   return RefreshIndicator(
                     color: JarsColors.primary,
                     onRefresh: () async {
+                      ref.invalidate(roomFeedWithReactionsProvider);
                       ref.invalidate(roomFeedProvider);
                       ref.invalidate(roomScoresProvider);
                       ref.invalidate(myScoreProvider);
                     },
                     child: ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                      itemCount: logs.length,
+                      itemCount: items.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
-                        final log = logs[index];
-                        return _buildFeedItem(log);
+                        final row = items[index];
+                        return _buildFeedItem(row.log, row.reactions);
                       },
                     ),
                   );
@@ -248,14 +250,27 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     return '?';
   }
 
-  Widget _buildFeedItem(ExerciseLog log) {
+  Widget _buildFeedItem(ExerciseLog log, List<Reaction> reactions) {
     return FeedCard(
       log: log,
-      onReact: (emoji) async {
-        try {
-          await ReactionService.addReaction(logId: log.id, emoji: emoji);
-        } catch (_) {}
-      },
+      reactions: reactions,
+      onReact: log.isRankUpBroadcast
+          ? null
+          : (emoji) async {
+              try {
+                await ReactionService.addReaction(
+                    logId: log.id, emoji: emoji);
+                ref.invalidate(roomFeedWithReactionsProvider);
+                ref.invalidate(roomFeedProvider);
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                      content: Text('Reaction failed: $e'),
+                      duration: const Duration(seconds: 2)),
+                );
+              }
+            },
     );
   }
 

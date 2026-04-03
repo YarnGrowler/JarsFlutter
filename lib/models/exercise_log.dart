@@ -2,7 +2,7 @@ class ExerciseLog {
   final String id;
   final String roomId;
   final String userId;
-  final String exerciseId;
+  final String? exerciseId;
   final String exerciseName;
   final int count;
   final double weight;
@@ -16,7 +16,7 @@ class ExerciseLog {
     required this.id,
     required this.roomId,
     required this.userId,
-    required this.exerciseId,
+    this.exerciseId,
     required this.exerciseName,
     required this.count,
     this.weight = 0,
@@ -24,6 +24,53 @@ class ExerciseLog {
     required this.createdAt,
     this.username,
   });
+
+  // ── Special broadcast row prefixes ───────────────────────────────────────
+  static const kRankUpPrefix   = '__RANKUP__|';
+  static const kOvertakePrefix = '__OVERTAKE__|';
+  static const kStreakPrefix   = '__STREAK__|';
+  static const kPrPrefix       = '__PR__|';
+  static const kDeadPrefix     = '__DEAD__|';
+  static const kFirstLogPrefix = '__FIRSTLOG__|';
+  static const kCloseGapPrefix = '__CLOSEGAP__|';
+
+  bool get isRankUpBroadcast    => exerciseName.startsWith(kRankUpPrefix);
+  bool get isOvertake           => exerciseName.startsWith(kOvertakePrefix);
+  bool get isStreakMilestone    => exerciseName.startsWith(kStreakPrefix);
+  bool get isPersonalRecord     => exerciseName.startsWith(kPrPrefix);
+  bool get isDeadStreak         => exerciseName.startsWith(kDeadPrefix);
+  bool get isFirstLog           => exerciseName.startsWith(kFirstLogPrefix);
+  bool get isCloseGap           => exerciseName.startsWith(kCloseGapPrefix);
+
+  bool get isAnyBroadcast =>
+      isRankUpBroadcast ||
+      isOvertake ||
+      isStreakMilestone ||
+      isPersonalRecord ||
+      isDeadStreak ||
+      isFirstLog ||
+      isCloseGap;
+
+  String? get rankUpTitle {
+    if (!isRankUpBroadcast) return null;
+    return exerciseName.substring(kRankUpPrefix.length);
+  }
+
+  String? get broadcastPayload {
+    for (final prefix in [
+      kOvertakePrefix,
+      kStreakPrefix,
+      kPrPrefix,
+      kDeadPrefix,
+      kFirstLogPrefix,
+      kCloseGapPrefix,
+    ]) {
+      if (exerciseName.startsWith(prefix)) {
+        return exerciseName.substring(prefix.length);
+      }
+    }
+    return null;
+  }
 
   factory ExerciseLog.fromJson(Map<String, dynamic> json) {
     String? username;
@@ -35,11 +82,11 @@ class ExerciseLog {
       id: json['id'] as String,
       roomId: json['room_id'] as String,
       userId: json['user_id'] as String,
-      exerciseId: json['exercise_id'] as String,
+      exerciseId: json['exercise_id'] as String?,
       exerciseName: json['exercise_name'] as String,
-      count: json['count'] as int,
+      count: (json['count'] as num?)?.toInt() ?? 0,
       weight: (json['weight'] as num?)?.toDouble() ?? 0,
-      pointsEarned: (json['points_earned'] as num).toDouble(),
+      pointsEarned: (json['points_earned'] as num?)?.toDouble() ?? 0,
       createdAt: DateTime.parse(json['created_at'] as String),
       username: username,
     );

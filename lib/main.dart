@@ -5,6 +5,9 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
+import 'bootstrap/config_error_app.dart';
+import 'bootstrap/local_env.dart' show readLocalEnvPairs;
+import 'bootstrap/supabase_public_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,12 +30,13 @@ Future<void> main() async {
   final url = _resolveUrl();
   final anonKey = _resolveAnonKey();
 
-  if (url.isEmpty || anonKey.isEmpty) {
-    throw StateError(
-      'Supabase is not configured.\n'
-      '• Add jars-flutter/.env with SUPABASE_URL and SUPABASE_ANON_KEY (see env.example), then restart.\n'
-      '• Or run: flutter run --dart-define-from-file=.env',
+  if (!_isRealSupabaseConfig(url, anonKey)) {
+    runApp(
+      ConfigErrorApp(
+        details: _configHelpMessage(),
+      ),
     );
+    return;
   }
 
   await Supabase.initialize(url: url, anonKey: anonKey);
@@ -40,31 +44,68 @@ Future<void> main() async {
   runApp(const ProviderScope(child: JarsApp()));
 }
 
-/// Loads [.env] from assets; falls back to [env.example] so fresh clones can build.
+String _configHelpMessage() {
+  return 'Run the app from the jars-flutter folder and add real keys.\n\n'
+      'Mobile / desktop:\n'
+      '• Copy env.example to .env in jars-flutter/\n'
+      '• Set SUPABASE_URL and SUPABASE_ANON_KEY (Dashboard → Settings → API).\n\n'
+      'Web (hard refresh has no .env file):\n'
+      '• flutter run -d chrome --dart-define=SUPABASE_URL=https://YOUR_REF.supabase.co '
+      '--dart-define=SUPABASE_ANON_KEY=eyJ...\n'
+      '• Or build with the same defines in CI / Vercel.\n\n'
+      'CLI (from jars-flutter/):\n'
+      '• npx supabase projects api-keys --project-ref YOUR_REF\n';
+}
+
+/// Loads [env.example] from assets and merges project [.env] from disk in one pass
+/// (flutter_dotenv clears on each load, so we must not call [load] twice).
 Future<void> _loadEnv() async {
+  final localPairs = await readLocalEnvPairs();
   try {
-    await dotenv.load(fileName: '.env');
-  } catch (_) {
-    try {
-      await dotenv.load(fileName: 'env.example');
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('flutter_dotenv: could not load .env or env.example ($e)');
-      }
+    await dotenv.load(
+      fileName: 'env.example',
+      mergeWith: localPairs,
+      isOptional: true,
+    );
+  } catch (e) {
+    if (kDebugMode) {
+      debugPrint('flutter_dotenv: failed to load env ($e)');
     }
+  }
+  if (kDebugMode && localPairs.isNotEmpty) {
+    debugPrint('local_env: merged ${localPairs.length} keys from .env');
   }
 }
 
-/// Compile-time defines (CI / scripts) override bundled env files.
+bool _isRealSupabaseConfig(String url, String anonKey) {
+  final u = url.trim();
+  final k = anonKey.trim();
+  if (u.isEmpty || k.isEmpty) return false;
+  if (!u.startsWith('https://')) return false;
+  final lower = u.toLowerCase();
+  if (lower.contains('your-project') ||
+      lower.contains('placeholder') ||
+      lower.contains('example.invalid')) {
+    return false;
+  }
+  if (k == 'your-anon-key-here' || k.length < 36) return false;
+  return true;
+}
+
+/// Compile-time defines → `.env` / `env.example` → baked-in Jars project defaults.
 String _resolveUrl() {
   const fromDefine = String.fromEnvironment('SUPABASE_URL', defaultValue: '');
   if (fromDefine.isNotEmpty) return fromDefine.trim();
-  return dotenv.env['SUPABASE_URL']?.trim() ?? '';
+  final fromFile = dotenv.env['SUPABASE_URL']?.trim();
+  if (fromFile != null && fromFile.isNotEmpty) return fromFile;
+  return kDefaultSupabaseUrl;
 }
 
 String _resolveAnonKey() {
   const fromDefine =
       String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
   if (fromDefine.isNotEmpty) return fromDefine.trim();
-  return dotenv.env['SUPABASE_ANON_KEY']?.trim() ?? '';
+  final fromFile = dotenv.env['SUPABASE_ANON_KEY']?.trim();
+  if (fromFile != null && fromFile.isNotEmpty) return fromFile;
+  return kDefaultSupabaseAnonKey;
 }

@@ -220,6 +220,18 @@ class RoomService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  /// Zeros all score fields for every member of [roomId], and clears room logs.
+  static Future<void> resetRoomScores(String roomId) async {
+    await _db.from('exercise_logs').delete().eq('room_id', roomId);
+    await _db.from('scores').update({
+      'total_score': 0,
+      'daily_points': 0,
+      'streak_current': 0,
+      'streak_highest': 0,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('room_id', roomId);
+  }
+
   static Future<void> _seedSystemExercises(String roomId) async {
     final exercises = kSystemExercises.map((e) {
       final m = <String, dynamic>{

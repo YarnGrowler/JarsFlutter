@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme.dart';
 import 'router.dart';
+import 'widgets/celebration/reaction_rain_host.dart';
 
 class JarsApp extends ConsumerWidget {
   const JarsApp({super.key});
@@ -13,6 +14,9 @@ class JarsApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Jars',
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => ReactionRainHost(
+        child: child ?? const SizedBox.shrink(),
+      ),
       theme: JarsTheme.dark.copyWith(
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: {

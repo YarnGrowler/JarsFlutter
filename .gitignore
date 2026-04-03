@@ -48,3 +48,6 @@ app.*.map.json
 
 # Vercel CLI link (local only)
 .vercel
+# Firebase Admin SDK key (never commit)
+supabase/functions/service-account.json
+supabase/functions/push/service-account.json

@@ -6,9 +6,20 @@ import '../../providers/active_room_provider.dart';
 import '../../providers/leaderboard_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../services/log_service.dart';
+import '../../services/supabase_service.dart';
 import '../../widgets/ranks/leaderboard_row.dart';
 import '../../widgets/ranks/rank_progress_arc.dart';
 import '../../widgets/ranks/consistency_calendar.dart';
+import 'member_profile_sheet.dart';
+import 'exercise_stats_sheet.dart';
+
+final consistencyProvider =
+    FutureProvider.autoDispose<Map<DateTime, double>>((ref) async {
+  final room = ref.watch(activeRoomProvider);
+  final userId = SupabaseService.currentUserId;
+  if (room == null || userId == null) return {};
+  return LogService.getDailyPoints(room.id, userId);
+});
 
 class RanksScreen extends ConsumerStatefulWidget {
   const RanksScreen({super.key});
@@ -25,6 +36,12 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // Refresh data when screen first mounts (e.g. after logging an exercise)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(leaderboardProvider);
+      ref.invalidate(myScoreProvider);
+      ref.invalidate(consistencyProvider);
+    });
   }
 
   @override
@@ -97,6 +114,8 @@ class _LeaderboardTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final period = ref.watch(leaderboardPeriodProvider);
     final leaderboardAsync = ref.watch(leaderboardProvider);
+    final room = ref.watch(activeRoomProvider);
+    final dailyGoal = room?.dailyGoalPoints;
 
     return Column(
       children: [
@@ -164,10 +183,31 @@ class _LeaderboardTab extends ConsumerWidget {
                 itemCount: entries.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
-                  return LeaderboardRow(
-                    rank: index + 1,
-                    entry: entries[index],
-                    maxScore: maxScore,
+                  final entry = entries[index];
+                  return GestureDetector(
+                    onTap: () {
+                      final roomId = ref.read(activeRoomProvider)?.id;
+                      if (roomId == null) return;
+                      showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => MemberProfileSheet(
+                          userId: entry.userId,
+                          username: entry.username,
+                          totalScore: entry.score,
+                          streak: entry.streak,
+                          roomId: roomId,
+                        ),
+                      );
+                    },
+                    child: LeaderboardRow(
+                      rank: index + 1,
+                      entry: entry,
+                      maxScore: maxScore,
+                      period: period,
+                      dailyGoalPoints: dailyGoal,
+                    ),
                   );
                 },
               );
@@ -244,8 +284,17 @@ class _BreakdownTab extends ConsumerWidget {
 
               const SizedBox(height: 24),
 
-              // Consistency calendar
-              ConsistencyCalendar(dailyPoints: {}),
+              // Consistency calendar — wired to real daily logs
+              Consumer(
+                builder: (ctx, cRef, _) {
+                  final calAsync = cRef.watch(consistencyProvider);
+                  return calAsync.when(
+                    data: (pts) => ConsistencyCalendar(dailyPoints: pts),
+                    loading: () => ConsistencyCalendar(dailyPoints: const {}),
+                    error: (_, __) => ConsistencyCalendar(dailyPoints: const {}),
+                  );
+                },
+              ),
               const SizedBox(height: 24),
             ],
           ),
@@ -343,6 +392,7 @@ class _ExerciseBreakdownChartState extends State<_ExerciseBreakdownChart> {
 
       final map = <String, double>{};
       for (final log in logs) {
+        if (log.isRankUpBroadcast) continue;
         map[log.exerciseName] =
             (map[log.exerciseName] ?? 0) + log.pointsEarned;
       }
@@ -381,13 +431,46 @@ class _ExerciseBreakdownChartState extends State<_ExerciseBreakdownChart> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Top Exercises',
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: JarsColors.textPrimary,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Top Exercises',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: JarsColors.textPrimary,
+              ),
+            ),
+            GestureDetector(
+              onTap: () {
+                final userId = SupabaseService.currentUserId;
+                if (userId == null) return;
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => ExerciseStatsSheet(
+                    roomId: widget.roomId,
+                    userId: userId,
+                  ),
+                );
+              },
+              child: Row(
+                children: [
+                  Text(
+                    'All exercises',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: JarsColors.primary,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded,
+                      size: 18, color: JarsColors.primary),
+                ],
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         ...List.generate(_breakdowns.length, (i) {

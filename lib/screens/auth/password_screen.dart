@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/profile_service.dart';
 import '../../widgets/ui/auth_shell.dart';
 
@@ -73,13 +74,22 @@ class _PasswordScreenState extends State<PasswordScreen> {
           password: _passwordController.text,
         );
       } else {
-        await AuthService.signUp(
+        final signRes = await AuthService.signUp(
           email: widget.email,
           username: widget.username,
           password: _passwordController.text,
         );
+        if (signRes.session == null) {
+          if (mounted) {
+            context.go(
+              '/auth/verify-email?email=${Uri.encodeComponent(widget.email)}&username=${Uri.encodeComponent(widget.username)}',
+            );
+          }
+          return;
+        }
       }
       await ProfileService.ensureProfileRow();
+      await NotificationService.registerToken();
       if (mounted) {
         context.go(
           '/auth/room-entry?email=${Uri.encodeComponent(widget.email)}&username=${Uri.encodeComponent(widget.username)}',

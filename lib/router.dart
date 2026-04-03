@@ -7,8 +7,10 @@ import 'screens/auth/account_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/password_screen.dart';
 import 'screens/auth/room_entry_screen.dart';
+import 'screens/auth/verify_email_screen.dart';
 import 'screens/room/room_screen.dart';
 import 'screens/log/log_sheet.dart';
+import 'screens/log/log_history_screen.dart';
 import 'screens/ranks/ranks_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'services/auth_service.dart';
@@ -65,8 +67,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Logged-in users may open /auth/room-entry to join/create (not signup-only routes).
       final isRoomEntry = loc == '/auth/room-entry';
 
+      final isVerifyEmail = loc == '/auth/verify-email';
+
       if (session == null) {
         if (isRoomEntry) return '/auth';
+        if (isVerifyEmail) return null;
         if (!isAuthRoute) return '/auth';
         return null;
       }
@@ -111,6 +116,17 @@ final routerProvider = Provider<GoRouter>((ref) {
             },
           ),
           GoRoute(
+            path: 'verify-email',
+            pageBuilder: (context, state) {
+              final email = state.uri.queryParameters['email'] ?? '';
+              final username = state.uri.queryParameters['username'] ?? '';
+              return _fadeSlidePage(
+                state,
+                VerifyEmailScreen(email: email, username: username),
+              );
+            },
+          ),
+          GoRoute(
             path: 'room-entry',
             pageBuilder: (context, state) => _fadeSlidePage(
               state,
@@ -133,6 +149,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/log',
             pageBuilder: (context, state) => const NoTransitionPage(
               child: LogSheet(),
+            ),
+          ),
+          GoRoute(
+            path: '/log-history',
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const LogHistoryScreen(),
             ),
           ),
           GoRoute(

@@ -1,0 +1,245 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../core/theme.dart';
+import '../../services/log_service.dart';
+
+class ExerciseStatsSheet extends StatefulWidget {
+  final String roomId;
+  final String userId;
+
+  const ExerciseStatsSheet({
+    super.key,
+    required this.roomId,
+    required this.userId,
+  });
+
+  @override
+  State<ExerciseStatsSheet> createState() => _ExerciseStatsSheetState();
+}
+
+class _ExerciseStatsData {
+  final String name;
+  int totalReps = 0;
+  double totalPoints = 0;
+  int personalBest = 0; // max reps in a single session
+  int sessions = 0;
+
+  _ExerciseStatsData(this.name);
+}
+
+class _ExerciseStatsSheetState extends State<ExerciseStatsSheet> {
+  List<_ExerciseStatsData> _stats = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      // Load a large batch (up to 1000 logs)
+      final logs = await LogService.getUserLogsPaged(
+        userId: widget.userId,
+        roomId: widget.roomId,
+        page: 0,
+        pageSize: 1000,
+      );
+
+      final map = <String, _ExerciseStatsData>{};
+      for (final log in logs) {
+        if (log.isAnyBroadcast) continue;
+        final stat = map.putIfAbsent(
+            log.exerciseName, () => _ExerciseStatsData(log.exerciseName));
+        stat.totalReps += log.count;
+        stat.totalPoints += log.pointsEarned;
+        stat.sessions++;
+        if (log.count > stat.personalBest) stat.personalBest = log.count;
+      }
+
+      final sorted = map.values.toList()
+        ..sort((a, b) => b.totalPoints.compareTo(a.totalPoints));
+
+      if (mounted) {
+        setState(() {
+          _stats = sorted;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (_, controller) => Container(
+        decoration: BoxDecoration(
+          color: JarsColors.background,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: JarsColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Row(
+                children: [
+                  Text(
+                    'All Exercises',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: JarsColors.textPrimary,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (!_loading)
+                    Text(
+                      '${_stats.length} exercises',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: JarsColors.textSecondary,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                          color: JarsColors.primary),
+                    )
+                  : _stats.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No exercises logged yet',
+                            style: GoogleFonts.inter(
+                                color: JarsColors.textSecondary),
+                          ),
+                        )
+                      : ListView.separated(
+                          controller: controller,
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                          itemCount: _stats.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (_, i) => _ExerciseStatRow(stat: _stats[i]),
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExerciseStatRow extends StatelessWidget {
+  final _ExerciseStatsData stat;
+
+  const _ExerciseStatRow({required this.stat});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: JarsColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: JarsColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            stat.name,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: JarsColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _MiniStat(
+                label: 'Total Reps',
+                value: '${stat.totalReps}',
+                color: JarsColors.textPrimary,
+              ),
+              _MiniStat(
+                label: 'Best Set',
+                value: '${stat.personalBest}',
+                color: JarsColors.gold,
+              ),
+              _MiniStat(
+                label: 'Sessions',
+                value: '${stat.sessions}',
+                color: JarsColors.primary,
+              ),
+              _MiniStat(
+                label: 'Points',
+                value: '${stat.totalPoints.toInt()}',
+                color: JarsColors.green,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _MiniStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: GoogleFonts.spaceMono(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 10,
+              color: JarsColors.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
