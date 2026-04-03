@@ -23,6 +23,8 @@ class NotificationSettingsScreen extends StatefulWidget {
 class _NotificationSettingsScreenState extends State<NotificationSettingsScreen> {
   bool _loading = true;
   bool _busy = false;
+  /// Sync guard only (no [setState] before [registerToken] — preserves web gesture).
+  bool _enableInFlight = false;
   NotificationSettings? _settings;
   List<FcmDevice> _devices = [];
 
@@ -59,21 +61,24 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   }
 
   Future<void> _enableNotifications() async {
-    setState(() => _busy = true);
-    // Must be the first await after this tap — iOS WebKit only shows the
-    // permission prompt when requestPermission runs from a user gesture (not
-    // from sign-in / app init).
+    if (_enableInFlight) return;
+    _enableInFlight = true;
+    // Do not call [setState] before this await — rebuild work can break the
+    // user-gesture chain for [Notification.requestPermission] on iOS PWA.
     final ok = await NotificationService.registerToken();
+    _enableInFlight = false;
     if (!mounted) return;
-    setState(() => _busy = false);
+    setState(() {});
     await _refresh();
     if (!mounted) return;
+    final err = NotificationService.lastRegisterTokenError;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           ok
               ? 'This device was registered for push. On iPhone, the system prompt only appears when you tap this button — choose Allow.'
-              : 'Could not enable push. On iPhone (Home Screen): if you never saw a prompt, an older visit may have blocked it — try Settings → Apps → Jars / Safari → Notifications, or remove the Home Screen icon and add it again. Then open the app and tap this button once.',
+              : err ??
+                  'Could not enable push. On iPhone (Home Screen): if you never saw a prompt, an older visit may have blocked it — try Settings → Apps → Jars / Safari → Notifications, or remove the Home Screen icon and add it again. Then open the app and tap this button once.',
           style: GoogleFonts.inter(),
         ),
         backgroundColor: ok ? null : JarsColors.red,
@@ -155,7 +160,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         ),
         actions: [
           IconButton(
-            onPressed: _loading || _busy ? null : _refresh,
+            onPressed:
+                _loading || _busy || _enableInFlight ? null : _refresh,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
@@ -244,8 +250,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
-                                onPressed: _busy ? null : _enableNotifications,
-                                child: _busy
+                                onPressed: (_busy || _enableInFlight)
+                                    ? null
+                                    : _enableNotifications,
+                                child: (_busy || _enableInFlight)
                                     ? SizedBox(
                                         width: 22,
                                         height: 22,

@@ -1,4 +1,5 @@
 import 'dart:html' as html;
+import 'dart:js_util' as js_util;
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/material.dart';
@@ -56,9 +57,20 @@ class _RawDomButtonHostState extends State<_RawDomButtonHost> {
           ..onClick.listen((html.MouseEvent e) {
             e.stopPropagation();
             e.preventDefault();
-            html.Notification.requestPermission().then((result) {
-              html.window.console.log('Raw Notification.requestPermission → $result');
-              html.window.alert('Raw Notification.requestPermission → $result');
+            late final Future<String> fut;
+            if (js_util.hasProperty(html.window, 'jarsRequestNotificationPermission')) {
+              final p = js_util.callMethod<Object?>(
+                html.window,
+                'jarsRequestNotificationPermission',
+                const <Object?>[],
+              );
+              fut = js_util.promiseToFuture<String>(p as Object);
+            } else {
+              fut = html.Notification.requestPermission();
+            }
+            fut.then((result) {
+              html.window.console.log('Raw notification permission → $result');
+              html.window.alert('Notification permission → $result');
             });
           });
 

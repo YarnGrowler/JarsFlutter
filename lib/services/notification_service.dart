@@ -33,6 +33,9 @@ class NotificationService {
   static bool _tokenListenersAttached = false;
   static bool _foregroundWebAttached = false;
 
+  /// Last error from [registerToken] (for settings UI). Cleared on success.
+  static String? lastRegisterTokenError;
+
   static const FirebaseOptions _firebaseOptions = FirebaseOptions(
     apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
     authDomain: 'jarsflutter.firebaseapp.com',
@@ -259,6 +262,7 @@ class NotificationService {
   /// [FirebaseMessaging.requestPermission] from init or post-login `async`
   /// code does not show the system prompt and can leave permission denied.
   static Future<bool> registerToken() async {
+    lastRegisterTokenError = null;
     try {
       // Web / iOS PWA: the **first** await in this handler must be the browser’s
       // Notification.requestPermission — not Firebase.initializeApp. Otherwise
@@ -278,16 +282,34 @@ class NotificationService {
 
       final messaging = FirebaseMessaging.instance;
 
-      final settings = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-
-      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
-          settings.authorizationStatus != AuthorizationStatus.provisional) {
+      var permissionOk = false;
+      try {
+        final settings = await messaging.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        permissionOk = settings.authorizationStatus ==
+                AuthorizationStatus.authorized ||
+            settings.authorizationStatus == AuthorizationStatus.provisional;
+      } catch (e, st) {
         developer.log(
-          'NotificationService: permission ${settings.authorizationStatus}',
+          'NotificationService: FCM requestPermission threw: $e',
+          name: 'Jars',
+          error: e,
+          stackTrace: st,
+        );
+        // Web: if the browser prompt already granted, FCM can still throw; try getToken.
+        if (kIsWeb && dom_notif.browserNotificationPermissionIsGranted()) {
+          permissionOk = true;
+        } else {
+          rethrow;
+        }
+      }
+
+      if (!permissionOk) {
+        developer.log(
+          'NotificationService: FCM permission not authorized',
           name: 'Jars',
         );
         return false;
@@ -305,8 +327,14 @@ class NotificationService {
         return false;
       }
 
-      return _persistTokenAndAttachListeners(token);
+      final persisted = await _persistTokenAndAttachListeners(token);
+      if (!persisted && SupabaseService.currentUserId == null) {
+        lastRegisterTokenError =
+            'You’re signed out. Sign in, then tap again to save this device for push.';
+      }
+      return persisted;
     } catch (e, st) {
+      lastRegisterTokenError = e.toString();
       developer.log('NotificationService.registerToken: $e\n$st', name: 'Jars');
       return false;
     }

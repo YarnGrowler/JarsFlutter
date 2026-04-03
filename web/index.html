@@ -21,6 +21,11 @@
 
   <title>Jars</title>
   <link rel="manifest" href="manifest.json">
+  <script>
+    window.jarsRequestNotificationPermission = function () {
+      return Notification.requestPermission();
+    };
+  </script>
 </head>
 <body style="background-color:#08080E;margin:0;">
   <script src="flutter_bootstrap.js" async></script>
