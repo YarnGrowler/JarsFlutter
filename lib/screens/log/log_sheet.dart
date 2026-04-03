@@ -40,7 +40,7 @@ const String _kRecentsCategory = 'Recents';
 const String _kDefaultCategory = 'Upper Body';
 
 /// Bottom exercise sheet: snapped between min (default peek) and max 75% screen.
-const double _kLogSheetMin = 0.42;
+const double _kLogSheetMin = 0.36;
 const double _kLogSheetMax = 0.75;
 
 class LogSheet extends ConsumerStatefulWidget {
@@ -541,176 +541,178 @@ class _LogSheetState extends ConsumerState<LogSheet>
                 ),
               ),
               Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: sheetPadBottom),
-                  child: Listener(
-                    behavior: HitTestBehavior.translucent,
-                    onPointerDown: _onPointerDown,
-                    onPointerMove: _onPointerMove,
-                    onPointerUp: _onPointerUp,
-                    onPointerCancel: _onPointerCancel,
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              if (showFlood && floodOrigin != null)
-                                Positioned.fill(
-                                  child: IgnorePointer(
-                                    child: _FloodOverlay(
-                                      progress: floodProgress,
-                                      originGlobal: floodOrigin,
-                                    ),
-                                  ),
-                                ),
-                              Center(
-                                child: Transform.scale(
-                                  scale: _bumpScale(),
-                                  child: Transform.rotate(
-                                    angle: _bumpTurn(),
-                                    child: Text(
-                                      '$_reps',
-                                      key: _numberKey,
-                                      style: GoogleFonts.spaceMono(
-                                        fontSize: 96,
-                                        fontWeight: FontWeight.w700,
-                                        color: (_holding || _sustainingFlood)
-                                            ? Colors.white
-                                            : (_selectedExercise != null
-                                                ? kLogText
-                                                : kLogText.withValues(
-                                                    alpha: 0.22)),
-                                        height: 1,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (_holding && holdProgress > 0)
-                                Positioned.fill(
-                                  child: IgnorePointer(
-                                    child: _HoldRing(progress: holdProgress),
-                                  ),
-                                ),
-                              if (_holding && holdProgress > 0.05)
-                                Positioned(
-                                  bottom: 20,
-                                  left: 0,
-                                  right: 0,
-                                  child: IgnorePointer(
-                                    child: Center(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: _onPointerDown,
+                      onPointerMove: _onPointerMove,
+                      onPointerUp: _onPointerUp,
+                      onPointerCancel: _onPointerCancel,
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Center(
+                                  child: Transform.scale(
+                                    scale: _bumpScale(),
+                                    child: Transform.rotate(
+                                      angle: _bumpTurn(),
                                       child: Text(
-                                        secondsLeft > 0
-                                            ? 'hold $secondsLeft more…'
-                                            : 'releasing…',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          color: Colors.white
-                                              .withValues(alpha: 0.75),
+                                        '$_reps',
+                                        key: _numberKey,
+                                        style: GoogleFonts.spaceMono(
+                                          fontSize: 96,
+                                          fontWeight: FontWeight.w700,
+                                          color: (_holding || _sustainingFlood)
+                                              ? Colors.white
+                                              : (_selectedExercise != null
+                                                  ? kLogText
+                                                  : kLogText.withValues(
+                                                      alpha: 0.22)),
+                                          height: 1,
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              if (_selectedExercise != null &&
-                                  _reps > 0 &&
-                                  !_holding)
-                                Positioned(
-                                  top: 12,
-                                  left: 0,
-                                  right: 0,
-                                  child: IgnorePointer(
-                                    child: Center(
-                                      child: Text(
-                                        '↑ swipe up here (or on points) to set reps',
-                                        textAlign: TextAlign.center,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 11,
-                                          color: Colors.white
-                                              .withValues(alpha: 0.18),
+                                if (_holding && holdProgress > 0)
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      child: _HoldRing(progress: holdProgress),
+                                    ),
+                                  ),
+                                if (_holding && holdProgress > 0.05)
+                                  Positioned(
+                                    bottom: 20,
+                                    left: 0,
+                                    right: 0,
+                                    child: IgnorePointer(
+                                      child: Center(
+                                        child: Text(
+                                          secondsLeft > 0
+                                              ? 'hold $secondsLeft more…'
+                                              : 'releasing…',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.75),
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              if (exercise != null && exercise.supportsWeight)
-                                Positioned(
-                                  right: 16,
-                                  bottom: 12,
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      setState(() => _weightPanelOpen = true);
-                                      showWeightPicker(
-                                        context: context,
-                                        initial: _weight,
-                                        onConfirm: (w) {
+                                if (_selectedExercise != null &&
+                                    _reps > 0 &&
+                                    !_holding)
+                                  Positioned(
+                                    top: 12,
+                                    left: 0,
+                                    right: 0,
+                                    child: IgnorePointer(
+                                      child: Center(
+                                        child: Text(
+                                          '↑ swipe up here (or on points) to set reps',
+                                          textAlign: TextAlign.center,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 11,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.18),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                if (exercise != null && exercise.supportsWeight)
+                                  Positioned(
+                                    right: 16,
+                                    bottom: 12,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setState(() => _weightPanelOpen = true);
+                                        showWeightPicker(
+                                          context: context,
+                                          initial: _weight,
+                                          onConfirm: (w) {
+                                            if (mounted) {
+                                              setState(() => _weight = w);
+                                            }
+                                          },
+                                        ).whenComplete(() {
                                           if (mounted) {
-                                            setState(() => _weight = w);
+                                            setState(
+                                                () => _weightPanelOpen = false);
                                           }
-                                        },
-                                      ).whenComplete(() {
-                                        if (mounted) {
-                                          setState(
-                                              () => _weightPanelOpen = false);
-                                        }
-                                      });
-                                    },
-                                    child: _WeightBadge(weight: _weight),
+                                        });
+                                      },
+                                      child: _WeightBadge(weight: _weight),
+                                    ),
                                   ),
-                                ),
-                              if (_selectedExercise == null)
-                                Positioned(
-                                  bottom: 16,
-                                  left: 0,
-                                  right: 0,
-                                  child: IgnorePointer(
-                                    child: Center(
-                                      child: Text(
-                                        'Pick an exercise in the sheet below',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          color: Colors.white
-                                              .withValues(alpha: 0.22),
+                                if (_selectedExercise == null)
+                                  Positioned(
+                                    bottom: 16,
+                                    left: 0,
+                                    right: 0,
+                                    child: IgnorePointer(
+                                      child: Center(
+                                        child: Text(
+                                          'Pick an exercise in the sheet below',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.22),
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              if (_selectedExercise != null && _reps == 0)
-                                Positioned(
-                                  bottom: 16,
-                                  left: 0,
-                                  right: 0,
-                                  child: IgnorePointer(
-                                    child: Center(
-                                      child: Text(
-                                        'tap to count · hold 2s to log',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          color: Colors.white
-                                              .withValues(alpha: 0.22),
+                                if (_selectedExercise != null && _reps == 0)
+                                  Positioned(
+                                    bottom: 16,
+                                    left: 0,
+                                    right: 0,
+                                    child: IgnorePointer(
+                                      child: Center(
+                                        child: Text(
+                                          'tap to count · hold 2s to log',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.22),
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(
-                          height: h * 0.12,
-                          child: Center(
-                            child: AnimatedPointsDisplay(
-                              key: ValueKey(exercise?.id ?? 'none'),
-                              targetPoints: ptsPreview,
-                              visible: exercise != null,
+                              ],
                             ),
                           ),
-                        ),
-                      ],
+                          SizedBox(
+                            height: h * 0.12,
+                            child: Center(
+                              child: AnimatedPointsDisplay(
+                                key: ValueKey(exercise?.id ?? 'none'),
+                                targetPoints: ptsPreview,
+                                visible: exercise != null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                    if (showFlood && floodOrigin != null)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: _FloodOverlay(
+                            progress: floodProgress,
+                            originGlobal: floodOrigin!,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -730,6 +732,30 @@ class _LogSheetState extends ConsumerState<LogSheet>
               snap: true,
               snapSizes: const [_kLogSheetMin, _kLogSheetMax],
               builder: (ctx, scrollController) {
+                Widget fixedHeader({required Widget categoryPills}) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const _SheetDragHandle(),
+                        _SearchBar(
+                          controller: _searchController,
+                          onClear: () {
+                            _searchController.clear();
+                            setState(() {
+                              _searchQuery = '';
+                              _searchActive = false;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        categoryPills,
+                      ],
+                    ),
+                  );
+                }
+
                 return DecoratedBox(
                   decoration: BoxDecoration(
                     color: kLogSurface,
@@ -749,27 +775,13 @@ class _LogSheetState extends ConsumerState<LogSheet>
                       top: Radius.circular(22),
                     ),
                     child: exercisesAsync.when(
-                      loading: () => CustomScrollView(
-                        controller: scrollController,
-                        physics: const ClampingScrollPhysics(),
-                        slivers: [
-                          SliverToBoxAdapter(
-                            child: _LogSheetSliverHeader(
-                              sheetHandle: const _SheetDragHandle(),
-                              searchBar: _SearchBar(
-                                controller: _searchController,
-                                onClear: () {
-                                  _searchController.clear();
-                                  setState(() {
-                                    _searchQuery = '';
-                                    _searchActive = false;
-                                  });
-                                },
-                              ),
-                              categoryPills: const SizedBox(height: 40),
-                            ),
+                      loading: () => Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          fixedHeader(
+                            categoryPills: const SizedBox(height: 40),
                           ),
-                          const SliverFillRemaining(
+                          const Expanded(
                             child: Center(
                               child: CircularProgressIndicator(
                                 color: kLogPurple,
@@ -778,30 +790,16 @@ class _LogSheetState extends ConsumerState<LogSheet>
                           ),
                         ],
                       ),
-                      error: (e, _) => CustomScrollView(
-                        controller: scrollController,
-                        slivers: [
-                          SliverToBoxAdapter(
-                            child: _LogSheetSliverHeader(
-                              sheetHandle: const _SheetDragHandle(),
-                              searchBar: _SearchBar(
-                                controller: _searchController,
-                                onClear: () {
-                                  _searchController.clear();
-                                  setState(() {
-                                    _searchQuery = '';
-                                    _searchActive = false;
-                                  });
-                                },
-                              ),
-                              categoryPills: const SizedBox.shrink(),
-                            ),
-                          ),
-                          SliverFillRemaining(
+                      error: (e, _) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          fixedHeader(categoryPills: const SizedBox.shrink()),
+                          Expanded(
                             child: Center(
                               child: Text(
                                 'Error: $e',
-                                style: GoogleFonts.inter(color: Colors.white54),
+                                style:
+                                    GoogleFonts.inter(color: Colors.white54),
                               ),
                             ),
                           ),
@@ -809,91 +807,85 @@ class _LogSheetState extends ConsumerState<LogSheet>
                       ),
                       data: (exercises) {
                         final filtered = _filterExercises(exercises);
-                        return CustomScrollView(
-                          controller: scrollController,
-                          physics: const ClampingScrollPhysics(),
-                          slivers: [
-                            SliverToBoxAdapter(
-                              child: _LogSheetSliverHeader(
-                                sheetHandle: const _SheetDragHandle(),
-                                searchBar: _SearchBar(
-                                  controller: _searchController,
-                                  onClear: () {
-                                    _searchController.clear();
-                                    setState(() {
-                                      _searchQuery = '';
-                                      _searchActive = false;
-                                    });
-                                  },
-                                ),
-                                categoryPills: _searchQuery.isEmpty
-                                    ? _CategoryPills(
-                                        exercises: exercises,
-                                        recentIds: _recentIds,
-                                        selected: _selectedCategory ??
-                                            (_recentIds.isNotEmpty
-                                                ? _kRecentsCategory
-                                                : _kDefaultCategory),
-                                        onSelect: (c) => setState(
-                                            () => _selectedCategory = c),
-                                      )
-                                    : const SizedBox.shrink(),
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            fixedHeader(
+                              categoryPills: _searchQuery.isEmpty
+                                  ? _CategoryPills(
+                                      exercises: exercises,
+                                      recentIds: _recentIds,
+                                      selected: _selectedCategory ??
+                                          (_recentIds.isNotEmpty
+                                              ? _kRecentsCategory
+                                              : _kDefaultCategory),
+                                      onSelect: (c) =>
+                                          setState(() => _selectedCategory = c),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                            Expanded(
+                              child: CustomScrollView(
+                                controller: scrollController,
+                                physics: const ClampingScrollPhysics(),
+                                slivers: [
+                                  if (filtered.isEmpty)
+                                    SliverFillRemaining(
+                                      child: Center(
+                                        child: Text(
+                                          _searchQuery.isNotEmpty
+                                              ? 'No results for "$_searchQuery"'
+                                              : 'No exercises yet',
+                                          style: GoogleFonts.inter(
+                                            color: Colors.white38,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    SliverPadding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          14, 6, 14, 24),
+                                      sliver: SliverGrid(
+                                        gridDelegate:
+                                            const SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: 2,
+                                          mainAxisSpacing: 8,
+                                          crossAxisSpacing: 8,
+                                          mainAxisExtent: 80,
+                                        ),
+                                        delegate: SliverChildBuilderDelegate(
+                                          (context, i) {
+                                            final ex = filtered[i];
+                                            return LogExerciseCard(
+                                              exercise: ex,
+                                              selected: exercise?.id == ex.id,
+                                              onTap: () async {
+                                                final saved =
+                                                    await _loadWeight(ex.id);
+                                                if (!mounted) return;
+                                                setState(() {
+                                                  _selectedExercise = ex;
+                                                  _reps = 0;
+                                                  _weight = saved;
+                                                  if (_searchQuery.isNotEmpty) {
+                                                    _searchController.clear();
+                                                    _searchQuery = '';
+                                                    _searchActive = false;
+                                                  }
+                                                });
+                                                await _saveRecent(ex);
+                                              },
+                                            );
+                                          },
+                                          childCount: filtered.length,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
-                            if (filtered.isEmpty)
-                              SliverFillRemaining(
-                                child: Center(
-                                  child: Text(
-                                    _searchQuery.isNotEmpty
-                                        ? 'No results for "$_searchQuery"'
-                                        : 'No exercises yet',
-                                    style: GoogleFonts.inter(
-                                      color: Colors.white38,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            else
-                              SliverPadding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(14, 6, 14, 24),
-                                sliver: SliverGrid(
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
-                                    mainAxisSpacing: 8,
-                                    crossAxisSpacing: 8,
-                                    mainAxisExtent: 80,
-                                  ),
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, i) {
-                                      final ex = filtered[i];
-                                      return LogExerciseCard(
-                                        exercise: ex,
-                                        selected: exercise?.id == ex.id,
-                                        onTap: () async {
-                                          final saved =
-                                              await _loadWeight(ex.id);
-                                          if (!mounted) return;
-                                          setState(() {
-                                            _selectedExercise = ex;
-                                            _reps = 0;
-                                            _weight = saved;
-                                            if (_searchQuery.isNotEmpty) {
-                                              _searchController.clear();
-                                              _searchQuery = '';
-                                              _searchActive = false;
-                                            }
-                                          });
-                                          await _saveRecent(ex);
-                                        },
-                                      );
-                                    },
-                                    childCount: filtered.length,
-                                  ),
-                                ),
-                              ),
                           ],
                         );
                       },
@@ -970,34 +962,6 @@ class _SheetDragHandle extends StatelessWidget {
             borderRadius: BorderRadius.circular(3),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _LogSheetSliverHeader extends StatelessWidget {
-  final Widget sheetHandle;
-  final Widget searchBar;
-  final Widget categoryPills;
-
-  const _LogSheetSliverHeader({
-    required this.sheetHandle,
-    required this.searchBar,
-    required this.categoryPills,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          sheetHandle,
-          searchBar,
-          const SizedBox(height: 10),
-          categoryPills,
-        ],
       ),
     );
   }

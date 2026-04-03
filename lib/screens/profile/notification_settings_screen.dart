@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -32,8 +34,22 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
   Future<void> _refresh() async {
     setState(() => _loading = true);
-    final s = await NotificationService.getNotificationSettings();
-    final d = await NotificationService.listMyDevices();
+    NotificationSettings? s;
+    List<FcmDevice> d = [];
+    try {
+      final batch = await Future.wait([
+        NotificationService.getNotificationSettings(),
+        NotificationService.listMyDevices(),
+      ]).timeout(const Duration(seconds: 12));
+      s = batch[0] as NotificationSettings?;
+      d = batch[1] as List<FcmDevice>;
+    } on TimeoutException {
+      s = null;
+      d = [];
+    } catch (_) {
+      s = null;
+      d = [];
+    }
     if (!mounted) return;
     setState(() {
       _settings = s;
@@ -121,9 +137,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   @override
   Widget build(BuildContext context) {
     final status = _settings?.authorizationStatus;
-    final statusLabel = status == null
-        ? '…'
-        : NotificationService.describeAuthorization(status);
+    final statusLabel = _settings == null
+        ? 'Unknown — tap Enable to refresh'
+        : NotificationService.describeAuthorization(status!);
 
     return Scaffold(
       backgroundColor: JarsColors.surface,
@@ -185,7 +201,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                         label: Text(
                           status == AuthorizationStatus.denied
                               ? 'Open settings — then try again'
-                              : 'Enable / register this device',
+                              : (_settings == null
+                                  ? 'Enable / register (retry status)'
+                                  : 'Enable / register this device'),
                           style: GoogleFonts.spaceGrotesk(
                             fontWeight: FontWeight.w700,
                           ),

@@ -137,17 +137,19 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       ),
       body: AuthShell(
         child: SafeArea(
-          top: false,
+          top: true,
           bottom: true,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 40, 28, 24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                       Text(
                         'CHECK YOUR INBOX',
                         style: GoogleFonts.spaceMono(
@@ -285,10 +287,11 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                         ),
                       ),
                     ],
+                    ),
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),

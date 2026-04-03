@@ -22,6 +22,7 @@ import '../../models/badge.dart';
 import '../../providers/exercise_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../providers/profile_provider.dart';
+import '../../providers/ui_text_scale_provider.dart';
 import '../../core/user_display_name.dart';
 import '../../widgets/ui/rank_badge.dart';
 import 'notification_settings_screen.dart';
@@ -246,12 +247,16 @@ class ProfileScreen extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+        return Consumer(
+          builder: (context, ref, _) {
+            final textScale = ref.watch(uiTextScaleProvider);
+            return SafeArea(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                 Container(
                   width: 40,
                   height: 4,
@@ -358,6 +363,54 @@ class ProfileScreen extends ConsumerWidget {
                     }
                   },
                 ),
+                const Divider(height: 28),
+                Text(
+                  'Text size',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: JarsColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Saved on this device only.',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: JarsColors.textSecondary,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Text(
+                      'A',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: JarsColors.textTertiary,
+                      ),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: textScale,
+                        min: 0.85,
+                        max: 1.3,
+                        divisions: 9,
+                        label: '${(textScale * 100).round()}%',
+                        onChanged: (v) =>
+                            ref.read(uiTextScaleProvider.notifier).setScale(v),
+                      ),
+                    ),
+                    Text(
+                      'A',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        color: JarsColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
                 const Divider(height: 32),
                 ListTile(
                   leading: const Icon(Icons.logout, color: JarsColors.red),
@@ -373,9 +426,12 @@ class ProfileScreen extends ConsumerWidget {
                     }
                   },
                 ),
-              ],
-            ),
-          ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -461,6 +517,8 @@ class ProfileScreen extends ConsumerWidget {
                 _SettingsField(
                   label: 'Points per rep',
                   controller: pointsController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                 ),
                 const SizedBox(height: 16),
                 _SettingsField(
@@ -551,11 +609,13 @@ class ProfileScreen extends ConsumerWidget {
                 _SettingsField(
                   label: 'Target Points (total)',
                   controller: targetController,
+                  keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 16),
                 _SettingsField(
                   label: 'Duration (days)',
                   controller: daysController,
+                  keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 16),
                 _SettingsField(
@@ -718,6 +778,7 @@ class _AdminRoomSettingsSheetState
                       _SettingsField(
                         label: 'Room name',
                         controller: nameController,
+                        keyboardType: TextInputType.text,
                       ),
                       const SizedBox(height: 14),
                       Row(
@@ -1170,6 +1231,7 @@ class _RoomCustomizationSheetState
               _SettingsField(
                 label: 'Wake card after (hours idle, 0 = off)',
                 controller: idleNudgeController,
+                keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 8),
               Text(
@@ -1207,16 +1269,19 @@ class _RoomCustomizationSheetState
               _SettingsField(
                 label: 'Daily Goal (pts)',
                 controller: goalController,
+                keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 16),
               _SettingsField(
                 label: 'Streak Minimum (pts)',
                 controller: streakController,
+                keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 16),
               _SettingsField(
                 label: 'Max Participants',
                 controller: maxController,
+                keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 24),
               OutlinedButton.icon(
@@ -1701,7 +1766,7 @@ class _SettingsField extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
-      keyboardType: keyboardType ?? TextInputType.number,
+      keyboardType: keyboardType ?? TextInputType.text,
       style: GoogleFonts.inter(
         fontSize: 16,
         color: JarsColors.textPrimary,

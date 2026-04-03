@@ -39,14 +39,19 @@ class RoomEntryScreen extends ConsumerWidget {
       ),
       body: AuthShell(
         child: SafeArea(
-          top: false,
+          top: true,
           bottom: true,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 4),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 36, 22, 16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                 Text(
                   'Pick your battlefield',
                   style: GoogleFonts.spaceGrotesk(
@@ -90,7 +95,7 @@ class RoomEntryScreen extends ConsumerWidget {
                     .animate()
                     .fadeIn(delay: 180.ms, duration: 400.ms)
                     .slideX(begin: 0.04),
-                const Spacer(),
+                const SizedBox(height: 28),
                 TextButton(
                   onPressed: () => context.go('/'),
                   child: Text(
@@ -101,9 +106,12 @@ class RoomEntryScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-              ],
-            ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),

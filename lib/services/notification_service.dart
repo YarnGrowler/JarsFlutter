@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:firebase_core/firebase_core.dart';
@@ -33,22 +34,34 @@ class NotificationService {
     await registerToken();
   }
 
-  /// Current OS / browser permission (no prompt).
-  static Future<NotificationSettings> getNotificationSettings() async {
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
-          authDomain: 'jarsflutter.firebaseapp.com',
-          projectId: 'jarsflutter',
-          storageBucket: 'jarsflutter.firebasestorage.app',
-          messagingSenderId: '93048274469',
-          appId: '1:93048274469:web:dfc56256d2aeede1ad49cc',
-          measurementId: 'G-X14XTW7GJP',
-        ),
+  /// Current OS / browser permission (no prompt). Times out so mobile never hangs forever.
+  static Future<NotificationSettings?> getNotificationSettings() async {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: const FirebaseOptions(
+            apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
+            authDomain: 'jarsflutter.firebaseapp.com',
+            projectId: 'jarsflutter',
+            storageBucket: 'jarsflutter.firebasestorage.app',
+            messagingSenderId: '93048274469',
+            appId: '1:93048274469:web:dfc56256d2aeede1ad49cc',
+            measurementId: 'G-X14XTW7GJP',
+          ),
+        ).timeout(const Duration(seconds: 8));
+      }
+      return await FirebaseMessaging.instance
+          .getNotificationSettings()
+          .timeout(const Duration(seconds: 6));
+    } catch (e, st) {
+      developer.log(
+        'getNotificationSettings timed out or failed (mobile can hang on FCM): $e',
+        name: 'Jars',
+        error: e,
+        stackTrace: st,
       );
+      return null;
     }
-    return FirebaseMessaging.instance.getNotificationSettings();
   }
 
   /// FCM token for this install, if permission allows (may be null on web).
@@ -80,11 +93,13 @@ class NotificationService {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return [];
     try {
-      final rows = await _db
-          .from('user_fcm_tokens')
-          .select('id, platform, last_seen_at, token')
-          .eq('user_id', uid)
-          .order('last_seen_at', ascending: false);
+      final rows = await (() async {
+        return _db
+            .from('user_fcm_tokens')
+            .select('id, platform, last_seen_at, token')
+            .eq('user_id', uid)
+            .order('last_seen_at', ascending: false);
+      })().timeout(const Duration(seconds: 20));
       return (rows as List)
           .map((r) => FcmDevice.fromJson(Map<String, dynamic>.from(r as Map)))
           .toList();
