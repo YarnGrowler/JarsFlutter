@@ -1,8 +1,9 @@
 import 'package:firebase_core/firebase_core.dart';
 
 /// Shared Firebase config (same project as [web/firebase-messaging-sw.js]).
-/// Web: initialize in [main.dart] before [runApp] so Dart init is not the first
-/// touch on a user gesture (avoids FlutterFire web interop null crashes in PWA).
+/// Web: CDN scripts in [web/index.html] must match `firebase_core_web`’s Firebase
+/// JS version (see pubspec.lock → firebase_core_web → changelog on pub.dev).
+/// Initialize in [main.dart] before [runApp].
 const jarsFirebaseOptions = FirebaseOptions(
   apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
   authDomain: 'jarsflutter.firebaseapp.com',
