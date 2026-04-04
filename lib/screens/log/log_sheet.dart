@@ -61,7 +61,6 @@ class _LogSheetState extends ConsumerState<LogSheet>
   List<String> _recentIds = [];
   final _searchController = TextEditingController();
   String _searchQuery = '';
-  bool _searchActive = false;
 
   final _numberKey = GlobalKey();
   final _random = math.Random();
@@ -199,14 +198,18 @@ class _LogSheetState extends ConsumerState<LogSheet>
         _reps < 1 ||
         _logging ||
         _pickerOpen ||
-        _weightPanelOpen) return;
+        _weightPanelOpen) {
+      return;
+    }
     _cancelHold();
     _holdOrigin = globalPos;
 
     _holdCtrl = AnimationController(vsync: this, duration: _kHoldDuration)
       ..addListener(() => setState(() {}))
       ..addStatusListener((s) {
-        if (s == AnimationStatus.completed) _onHoldComplete();
+        if (s == AnimationStatus.completed) {
+          _onHoldComplete();
+        }
       });
 
     // Delay flood start slightly — only start visually after user holds ≥ 200ms
@@ -712,7 +715,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
                           child: IgnorePointer(
                             child: _FloodOverlay(
                               progress: floodProgress,
-                              originGlobal: floodOrigin!,
+                              originGlobal: floodOrigin,
                             ),
                           ),
                         ),
@@ -782,7 +785,6 @@ class _LogSheetState extends ConsumerState<LogSheet>
                             _searchController.clear();
                             setState(() {
                               _searchQuery = '';
-                              _searchActive = false;
                             });
                           },
                         ),
@@ -929,7 +931,6 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                                   if (_searchQuery.isNotEmpty) {
                                                     _searchController.clear();
                                                     _searchQuery = '';
-                                                    _searchActive = false;
                                                   }
                                                 });
                                                 await _saveRecent(ex);

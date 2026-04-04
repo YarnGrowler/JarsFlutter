@@ -319,9 +319,9 @@ class NotificationService {
       _tokenListenersAttached = true;
       messaging.onTokenRefresh.listen((t) {
         unawaited(
-          _enqueuePersistTail(() async {
+          _enqueuePersistTail<void>(() async {
             _lastKnownLocalToken = t;
-            return _saveFcmToken(t);
+            await _saveFcmToken(t);
           }),
         );
       });

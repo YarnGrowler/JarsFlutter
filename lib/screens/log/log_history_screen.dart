@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/log_screen_style.dart';
-import '../../core/theme.dart';
 import '../../models/exercise.dart';
 import '../../models/exercise_log.dart';
 import '../../providers/active_room_provider.dart';

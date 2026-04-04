@@ -1,3 +1,6 @@
+// dart:html is intentional for web-only FCM foreground display.
+// ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter
+
 import 'dart:html' as html;
 
 import 'package:firebase_messaging/firebase_messaging.dart';
