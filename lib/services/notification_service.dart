@@ -454,12 +454,20 @@ class NotificationService {
   static Future<void> _pruneOtherWebTokens(String userId, String keepToken) async {
     if (!kIsWeb) return;
     try {
-      await _db
+      // Select + delete by id: PostgREST delete builder may not chain `.neq`
+      // (web compile / client API); this matches any stale web rows.
+      final rows = await _db
           .from('user_fcm_tokens')
-          .delete()
+          .select('id,token')
           .eq('user_id', userId)
-          .eq('platform', 'web')
-          .neq('token', keepToken);
+          .eq('platform', 'web');
+      for (final r in rows as List) {
+        final m = Map<String, dynamic>.from(r as Map);
+        final id = m['id'] as String?;
+        final t = m['token'] as String?;
+        if (id == null || t == null || t == keepToken) continue;
+        await _db.from('user_fcm_tokens').delete().eq('id', id);
+      }
     } catch (e) {
       developer.log('NotificationService._pruneOtherWebTokens: $e', name: 'Jars');
     }

@@ -15,7 +15,15 @@ class AuthRefreshNotifier extends ChangeNotifier {
       notifyListeners();
       if (state.event == AuthChangeEvent.signedIn ||
           state.event == AuthChangeEvent.initialSession) {
-        NotificationService.init();
+        // Web / home-screen PWA: defer FCM init slightly so the first frames and
+        // taps aren’t competing with Firebase + service worker on the main isolate.
+        if (kIsWeb) {
+          Future<void>.delayed(const Duration(milliseconds: 400), () {
+            NotificationService.init();
+          });
+        } else {
+          NotificationService.init();
+        }
       }
     });
   }
