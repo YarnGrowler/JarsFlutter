@@ -58,6 +58,40 @@ class NotificationService {
     }
   }
 
+  static Future<String?> _fetchMessagingToken(
+    FirebaseMessaging messaging,
+  ) async {
+    if (kIsWeb) {
+      return messaging.getToken(vapidKey: _kVapidKey);
+    }
+    return messaging.getToken();
+  }
+
+  /// iOS PWA / web: [getToken] is often null until the service worker / subscription is ready.
+  static Future<String?> getMessagingTokenWithRetries(
+    FirebaseMessaging messaging, {
+    int maxAttempts = 6,
+    Duration delayBetween = const Duration(milliseconds: 450),
+  }) async {
+    for (var i = 0; i < maxAttempts; i++) {
+      try {
+        final t = await _fetchMessagingToken(messaging);
+        if (t != null && t.isNotEmpty) return t;
+      } catch (e, st) {
+        developer.log(
+          'NotificationService: getToken attempt ${i + 1}/$maxAttempts failed: $e',
+          name: 'Jars',
+          error: e,
+          stackTrace: st,
+        );
+      }
+      if (i < maxAttempts - 1) {
+        await Future<void>.delayed(delayBetween);
+      }
+    }
+    return null;
+  }
+
   /// Safe on session restore / sign-in: **does not** call [requestPermission].
   /// Re-fetches and saves the FCM token only if the user already allowed notifications.
   static Future<bool> syncTokenIfPermitted() async {
@@ -71,9 +105,12 @@ class NotificationService {
           settings.authorizationStatus != AuthorizationStatus.provisional) {
         return false;
       }
-      final token = kIsWeb
-          ? await messaging.getToken(vapidKey: _kVapidKey)
-          : await messaging.getToken();
+      final token = await getMessagingTokenWithRetries(
+        messaging,
+        maxAttempts: kIsWeb ? 5 : 2,
+        delayBetween:
+            kIsWeb ? const Duration(milliseconds: 400) : const Duration(milliseconds: 200),
+      );
       if (token == null || token.isEmpty) return false;
       return _persistTokenAndAttachListeners(token);
     } catch (e, st) {
@@ -120,10 +157,12 @@ class NotificationService {
   static Future<String?> getCurrentFcmToken() async {
     try {
       await _ensureFirebaseInitialized();
-      if (kIsWeb) {
-        return FirebaseMessaging.instance.getToken(vapidKey: _kVapidKey);
-      }
-      return FirebaseMessaging.instance.getToken();
+      return getMessagingTokenWithRetries(
+        FirebaseMessaging.instance,
+        maxAttempts: kIsWeb ? 4 : 2,
+        delayBetween:
+            kIsWeb ? const Duration(milliseconds: 350) : const Duration(milliseconds: 150),
+      );
     } catch (_) {
       return null;
     }
@@ -315,15 +354,24 @@ class NotificationService {
         return false;
       }
 
-      final token = kIsWeb
-          ? await messaging.getToken(vapidKey: _kVapidKey)
-          : await messaging.getToken();
+      final token = await getMessagingTokenWithRetries(
+        messaging,
+        maxAttempts: kIsWeb ? 6 : 3,
+        delayBetween: kIsWeb
+            ? const Duration(milliseconds: 450)
+            : const Duration(milliseconds: 200),
+      );
 
       if (token == null || token.isEmpty) {
         developer.log(
-          'NotificationService: getToken returned null (web: check firebase-messaging-sw.js)',
+          'NotificationService: getToken still null after retries '
+          '(web: service worker / VAPID; wait and tap Enable again)',
           name: 'Jars',
         );
+        lastRegisterTokenError = kIsWeb
+            ? 'Push token not ready yet (common on iPhone web after Allow). '
+                'Wait a few seconds and tap Enable again.'
+            : 'Could not get a push token on this device.';
         return false;
       }
 

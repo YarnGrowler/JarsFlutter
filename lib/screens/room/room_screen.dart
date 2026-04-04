@@ -159,11 +159,24 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final row = items[index];
+                        final delayMs = (index * 12).clamp(0, 96);
                         return _buildFeedItem(
                           context,
                           row.log,
                           row.reactions,
-                        );
+                        )
+                            .animate()
+                            .fadeIn(
+                              duration: 110.ms,
+                              delay: Duration(milliseconds: delayMs),
+                              curve: Curves.easeOut,
+                            )
+                            .slideY(
+                              begin: 0.028,
+                              duration: 110.ms,
+                              delay: Duration(milliseconds: delayMs),
+                              curve: Curves.easeOut,
+                            );
                       },
                     ),
                   );
@@ -189,7 +202,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 return StatusBar(
                   onLogTap: () => context.go('/log'),
                   onGroupGoalTap: isAdmin
-                      ? () => showGroupGoalSheet(context, ref, room.id)
+                      ? () => showGroupGoalSheet(context, room.id)
                       : null,
                 );
               },

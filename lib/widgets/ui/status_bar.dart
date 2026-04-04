@@ -7,7 +7,6 @@ import '../../providers/active_room_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/streak_provider.dart';
-import '../../services/goal_service.dart';
 import '../../services/supabase_service.dart';
 
 class StatusBar extends ConsumerWidget {
@@ -41,76 +40,7 @@ class StatusBar extends ConsumerWidget {
             data: (data) => data != null
                 ? _GroupGoalProgressStrip(
                     progress: data,
-                    isRoomAdmin: isRoomAdmin,
                     onAdminRowTap: isRoomAdmin ? onGroupGoalTap : null,
-                    onCancelGoal: isRoomAdmin
-                        ? () async {
-                            final g = data.goal;
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                backgroundColor: JarsColors.surfaceRaised,
-                                title: Text(
-                                  'End group goal?',
-                                  style: GoogleFonts.spaceGrotesk(
-                                    color: JarsColors.textPrimary,
-                                  ),
-                                ),
-                                content: Text(
-                                  'Everyone will stop tracking this goal. '
-                                  'You can set a new one from room settings.',
-                                  style: GoogleFonts.inter(
-                                    color: JarsColors.textSecondary,
-                                    height: 1.35,
-                                  ),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(ctx, false),
-                                    child: const Text('Keep goal'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(ctx, true),
-                                    child: Text(
-                                      'End goal',
-                                      style: GoogleFonts.inter(
-                                        color: JarsColors.red,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (ok != true || !context.mounted) return;
-                            try {
-                              await GoalService.deleteGoal(g.id);
-                              ref.invalidate(groupGoalProvider);
-                              ref.invalidate(groupGoalProgressProvider);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Group goal ended.',
-                                      style: GoogleFonts.inter(),
-                                    ),
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Could not end goal: $e'),
-                                    backgroundColor: JarsColors.red,
-                                  ),
-                                );
-                              }
-                            }
-                          }
-                        : null,
                   )
                 : const SizedBox.shrink(),
             loading: () => const SizedBox.shrink(),
@@ -191,15 +121,11 @@ class StatusBar extends ConsumerWidget {
 
 class _GroupGoalProgressStrip extends StatelessWidget {
   final GroupGoalProgress progress;
-  final bool isRoomAdmin;
   final VoidCallback? onAdminRowTap;
-  final VoidCallback? onCancelGoal;
 
   const _GroupGoalProgressStrip({
     required this.progress,
-    required this.isRoomAdmin,
     this.onAdminRowTap,
-    this.onCancelGoal,
   });
 
   @override
@@ -283,52 +209,19 @@ class _GroupGoalProgressStrip extends StatelessWidget {
     );
 
     final tappableCore = onAdminRowTap != null
-        ? Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onAdminRowTap,
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: core,
-              ),
+        ? GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onAdminRowTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: core,
             ),
           )
         : core;
 
-    final body = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        tappableCore,
-        if (isRoomAdmin && onCancelGoal != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: onCancelGoal,
-              style: TextButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                'End group goal',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: JarsColors.red,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-      child: body,
+      child: tappableCore,
     );
   }
 }
