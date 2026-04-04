@@ -51,6 +51,31 @@ class NotificationService {
   /// Web only: full diagnostic blob for in-app copy (no DevTools on iPhone).
   static String? webFirebaseStartupDiagnostics;
 
+  /// Web: [main] runs Firebase init after the first frame; entry points must await this.
+  static Completer<void>? _webMainFirebaseBootstrapGate;
+
+  static void armWebFirebaseBootstrapGateIfNeeded() {
+    if (!kIsWeb) return;
+    _webMainFirebaseBootstrapGate ??= Completer<void>();
+  }
+
+  static void releaseWebFirebaseBootstrapGate() {
+    if (!kIsWeb) return;
+    final c = _webMainFirebaseBootstrapGate;
+    if (c != null && !c.isCompleted) {
+      c.complete();
+    }
+    _webMainFirebaseBootstrapGate = null;
+  }
+
+  static Future<void> _awaitWebFirebaseBootstrapGateIfNeeded() async {
+    if (!kIsWeb) return;
+    final c = _webMainFirebaseBootstrapGate;
+    if (c != null) {
+      await c.future;
+    }
+  }
+
   /// Text shown in notification settings → “Deploy & Firebase debug”.
   static String composeWebFirebaseStartupDiagnostics({
     required FirebaseOptions o,
@@ -93,6 +118,7 @@ class NotificationService {
   static String? get cachedLocalFcmToken => _lastKnownLocalToken;
 
   static Future<void> _ensureFirebaseInitialized() async {
+    await _awaitWebFirebaseBootstrapGateIfNeeded();
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(options: jarsFirebaseOptions);
     }
