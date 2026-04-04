@@ -10,6 +10,7 @@ import 'foreground_push_display_stub.dart'
 import 'web_dom_notification_permission_stub.dart'
     if (dart.library.html) 'web_dom_notification_permission_web.dart'
     as dom_notif;
+import '../bootstrap/deploy_label.dart';
 import '../bootstrap/jars_firebase_options.dart';
 import '../models/fcm_device.dart';
 import 'supabase_service.dart';
@@ -46,6 +47,31 @@ class NotificationService {
   /// Web only: set in [main] if [Firebase.initializeApp] fails before [runApp].
   /// Lets notification settings show startup failure vs [registerToken] failure.
   static String? webFirebaseStartupError;
+
+  /// Web only: full diagnostic blob for in-app copy (no DevTools on iPhone).
+  static String? webFirebaseStartupDiagnostics;
+
+  /// Text shown in notification settings → “Deploy & Firebase debug”.
+  static String composeWebFirebaseStartupDiagnostics({
+    required FirebaseOptions o,
+    required String jsGlobalLine,
+  }) {
+    final webApp = o.appId.contains(':web:');
+    return [
+      'Jars build: $kJarsDeployLabel',
+      jsGlobalLine,
+      '--- Dart FirebaseOptions ---',
+      'apiKey: ${o.apiKey}',
+      'appId: ${o.appId}',
+      'appId contains :web:: $webApp',
+      'messagingSenderId: ${o.messagingSenderId}',
+      'projectId: ${o.projectId}',
+      'authDomain: ${o.authDomain}',
+      'storageBucket: ${o.storageBucket}',
+      'measurementId: ${o.measurementId}',
+      'databaseURL: ${o.databaseURL}',
+    ].join('\n');
+  }
 
   /// Last error from [registerToken] (for settings UI). Cleared on success.
   static String? lastRegisterTokenError;

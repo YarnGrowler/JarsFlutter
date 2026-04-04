@@ -10,6 +10,9 @@ import 'core/theme.dart';
 import 'bootstrap/config_error_app.dart';
 import 'bootstrap/jars_firebase_options.dart';
 import 'bootstrap/local_env.dart' show readLocalEnvPairs;
+import 'bootstrap/web_firebase_probe_stub.dart'
+    if (dart.library.html) 'bootstrap/web_firebase_probe_web.dart'
+    as web_firebase_probe;
 import 'bootstrap/supabase_public_config.dart';
 import 'services/notification_service.dart';
 
@@ -49,10 +52,17 @@ Future<void> main() async {
   // [NotificationService.webFirebaseStartupError] on the notification screen.
   if (kIsWeb) {
     NotificationService.webFirebaseStartupError = null;
+    final baseDiag = NotificationService.composeWebFirebaseStartupDiagnostics(
+      o: jarsFirebaseOptions,
+      jsGlobalLine: web_firebase_probe.describeFirebaseJsGlobal(),
+    );
+    String diagnostics = baseDiag;
     try {
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp(options: jarsFirebaseOptions);
       }
+      diagnostics =
+          '$baseDiag\n---\nFirebase.initializeApp: ok\nFirebase.apps.length: ${Firebase.apps.length}';
     } catch (e, st) {
       debugPrint('Firebase.initializeApp (web, main): $e');
       debugPrint('$st');
@@ -61,11 +71,14 @@ Future<void> main() async {
           .split('\n')
           .map((l) => l.trim())
           .where((l) => l.isNotEmpty)
-          .take(4)
+          .take(8)
           .join('\n');
       NotificationService.webFirebaseStartupError =
           '[startup] ${e.runtimeType}: $e${hint.isEmpty ? '' : '\n$hint'}';
+      diagnostics =
+          '$baseDiag\n---\nFirebase.initializeApp: FAILED\n$e\n$hint';
     }
+    NotificationService.webFirebaseStartupDiagnostics = diagnostics;
   }
 
   runApp(

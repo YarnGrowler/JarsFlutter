@@ -121,8 +121,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   if (kIsWeb) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Tip: open DevTools → Console on desktop Chrome for full logs, '
-                      'or share this snackbar text.',
+                      'Tip: on iPhone, open Notifications here and expand “Deploy & Firebase debug” '
+                      'for build label + config + JS probe. On desktop Chrome, DevTools → Console.',
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         color: Colors.white70,
@@ -223,6 +223,38 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
                   children: [
                     if (kIsWeb &&
+                        NotificationService.webFirebaseStartupDiagnostics !=
+                            null) ...[
+                      Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                        ),
+                        child: ExpansionTile(
+                          tilePadding: EdgeInsets.zero,
+                          title: Text(
+                            'Deploy & Firebase debug (tap to expand, long-press to copy)',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: JarsColors.textSecondary,
+                            ),
+                          ),
+                          children: [
+                            SelectableText(
+                              NotificationService.webFirebaseStartupDiagnostics!,
+                              style: GoogleFonts.spaceMono(
+                                fontSize: 10,
+                                height: 1.35,
+                                color: JarsColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (kIsWeb &&
                         NotificationService.webFirebaseStartupError != null) ...[
                       Material(
                         color: JarsColors.red.withValues(alpha: 0.14),
@@ -253,7 +285,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                               Text(
                                 'Tapping “Show permission prompt” will retry the same step and may show the same error. '
                                 'After a deploy, clear the site data for this URL or remove and re-add the Home Screen icon, '
-                                'then open the app again.',
+                                'then open the app again. Expand “Deploy & Firebase debug” above for the full snapshot.',
                                 style: GoogleFonts.inter(
                                   fontSize: 12,
                                   color: JarsColors.textSecondary,

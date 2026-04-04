@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../../bootstrap/deploy_label.dart';
 import '../../core/theme.dart';
 
 /// Dark gradient backdrop + soft glow orbs for auth / onboarding flows.
@@ -49,7 +50,31 @@ class AuthShell extends StatelessWidget {
             child: _blurOrb(100, JarsColors.primary.withValues(alpha: 0.08)),
           ),
         ],
-        child,
+        Stack(
+          fit: StackFit.expand,
+          children: [
+            child,
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'Jars $kJarsDeployLabel',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1.2,
+                    letterSpacing: 0.3,
+                    color: JarsColors.textTertiary.withValues(alpha: 0.9),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
