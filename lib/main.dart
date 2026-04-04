@@ -11,6 +11,7 @@ import 'bootstrap/config_error_app.dart';
 import 'bootstrap/jars_firebase_options.dart';
 import 'bootstrap/local_env.dart' show readLocalEnvPairs;
 import 'bootstrap/supabase_public_config.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,10 +45,10 @@ Future<void> main() async {
 
   await Supabase.initialize(url: url, anonKey: anonKey);
 
-  // Web/PWA: Firebase must be ready before the first frame. Lazy init on the
-  // notification button hits FlutterFire JS interop before the bridge is fully
-  // ready → "Null check operator used on a null value" at initializeApp.
+  // Web/PWA: init before first frame; failures surface via
+  // [NotificationService.webFirebaseStartupError] on the notification screen.
   if (kIsWeb) {
+    NotificationService.webFirebaseStartupError = null;
     try {
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp(options: jarsFirebaseOptions);
@@ -55,6 +56,15 @@ Future<void> main() async {
     } catch (e, st) {
       debugPrint('Firebase.initializeApp (web, main): $e');
       debugPrint('$st');
+      final hint = st
+          .toString()
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .take(4)
+          .join('\n');
+      NotificationService.webFirebaseStartupError =
+          '[startup] ${e.runtimeType}: $e${hint.isEmpty ? '' : '\n$hint'}';
     }
   }
 

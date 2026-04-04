@@ -43,6 +43,10 @@ class NotificationService {
   /// Serialize token persist so [init] + [registerToken] + [onTokenRefresh] don’t interleave saves.
   static Future<void> _persistTail = Future.value();
 
+  /// Web only: set in [main] if [Firebase.initializeApp] fails before [runApp].
+  /// Lets notification settings show startup failure vs [registerToken] failure.
+  static String? webFirebaseStartupError;
+
   /// Last error from [registerToken] (for settings UI). Cleared on success.
   static String? lastRegisterTokenError;
 

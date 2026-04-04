@@ -1,5 +1,11 @@
 // FCM web push — served at /firebase-messaging-sw.js
 // Must show notifications here; FCM accepting the message is not enough on web.
+//
+// Escalation if web init still fails after removing manual Firebase <script> tags
+// from index.html: check jars-flutter/pubspec.lock → firebase_core_web version, then
+// firebase_core_web changelog for the matching Firebase JS CDN line. Align these
+// importScripts URLs to that version, or run `flutterfire configure` to verify
+// the web appId matches your Firebase project.
 /* eslint-disable no-undef */
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');

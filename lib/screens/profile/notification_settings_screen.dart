@@ -222,6 +222,50 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           : ListView(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
                   children: [
+                    if (kIsWeb &&
+                        NotificationService.webFirebaseStartupError != null) ...[
+                      Material(
+                        color: JarsColors.red.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Firebase failed at startup (web)',
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: JarsColors.red,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              SelectableText(
+                                NotificationService.webFirebaseStartupError!,
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 11,
+                                  height: 1.35,
+                                  color: JarsColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'Tapping “Show permission prompt” will retry the same step and may show the same error. '
+                                'After a deploy, clear the site data for this URL or remove and re-add the Home Screen icon, '
+                                'then open the app again.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: JarsColors.textSecondary,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
                     Text(
                       'Permission: $statusLabel',
                       style: GoogleFonts.inter(
