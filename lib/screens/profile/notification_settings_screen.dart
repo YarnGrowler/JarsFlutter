@@ -43,8 +43,12 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         NotificationService.getNotificationSettings(),
         NotificationService.listMyDevices(),
       ]).timeout(const Duration(seconds: 12));
-      s = batch[0] as NotificationSettings?;
-      d = batch[1] as List<FcmDevice>;
+      final rawS = batch[0];
+      final rawD = batch[1];
+      s = rawS is NotificationSettings ? rawS : null;
+      d = rawD is List<FcmDevice>
+          ? rawD
+          : const <FcmDevice>[];
     } on TimeoutException {
       s = null;
       d = [];
@@ -72,15 +76,62 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     await _refresh();
     if (!mounted) return;
     final err = NotificationService.lastRegisterTokenError;
+    final step = NotificationService.lastRegisterTokenStep;
+    final stackHint = NotificationService.lastRegisterTokenStackHint;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          ok
-              ? 'This device was registered for push. On iPhone, the system prompt only appears when you tap this button — choose Allow.'
-              : err ??
-                  'Could not enable push. On iPhone (Home Screen): if you never saw a prompt, an older visit may have blocked it — try Settings → Apps → Jars / Safari → Notifications, or remove the Home Screen icon and add it again. Then open the app and tap this button once.',
-          style: GoogleFonts.inter(),
-        ),
+        duration: ok ? const Duration(seconds: 4) : const Duration(seconds: 14),
+        content: ok
+            ? Text(
+                'This device was registered for push. On iPhone, the system prompt only appears when you tap this button — choose Allow.',
+                style: GoogleFonts.inter(),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    err ??
+                        'Could not enable push. On iPhone (Home Screen): if you never saw a prompt, an older visit may have blocked it — try Settings → Apps → Jars / Safari → Notifications, or remove the Home Screen icon and add it again. Then open the app and tap this button once.',
+                    style: GoogleFonts.inter(fontSize: 14, height: 1.35),
+                  ),
+                  if (step != null && step != 'ok') ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Step: $step',
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 11,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                  if (stackHint != null && stackHint.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      stackHint.length > 400
+                          ? '${stackHint.substring(0, 400)}…'
+                          : stackHint,
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 10,
+                        color: Colors.white60,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                  if (kIsWeb) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Tip: open DevTools → Console on desktop Chrome for full logs, '
+                      'or share this snackbar text.',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Colors.white70,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
         backgroundColor: ok ? null : JarsColors.red,
       ),
     );

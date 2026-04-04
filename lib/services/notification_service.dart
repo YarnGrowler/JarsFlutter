@@ -45,6 +45,12 @@ class NotificationService {
   /// Last error from [registerToken] (for settings UI). Cleared on success.
   static String? lastRegisterTokenError;
 
+  /// Last completed step in [registerToken] when a failure occurs (debugging).
+  static String? lastRegisterTokenStep;
+
+  /// Short stack / detail for support (first lines).
+  static String? lastRegisterTokenStackHint;
+
   static const FirebaseOptions _firebaseOptions = FirebaseOptions(
     apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
     authDomain: 'jarsflutter.firebaseapp.com',
@@ -198,9 +204,19 @@ class NotificationService {
             .eq('user_id', uid)
             .order('last_seen_at', ascending: false);
       })().timeout(const Duration(seconds: 20));
-      return (rows as List)
-          .map((r) => FcmDevice.fromJson(Map<String, dynamic>.from(r as Map)))
-          .toList();
+      final out = <FcmDevice>[];
+      for (final r in rows as List) {
+        try {
+          if (r is! Map) continue;
+          out.add(FcmDevice.fromJson(Map<String, dynamic>.from(r)));
+        } catch (e) {
+          developer.log(
+            'NotificationService.listMyDevices: skip bad row $e',
+            name: 'Jars',
+          );
+        }
+      }
+      return out;
     } catch (e) {
       final s = e.toString();
       if (s.contains('404') ||
@@ -310,7 +326,9 @@ class NotificationService {
   }
 
   static Future<bool> _persistTokenAndAttachListeners(String token) {
-    return _enqueuePersistTail(() => _persistTokenAndAttachListenersSerial(token));
+    return _enqueuePersistTail<bool>(
+      () => _persistTokenAndAttachListenersSerial(token),
+    );
   }
 
   static Future<bool> _persistTokenAndAttachListenersSerial(String token) async {
@@ -326,12 +344,23 @@ class NotificationService {
         );
       });
     }
-    if (kIsWeb && !_foregroundWebAttached) {
-      _foregroundWebAttached = true;
-      attachForegroundWebPushDisplay();
-    }
     _lastKnownLocalToken = token;
     final saved = await _saveFcmToken(token);
+    // Web: attach foreground listener *after* token save — on some builds it can
+    // throw during setup right after Allow; isolating it avoids blocking registration.
+    if (kIsWeb && saved && !_foregroundWebAttached) {
+      _foregroundWebAttached = true;
+      try {
+        attachForegroundWebPushDisplay();
+      } catch (e, st) {
+        developer.log(
+          'NotificationService: attachForegroundWebPushDisplay failed (non-fatal): $e',
+          name: 'Jars',
+          error: e,
+          stackTrace: st,
+        );
+      }
+    }
     if (!saved) {
       developer.log(
         'NotificationService: token not saved (signed in?)',
@@ -347,13 +376,21 @@ class NotificationService {
   /// especially on **iPhone Safari / Home Screen web apps**, where calling
   /// [FirebaseMessaging.requestPermission] from init or post-login `async`
   /// code does not show the system prompt and can leave permission denied.
+  static void _traceRegisterStep(String step) {
+    lastRegisterTokenStep = step;
+    developer.log('registerToken ▶ $step', name: 'Jars');
+  }
+
   static Future<bool> registerToken() async {
     lastRegisterTokenError = null;
+    lastRegisterTokenStep = null;
+    lastRegisterTokenStackHint = null;
     try {
       // Web / iOS PWA: the **first** await in this handler must be the browser’s
       // Notification.requestPermission — not Firebase.initializeApp. Otherwise
       // WebKit leaves the user-gesture stack and the prompt never appears.
       if (kIsWeb) {
+        _traceRegisterStep('web_dom_notification_permission');
         final domOk = await dom_notif.requestDomNotificationPermission();
         if (!domOk) {
           developer.log(
@@ -364,11 +401,13 @@ class NotificationService {
         }
       }
 
+      _traceRegisterStep('firebase_initialize_app');
       await _ensureFirebaseInitialized();
 
       final messaging = FirebaseMessaging.instance;
 
       var permissionOk = false;
+      _traceRegisterStep('firebase_messaging_request_permission');
       try {
         final settings = await messaging.requestPermission(
           alert: true,
@@ -401,6 +440,7 @@ class NotificationService {
         return false;
       }
 
+      _traceRegisterStep('firebase_get_token');
       final token = await getMessagingTokenWithRetries(
         messaging,
         maxAttempts: kIsWeb ? 4 : 3,
@@ -422,15 +462,30 @@ class NotificationService {
         return false;
       }
 
+      _traceRegisterStep('persist_token_and_listeners');
       final persisted = await _persistTokenAndAttachListeners(token);
       if (!persisted && SupabaseService.currentUserId == null) {
         lastRegisterTokenError =
             'You’re signed out. Sign in, then tap again to save this device for push.';
       }
+      if (persisted) {
+        lastRegisterTokenStep = 'ok';
+      }
       return persisted;
     } catch (e, st) {
-      lastRegisterTokenError = e.toString();
-      developer.log('NotificationService.registerToken: $e\n$st', name: 'Jars');
+      lastRegisterTokenStackHint = st
+          .toString()
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .take(5)
+          .join('\n');
+      lastRegisterTokenError =
+          '[${lastRegisterTokenStep ?? 'unknown'}] ${e.runtimeType}: $e';
+      developer.log(
+        'NotificationService.registerToken FAILED at ${lastRegisterTokenStep ?? '?'}: $e\n$st',
+        name: 'Jars',
+      );
       return false;
     }
   }
