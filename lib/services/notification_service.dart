@@ -55,12 +55,15 @@ class NotificationService {
   static String composeWebFirebaseStartupDiagnostics({
     required FirebaseOptions o,
     required String jsGlobalLine,
+    required String webEnvBlock,
   }) {
     final webApp = o.appId.contains(':web:');
     return [
       'Jars build: $kJarsDeployLabel',
       jsGlobalLine,
       'FlutterFire web = modular SDK only; do not load firebase-*-compat.js in index.html.',
+      '--- Web environment ---',
+      webEnvBlock,
       '--- Dart FirebaseOptions ---',
       'apiKey: ${o.apiKey}',
       'appId: ${o.appId}',

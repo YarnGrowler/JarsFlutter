@@ -48,37 +48,64 @@ Future<void> main() async {
 
   await Supabase.initialize(url: url, anonKey: anonKey);
 
-  // Web/PWA: init before first frame; failures surface via
-  // [NotificationService.webFirebaseStartupError] on the notification screen.
+  // Web/PWA: FlutterFire modular inject + WebKit PWA timing — short settle delay
+  // and a few retries before [runApp]. Diagnostics surface on the notification screen.
   if (kIsWeb) {
     NotificationService.webFirebaseStartupError = null;
     final baseDiag = NotificationService.composeWebFirebaseStartupDiagnostics(
       o: jarsFirebaseOptions,
       jsGlobalLine: web_firebase_probe.describeFirebaseJsGlobal(),
+      webEnvBlock: web_firebase_probe.describeWebEnvForFirebaseDiagnostics(),
     );
-    String diagnostics = baseDiag;
-    try {
-      if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(options: jarsFirebaseOptions);
+    final initLog = StringBuffer();
+    Object? lastErr;
+    StackTrace? lastSt;
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    initLog.writeln('after settle delay 150ms: apps=${Firebase.apps.length}');
+    var ok = false;
+    for (var attempt = 1; attempt <= 5; attempt++) {
+      if (Firebase.apps.isNotEmpty) {
+        initLog.writeln('attempt $attempt: skipped (already initialized)');
+        ok = true;
+        break;
       }
-      diagnostics =
-          '$baseDiag\n---\nFirebase.initializeApp: ok\nFirebase.apps.length: ${Firebase.apps.length}';
-    } catch (e, st) {
-      debugPrint('Firebase.initializeApp (web, main): $e');
-      debugPrint('$st');
-      final hint = st
-          .toString()
-          .split('\n')
-          .map((l) => l.trim())
-          .where((l) => l.isNotEmpty)
-          .take(8)
-          .join('\n');
-      NotificationService.webFirebaseStartupError =
-          '[startup] ${e.runtimeType}: $e${hint.isEmpty ? '' : '\n$hint'}';
-      diagnostics =
-          '$baseDiag\n---\nFirebase.initializeApp: FAILED\n$e\n$hint';
+      try {
+        await Firebase.initializeApp(options: jarsFirebaseOptions);
+        initLog.writeln('attempt $attempt: Firebase.initializeApp ok');
+        ok = true;
+        break;
+      } catch (e, st) {
+        lastErr = e;
+        lastSt = st;
+        initLog.writeln('attempt $attempt: FAILED → $e');
+        debugPrint('Firebase.initializeApp (web) attempt $attempt: $e');
+        debugPrint('$st');
+        if (attempt < 5) {
+          final waitMs = 120 * attempt * attempt;
+          initLog.writeln('  backoff ${waitMs}ms');
+          await Future<void>.delayed(Duration(milliseconds: waitMs));
+        }
+      }
     }
-    NotificationService.webFirebaseStartupDiagnostics = diagnostics;
+    final hint = lastSt
+            ?.toString()
+            .split('\n')
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)
+            .take(10)
+            .join('\n') ??
+        '';
+    if (ok) {
+      NotificationService.webFirebaseStartupDiagnostics =
+          '$baseDiag\n---\nFirebase init log:\n$initLog\n---\n'
+          'Firebase.initializeApp: ok\nFirebase.apps.length: ${Firebase.apps.length}';
+    } else {
+      NotificationService.webFirebaseStartupError =
+          '[startup] ${lastErr.runtimeType}: $lastErr${hint.isEmpty ? '' : '\n$hint'}';
+      NotificationService.webFirebaseStartupDiagnostics =
+          '$baseDiag\n---\nFirebase init log:\n$initLog\n---\n'
+          'Firebase.initializeApp: FAILED\n$lastErr\n$hint';
+    }
   }
 
   runApp(
