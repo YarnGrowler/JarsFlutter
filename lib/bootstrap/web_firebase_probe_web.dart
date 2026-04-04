@@ -5,7 +5,7 @@ import 'dart:js_util' as js_util;
 /// Whether the compat `firebase` global exists before/after Flutter bootstrap.
 String describeFirebaseJsGlobal() {
   try {
-    final Object? g = js_util.globalThis;
+    final Object g = js_util.globalThis;
     if (!js_util.hasProperty(g, 'firebase')) {
       return 'globalThis.firebase: property missing';
     }
