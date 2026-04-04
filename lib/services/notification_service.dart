@@ -10,6 +10,7 @@ import 'foreground_push_display_stub.dart'
 import 'web_dom_notification_permission_stub.dart'
     if (dart.library.html) 'web_dom_notification_permission_web.dart'
     as dom_notif;
+import '../bootstrap/jars_firebase_options.dart';
 import '../models/fcm_device.dart';
 import 'supabase_service.dart';
 
@@ -51,16 +52,6 @@ class NotificationService {
   /// Short stack / detail for support (first lines).
   static String? lastRegisterTokenStackHint;
 
-  static const FirebaseOptions _firebaseOptions = FirebaseOptions(
-    apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
-    authDomain: 'jarsflutter.firebaseapp.com',
-    projectId: 'jarsflutter',
-    storageBucket: 'jarsflutter.firebasestorage.app',
-    messagingSenderId: '93048274469',
-    appId: '1:93048274469:web:dfc56256d2aeede1ad49cc',
-    measurementId: 'G-X14XTW7GJP',
-  );
-
   /// Last token obtained from FCM on this install (to mark "this device" in lists).
   static String? _lastKnownLocalToken;
 
@@ -69,7 +60,7 @@ class NotificationService {
 
   static Future<void> _ensureFirebaseInitialized() async {
     if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(options: _firebaseOptions);
+      await Firebase.initializeApp(options: jarsFirebaseOptions);
     }
   }
 

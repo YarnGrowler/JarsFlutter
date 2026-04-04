@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'core/theme.dart';
 import 'bootstrap/config_error_app.dart';
+import 'bootstrap/jars_firebase_options.dart';
 import 'bootstrap/local_env.dart' show readLocalEnvPairs;
 import 'bootstrap/supabase_public_config.dart';
 
@@ -41,6 +43,20 @@ Future<void> main() async {
   }
 
   await Supabase.initialize(url: url, anonKey: anonKey);
+
+  // Web/PWA: Firebase must be ready before the first frame. Lazy init on the
+  // notification button hits FlutterFire JS interop before the bridge is fully
+  // ready → "Null check operator used on a null value" at initializeApp.
+  if (kIsWeb) {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(options: jarsFirebaseOptions);
+      }
+    } catch (e, st) {
+      debugPrint('Firebase.initializeApp (web, main): $e');
+      debugPrint('$st');
+    }
+  }
 
   runApp(
     const ColoredBox(
