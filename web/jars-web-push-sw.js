@@ -8,12 +8,17 @@ self.addEventListener('push', (event) => {
   }
   const title = data.title || 'Jars';
   const body = data.body || '';
+  // tag must differ per message or the OS replaces earlier notifications with the same tag.
+  const tag =
+    (typeof data.tag === 'string' && data.tag.length > 0)
+      ? data.tag
+      : `jars-${Date.now()}`;
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
       icon: data.icon || '/icons/jars-notification.svg',
       badge: '/icons/jars-notification.svg',
-      tag: data.tag || 'jars',
+      tag,
       data: data.data || {},
     }),
   );

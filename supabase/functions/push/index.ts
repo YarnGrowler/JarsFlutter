@@ -393,8 +393,9 @@ Deno.serve(async (req) => {
                   title: "Jars",
                   body: notificationBody,
                   icon: PUSH_ICON_PATH,
-                  tag: "jars",
-                  data: { url: "/" },
+                  // Unique per DB row — same tag replaces prior toasts in Chrome (user only sees one).
+                  tag: notification.id,
+                  data: { url: "/", notificationId: notification.id },
                 },
                 adminContact,
                 options: { ttl: 86400, urgency: "normal" },
