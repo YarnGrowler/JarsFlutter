@@ -807,7 +807,6 @@ class _AdminRoomSettingsSheetState
                       Center(
                         child: TextButton(
                           onPressed: () async {
-                            Navigator.pop(context);
                             final parent = widget.dialogContext;
                             final confirmed = await showDialog<bool>(
                               context: parent,
@@ -841,11 +840,14 @@ class _AdminRoomSettingsSheetState
                                 ],
                               ),
                             );
+                            if (!mounted) return;
                             if (confirmed == true) {
                               await RoomService.resetRoomScores(room.id);
+                              if (!parent.mounted) return;
                               ref.invalidate(myScoreProvider);
                               ref.invalidate(roomScoresProvider);
                               ref.invalidate(groupGoalProgressProvider);
+                              if (mounted) Navigator.pop(context);
                             }
                           },
                           child: Text(
@@ -861,7 +863,6 @@ class _AdminRoomSettingsSheetState
                       Center(
                         child: TextButton(
                           onPressed: () async {
-                            Navigator.pop(context);
                             final parent = widget.dialogContext;
                             final confirmed = await showDialog<bool>(
                               context: parent,
@@ -895,10 +896,13 @@ class _AdminRoomSettingsSheetState
                                 ],
                               ),
                             );
+                            if (!mounted) return;
                             if (confirmed == true) {
                               await RoomService.deleteRoom(room.id);
+                              if (!parent.mounted) return;
                               ref.invalidate(userRoomsProvider);
                               ref.read(activeRoomProvider.notifier).clear();
+                              if (mounted) Navigator.pop(context);
                             }
                           },
                           child: Text(

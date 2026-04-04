@@ -65,7 +65,7 @@ class StatusBar extends ConsumerWidget {
                 ],
                 scoreAsync.when(
                   data: (score) {
-                    final daily = score?.dailyPoints ?? 0;
+                    final daily = score?.displayDailyPoints ?? 0;
                     return Text(
                       'Today: ${daily.toInt()} pts',
                       style: GoogleFonts.spaceMono(

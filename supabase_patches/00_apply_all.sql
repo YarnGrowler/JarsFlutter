@@ -157,3 +157,4 @@ grant select, insert, update, delete on table public.user_fcm_tokens to service_
 -- === 14 wake cards + join password: run supabase_patches/14_room_wake_password.sql ===
 -- === 15 wake room push + nudge limits + admin wake: run supabase_patches/15_wake_nudge_room_notify.sql ===
 -- === 16 Web Push (VAPID): run supabase_patches/16_web_push_subscriptions.sql ===
+-- === 17 idle wake last-seen fix: run supabase_patches/17_idle_wake_fix_last_seen.sql ===

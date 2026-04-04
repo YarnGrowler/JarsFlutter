@@ -7,6 +7,7 @@ import '../../providers/active_room_provider.dart';
 import '../../providers/leaderboard_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../services/log_service.dart';
+import '../../services/score_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/ranks/leaderboard_row.dart';
 import '../../widgets/ranks/rank_progress_arc.dart';
@@ -37,10 +38,16 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    // Refresh data when screen first mounts (e.g. after logging an exercise)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Refresh data when screen first mounts; zero stale daily_points in DB for this user.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final room = ref.read(activeRoomProvider);
+      if (room != null && SupabaseService.currentUserId != null) {
+        await ScoreService.checkDailyReset(room.id);
+      }
+      if (!mounted) return;
       ref.invalidate(leaderboardProvider);
       ref.invalidate(myScoreProvider);
+      ref.invalidate(roomScoresProvider);
       ref.invalidate(consistencyProvider);
     });
   }

@@ -173,7 +173,7 @@ begin
   from public.exercise_logs el
   where el.room_id = p_room_id
     and el.user_id = p_target_user_id
-    and el.exercise_name !~ '^__';
+    and el.exercise_name !~ '^__WAKE__\\|';
 
   if last_ts is null then
     last_ts := timestamp 'epoch';

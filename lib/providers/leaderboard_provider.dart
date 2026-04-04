@@ -38,7 +38,7 @@ final leaderboardProvider =
               userId: s.userId,
               username: s.username ?? 'Unknown',
               score: s.totalScore,
-              dailyPoints: s.dailyPoints,
+              dailyPoints: s.displayDailyPoints,
               streak: s.streakCurrent,
             ))
         .toList()
@@ -51,8 +51,8 @@ final leaderboardProvider =
         .map((s) => LeaderboardEntry(
               userId: s.userId,
               username: s.username ?? 'Unknown',
-              score: s.dailyPoints,
-              dailyPoints: s.dailyPoints,
+              score: s.displayDailyPoints,
+              dailyPoints: s.displayDailyPoints,
               streak: s.streakCurrent,
             ))
         .toList()
@@ -76,7 +76,7 @@ final leaderboardProvider =
       userId: score.userId,
       username: score.username ?? 'Unknown',
       score: periodPoints,
-      dailyPoints: score.dailyPoints,
+      dailyPoints: score.displayDailyPoints,
       streak: score.streakCurrent,
     ));
   }

@@ -33,6 +33,12 @@ const Duration _kHoldDuration = Duration(seconds: 2);
 const Duration _kTapMax = Duration(milliseconds: 300);
 const double _kSwipeUpThreshold = 18.0; // px upward before opening picker
 
+/// Hold-progress ring: small canvas + repaint boundary so web/mobile don’t
+/// repaint a full-screen layer every tick; size ≥ 2× ring radius + stroke.
+const double _kHoldRingCanvasSize = 10.0;
+/// Nudge ring center down so it wraps the Space Mono rep (glyph sits low).
+const double _kHoldRingCenterYOffset = 10.0;
+
 const String _kRecentExercisesKey = 'jars_recent_exercises';
 const String _kWeightKeyPrefix = 'jars_weight_';
 const int _kMaxRecents = 10;
@@ -574,8 +580,17 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                         if (_holding && holdProgress > 0)
                                           Positioned.fill(
                                             child: IgnorePointer(
-                                              child: _HoldRing(
-                                                  progress: holdProgress),
+                                              child: Center(
+                                                child: RepaintBoundary(
+                                                  child: SizedBox(
+                                                    width: _kHoldRingCanvasSize,
+                                                    height: _kHoldRingCanvasSize,
+                                                    child: _HoldRing(
+                                                      progress: holdProgress,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         if (_holding && holdProgress > 0.05)
@@ -1240,7 +1255,10 @@ class _HoldRingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = Offset(
+      size.width / 2,
+      size.height / 2 + _kHoldRingCenterYOffset,
+    );
     const r = 72.0;
     canvas.drawCircle(
       center,

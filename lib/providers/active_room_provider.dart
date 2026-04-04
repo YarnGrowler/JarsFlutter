@@ -42,6 +42,7 @@ class ActiveRoomNotifier extends StateNotifier<Room?> {
 
   void clear() {
     state = null;
+    SharedPreferences.getInstance().then((p) => p.remove(_activeRoomKey));
   }
 
   Future<void> refresh() async {

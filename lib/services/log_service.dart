@@ -103,11 +103,12 @@ class LogService {
     required int page,
     int pageSize = 30,
   }) async {
+    // LIKE treats '_' as wildcard — __RANKUP__ rows leaked into history. Use regex.
     var query = _db
         .from('exercise_logs')
         .select('*, profiles(username)')
         .eq('user_id', userId)
-        .not('exercise_name', 'like', '${ExerciseLog.kRankUpPrefix}%')
+        .not('exercise_name', 'match', r'^__')
         .order('created_at', ascending: false)
         .range(page * pageSize, (page + 1) * pageSize - 1);
 
@@ -117,7 +118,7 @@ class LogService {
           .select('*, profiles(username)')
           .eq('user_id', userId)
           .eq('room_id', roomId)
-          .not('exercise_name', 'like', '${ExerciseLog.kRankUpPrefix}%')
+          .not('exercise_name', 'match', r'^__')
           .order('created_at', ascending: false)
           .range(page * pageSize, (page + 1) * pageSize - 1);
     }

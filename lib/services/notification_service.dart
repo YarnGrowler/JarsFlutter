@@ -431,25 +431,6 @@ class NotificationService {
     return persisted;
   }
 
-  static Future<void> _pruneOtherWebPushSubs(String userId, String keepEndpoint) async {
-    if (!kIsWeb) return;
-    try {
-      final rows = await _db
-          .from('user_web_push_subscriptions')
-          .select('id,endpoint')
-          .eq('user_id', userId);
-      for (final r in rows as List) {
-        final m = Map<String, dynamic>.from(r as Map);
-        final id = m['id'] as String?;
-        final ep = m['endpoint'] as String?;
-        if (id == null || ep == null || ep == keepEndpoint) continue;
-        await _db.from('user_web_push_subscriptions').delete().eq('id', id);
-      }
-    } catch (e) {
-      developer.log('_pruneOtherWebPushSubs: $e', name: 'Jars');
-    }
-  }
-
   static Future<bool> _saveWebPushSubscription({
     required String endpoint,
     required String p256dh,
@@ -470,7 +451,8 @@ class NotificationService {
         },
         onConflict: 'endpoint',
       );
-      await _pruneOtherWebPushSubs(userId, endpoint);
+      // Do not delete other rows: Chrome + iPhone PWA are different endpoints;
+      // the Edge `push` function sends to every enabled row for this user.
       if (kDebugMode) {
         developer.log('Web push subscription saved', name: 'Jars');
       }

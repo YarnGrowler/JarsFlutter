@@ -12,6 +12,27 @@ class Score {
   // Joined fields
   final String? username;
 
+  /// True when [lastDailyReset] is on a calendar day before today (device local).
+  /// Used so leaderboard / status bar show 0 until someone logs after midnight
+  /// even if the DB row was not rewritten overnight.
+  static bool isDailyResetStale(DateTime? lastDailyReset) {
+    if (lastDailyReset == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final last = DateTime(
+      lastDailyReset.year,
+      lastDailyReset.month,
+      lastDailyReset.day,
+    );
+    return last.isBefore(today);
+  }
+
+  bool get isDailyStale => Score.isDailyResetStale(lastDailyReset);
+
+  /// Points toward today's goal; 0 when the stored row is from a prior calendar day.
+  double get displayDailyPoints =>
+      isDailyStale ? 0.0 : dailyPoints;
+
   const Score({
     required this.roomId,
     required this.userId,

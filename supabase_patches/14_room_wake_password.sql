@@ -236,11 +236,13 @@ begin
     join public.profiles p on p.id = rm.user_id
     where rm.room_id = p_room_id
   loop
+    -- Count any feed row except idle ghost cards. Old filter !~ '^__' wrongly ignored
+    -- __RANKUP__, __PR__, __STREAK__, __JOIN__, etc., so "active" users still looked idle.
     select max(el.created_at) into last_ts
     from public.exercise_logs el
     where el.room_id = p_room_id
       and el.user_id = m.user_id
-      and el.exercise_name !~ '^__';
+      and el.exercise_name !~ '^__WAKE__\\|';
 
     if last_ts is null then
       last_ts := timestamp 'epoch';
@@ -254,7 +256,7 @@ begin
       select 1 from public.exercise_logs el
       where el.room_id = p_room_id
         and el.user_id = m.user_id
-        and el.exercise_name like '__WAKE__|%'
+        and el.exercise_name ~ '^__WAKE__\\|'
         and el.created_at > now() - interval '20 hours'
     ) then
       continue;

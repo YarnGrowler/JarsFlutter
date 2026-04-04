@@ -86,9 +86,9 @@ class RivalryBanner extends StatelessWidget {
 
     final myIndex = sorted.indexWhere((s) => s.userId == myScore.userId);
 
-    if (myScore.dailyPoints == 0) {
+    if (myScore.displayDailyPoints == 0) {
       final othersLogged = allScores.where((s) =>
-          s.userId != myScore.userId && s.dailyPoints > 0);
+          s.userId != myScore.userId && s.displayDailyPoints > 0);
       if (othersLogged.isNotEmpty) {
         return _RivalryMessage(
           title: "You haven't logged yet. Everyone else has.",

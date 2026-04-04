@@ -44,8 +44,12 @@ if [[ -n "${WEB_PUSH_VAPID_PUBLIC_KEY:-}" ]]; then
   DEFINES+=(--dart-define=WEB_PUSH_VAPID_PUBLIC_KEY="$WEB_PUSH_VAPID_PUBLIC_KEY")
 fi
 
-echo ">>> flutter build web --release"
-flutter build web --release "${DEFINES[@]}"
+# --no-web-resources-cdn: ship CanvasKit from this origin so Vercel Cache-Control
+#   applies on repeat opens (iOS “Add to Home Screen” uses a separate cache profile).
+# --pwa-strategy=none: avoid aggressive default Flutter SW body; rely on HTTP cache
+#   + your firebase-messaging-sw.js / jars-web-push flows.
+echo ">>> flutter build web --release (self-hosted web assets, minimal PWA SW)"
+flutter build web --release --no-web-resources-cdn --pwa-strategy=none "${DEFINES[@]}"
 
 echo ">>> build/web ready"
 ls -la build/web | head -20

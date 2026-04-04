@@ -151,7 +151,7 @@ class EventService {
         .eq('room_id', roomId)
         .eq('user_id', userId)
         .gte('created_at', todayStart.toIso8601String())
-        .not('exercise_name', 'like', '%__|%'); // exclude broadcasts
+        .not('exercise_name', 'match', r'^__'); // exclude feed broadcast rows
 
     if (rows.length == 1) {
       // This is the first log of the day for this user

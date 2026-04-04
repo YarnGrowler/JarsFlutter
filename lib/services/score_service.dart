@@ -41,8 +41,7 @@ class ScoreService {
     final today = DateTime.now().startOfDay;
     double dailyPoints = current.dailyPoints;
 
-    if (current.lastDailyReset != null &&
-        current.lastDailyReset!.isBefore(today)) {
+    if (Score.isDailyResetStale(current.lastDailyReset)) {
       dailyPoints = 0;
     }
 
@@ -89,9 +88,11 @@ class ScoreService {
     final current = await getUserScore(roomId, userId);
     if (current == null) return;
 
+    final dpBase = current.isDailyStale ? 0.0 : current.dailyPoints;
+
     await _db.from('scores').update({
       'total_score': (current.totalScore - points).clamp(0, double.infinity),
-      'daily_points': (current.dailyPoints - points).clamp(0, double.infinity),
+      'daily_points': (dpBase - points).clamp(0, double.infinity),
     }).eq('room_id', roomId).eq('user_id', userId);
   }
 
@@ -100,9 +101,8 @@ class ScoreService {
     final current = await getUserScore(roomId, userId);
     if (current == null) return;
 
-    final today = DateTime.now().startOfDay;
-    if (current.lastDailyReset != null &&
-        current.lastDailyReset!.isBefore(today)) {
+    if (current.isDailyStale) {
+      final today = DateTime.now().startOfDay;
       await _db.from('scores').update({
         'daily_points': 0,
         'last_daily_reset': today.toIso8601String().split('T')[0],
