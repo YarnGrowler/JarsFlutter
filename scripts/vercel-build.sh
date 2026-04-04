@@ -40,6 +40,9 @@ fi
 if [[ -n "${SUPABASE_ANON_KEY:-}" ]]; then
   DEFINES+=(--dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY")
 fi
+if [[ -n "${WEB_PUSH_VAPID_PUBLIC_KEY:-}" ]]; then
+  DEFINES+=(--dart-define=WEB_PUSH_VAPID_PUBLIC_KEY="$WEB_PUSH_VAPID_PUBLIC_KEY")
+fi
 
 echo ">>> flutter build web --release"
 flutter build web --release "${DEFINES[@]}"

@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,14 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'core/theme.dart';
 import 'bootstrap/config_error_app.dart';
-import 'bootstrap/deploy_label.dart';
-import 'bootstrap/jars_firebase_options.dart';
 import 'bootstrap/local_env.dart' show readLocalEnvPairs;
-import 'bootstrap/web_firebase_probe_stub.dart'
-    if (dart.library.html) 'bootstrap/web_firebase_probe_web.dart'
-    as web_firebase_probe;
 import 'bootstrap/supabase_public_config.dart';
-import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,102 +42,12 @@ Future<void> main() async {
 
   await Supabase.initialize(url: url, anonKey: anonKey);
 
-  // Web: never await Firebase in [main] before [runApp] — iOS Safari can hang on
-  // modular script inject, leaving a permanent black screen. Bootstrap after the
-  // first frame + gate in [NotificationService._ensureFirebaseInitialized].
-  if (kIsWeb) {
-    NotificationService.webFirebaseStartupError = null;
-    NotificationService.armWebFirebaseBootstrapGateIfNeeded();
-    NotificationService.webFirebaseStartupDiagnostics =
-        'Jars build: $kJarsDeployLabel\n'
-        'Firebase web: UI loads first; init runs after first frame.\n'
-        'Pull to refresh on Notifications later for the full init log.';
-  }
-
   runApp(
     const ColoredBox(
       color: JarsColors.background,
       child: ProviderScope(child: JarsApp()),
     ),
   );
-
-  if (kIsWeb) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_bootstrapFirebaseOnWeb());
-    });
-  }
-}
-
-/// Runs after first frame so Mobile Safari paints before FlutterFire injects JS.
-Future<void> _bootstrapFirebaseOnWeb() async {
-  if (!kIsWeb) return;
-  try {
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-
-    final baseDiag = NotificationService.composeWebFirebaseStartupDiagnostics(
-      o: jarsFirebaseOptions,
-      jsGlobalLine: web_firebase_probe.describeFirebaseJsGlobal(),
-      webEnvBlock: web_firebase_probe.describeWebEnvForFirebaseDiagnostics(),
-    );
-    final initLog = StringBuffer();
-    initLog.writeln(
-      'post-frame bootstrap; delay 200ms; apps=${Firebase.apps.length}',
-    );
-
-    Object? lastErr;
-    StackTrace? lastSt;
-    var ok = false;
-    for (var attempt = 1; attempt <= 5; attempt++) {
-      if (Firebase.apps.isNotEmpty) {
-        initLog.writeln('attempt $attempt: skipped (already initialized)');
-        ok = true;
-        break;
-      }
-      try {
-        await Firebase.initializeApp(options: jarsFirebaseOptions).timeout(
-          const Duration(seconds: 12),
-        );
-        initLog.writeln('attempt $attempt: Firebase.initializeApp ok');
-        ok = true;
-        break;
-      } catch (e, st) {
-        lastErr = e;
-        lastSt = st;
-        initLog.writeln('attempt $attempt: FAILED → $e');
-        debugPrint('Firebase.initializeApp (web) attempt $attempt: $e');
-        debugPrint('$st');
-        if (attempt < 5) {
-          final waitMs = 120 * attempt * attempt;
-          initLog.writeln('  backoff ${waitMs}ms');
-          await Future<void>.delayed(Duration(milliseconds: waitMs));
-        }
-      }
-    }
-
-    final hint = lastSt
-            ?.toString()
-            .split('\n')
-            .map((l) => l.trim())
-            .where((l) => l.isNotEmpty)
-            .take(10)
-            .join('\n') ??
-        '';
-
-    if (ok) {
-      NotificationService.webFirebaseStartupDiagnostics =
-          '$baseDiag\n---\nFirebase init log:\n$initLog\n---\n'
-          'Firebase.initializeApp: ok\nFirebase.apps.length: ${Firebase.apps.length}';
-      NotificationService.webFirebaseStartupError = null;
-    } else {
-      NotificationService.webFirebaseStartupError =
-          '[startup] ${lastErr.runtimeType}: $lastErr${hint.isEmpty ? '' : '\n$hint'}';
-      NotificationService.webFirebaseStartupDiagnostics =
-          '$baseDiag\n---\nFirebase init log:\n$initLog\n---\n'
-          'Firebase.initializeApp: FAILED\n$lastErr\n$hint';
-    }
-  } finally {
-    NotificationService.releaseWebFirebaseBootstrapGate();
-  }
 }
 
 String _configHelpMessage() {

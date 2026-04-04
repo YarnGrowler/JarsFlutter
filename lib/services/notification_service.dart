@@ -5,135 +5,46 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
-import 'foreground_push_display_stub.dart'
-    if (dart.library.html) 'foreground_push_display_web.dart';
-import 'web_dom_notification_permission_stub.dart'
-    if (dart.library.html) 'web_dom_notification_permission_web.dart'
-    as dom_notif;
-import '../bootstrap/deploy_label.dart';
 import '../bootstrap/jars_firebase_options.dart';
 import '../models/fcm_device.dart';
 import 'supabase_service.dart';
-
-// ── VAPID key: Firebase Console → Cloud Messaging → Web Push certificates ──
-const _kVapidKey =
-    'BObFaztoPMeW_PjcCJGMvRBTUGJ4Z7QvY6GhkiD8qVL5M7LklHmQ2iqDS9j0s4ZOBxVasoSvlCku_n-SHmHVqys';
+import 'web_dom_notification_permission_stub.dart'
+    if (dart.library.html) 'web_dom_notification_permission_web.dart'
+    as dom_notif;
+import 'web_push_js_stub.dart'
+    if (dart.library.html) 'web_push_js_web.dart' as web_push_js;
 
 /// Push icon path on web (same origin as the app, e.g. Vercel).
 const kWebPushIconPath = '/icons/jars-notification.svg';
 
-/// Handles FCM token registration and push via Supabase `notifications` table.
-/// Tokens are stored in [user_fcm_tokens] so each user can have **multiple devices**.
-///
-/// **iOS Safari / “Add to Home Screen”:** `requestPermission()` is only honored when
-/// triggered from a **direct user gesture** (e.g. a button `onPressed`). Do **not**
-/// call [registerToken] from app init, sign-in, or `async` chains after navigation —
-/// use [syncTokenIfPermitted] there instead (no prompt; only refreshes token if
-/// already allowed). See [registerToken] for the explicit opt-in path.
+/// **Web:** standard Web Push (VAPID) → `user_web_push_subscriptions` + Edge `web-push`.
+/// **Native:** FCM → `user_fcm_tokens` + Edge FCM v1.
 class NotificationService {
   static final _db = SupabaseService.client;
   static bool _tokenListenersAttached = false;
-  static bool _foregroundWebAttached = false;
 
-  /// Prevents overlapping silent syncs (auth can fire [initialSession] + [signedIn] back-to-back).
   static bool _syncTokenIfPermittedRunning = false;
-
-  /// Coalesces rapid [init] from auth events.
   static DateTime? _lastInitAt;
-
-  /// Serialize token persist so [init] + [registerToken] + [onTokenRefresh] don’t interleave saves.
   static Future<void> _persistTail = Future.value();
 
-  /// Web only: set in [main] if [Firebase.initializeApp] fails before [runApp].
-  /// Lets notification settings show startup failure vs [registerToken] failure.
-  static String? webFirebaseStartupError;
-
-  /// Web only: full diagnostic blob for in-app copy (no DevTools on iPhone).
-  static String? webFirebaseStartupDiagnostics;
-
-  /// Web: [main] runs Firebase init after the first frame; entry points must await this.
-  static Completer<void>? _webMainFirebaseBootstrapGate;
-
-  static void armWebFirebaseBootstrapGateIfNeeded() {
-    if (!kIsWeb) return;
-    _webMainFirebaseBootstrapGate ??= Completer<void>();
-  }
-
-  static void releaseWebFirebaseBootstrapGate() {
-    if (!kIsWeb) return;
-    final c = _webMainFirebaseBootstrapGate;
-    if (c != null && !c.isCompleted) {
-      c.complete();
-    }
-    _webMainFirebaseBootstrapGate = null;
-  }
-
-  static Future<void> _awaitWebFirebaseBootstrapGateIfNeeded() async {
-    if (!kIsWeb) return;
-    final c = _webMainFirebaseBootstrapGate;
-    if (c != null) {
-      await c.future;
-    }
-  }
-
-  /// Text shown in notification settings → “Deploy & Firebase debug”.
-  static String composeWebFirebaseStartupDiagnostics({
-    required FirebaseOptions o,
-    required String jsGlobalLine,
-    required String webEnvBlock,
-  }) {
-    final webApp = o.appId.contains(':web:');
-    return [
-      'Jars build: $kJarsDeployLabel',
-      jsGlobalLine,
-      'FlutterFire web = modular SDK only; do not load firebase-*-compat.js in index.html.',
-      '--- Web environment ---',
-      webEnvBlock,
-      '--- Dart FirebaseOptions ---',
-      'apiKey: ${o.apiKey}',
-      'appId: ${o.appId}',
-      'appId contains :web:: $webApp',
-      'messagingSenderId: ${o.messagingSenderId}',
-      'projectId: ${o.projectId}',
-      'authDomain: ${o.authDomain}',
-      'storageBucket: ${o.storageBucket}',
-      'measurementId: ${o.measurementId}',
-      'databaseURL: ${o.databaseURL}',
-    ].join('\n');
-  }
-
-  /// Last error from [registerToken] (for settings UI). Cleared on success.
   static String? lastRegisterTokenError;
-
-  /// Last completed step in [registerToken] when a failure occurs (debugging).
   static String? lastRegisterTokenStep;
-
-  /// Short stack / detail for support (first lines).
   static String? lastRegisterTokenStackHint;
 
-  /// Last token obtained from FCM on this install (to mark "this device" in lists).
   static String? _lastKnownLocalToken;
-
-  /// Exposed for settings UI to label the current install in [listMyDevices].
   static String? get cachedLocalFcmToken => _lastKnownLocalToken;
 
   static Future<void> _ensureFirebaseInitialized() async {
-    await _awaitWebFirebaseBootstrapGateIfNeeded();
+    if (kIsWeb) return;
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(options: jarsFirebaseOptions);
     }
   }
 
-  static Future<String?> _fetchMessagingToken(
-    FirebaseMessaging messaging,
-  ) async {
-    if (kIsWeb) {
-      return messaging.getToken(vapidKey: _kVapidKey);
-    }
+  static Future<String?> _fetchMessagingToken(FirebaseMessaging messaging) async {
     return messaging.getToken();
   }
 
-  /// iOS PWA / web: [getToken] is often null until the service worker / subscription is ready.
   static Future<String?> getMessagingTokenWithRetries(
     FirebaseMessaging messaging, {
     int maxAttempts = 6,
@@ -158,9 +69,8 @@ class NotificationService {
     return null;
   }
 
-  /// Safe on session restore / sign-in: **does not** call [requestPermission].
-  /// Re-fetches and saves the FCM token only if the user already allowed notifications.
   static Future<bool> syncTokenIfPermitted() async {
+    if (kIsWeb) return false;
     if (_syncTokenIfPermittedRunning) return false;
     _syncTokenIfPermittedRunning = true;
     try {
@@ -175,9 +85,8 @@ class NotificationService {
       }
       final token = await getMessagingTokenWithRetries(
         messaging,
-        maxAttempts: kIsWeb ? 3 : 2,
-        delayBetween:
-            kIsWeb ? const Duration(milliseconds: 500) : const Duration(milliseconds: 200),
+        maxAttempts: 2,
+        delayBetween: const Duration(milliseconds: 200),
       );
       if (token == null || token.isEmpty) return false;
       return await _persistTokenAndAttachListeners(token);
@@ -194,9 +103,8 @@ class NotificationService {
     }
   }
 
-  /// After sign-in or cold start: Firebase ready + silent token sync if already allowed.
-  /// Never shows the permission dialog (unlike [registerToken]).
   static Future<void> init() async {
+    if (kIsWeb) return;
     try {
       final now = DateTime.now();
       if (_lastInitAt != null &&
@@ -211,8 +119,8 @@ class NotificationService {
     }
   }
 
-  /// Current OS / browser permission (no prompt). Times out so mobile never hangs forever.
   static Future<NotificationSettings?> getNotificationSettings() async {
+    if (kIsWeb) return null;
     try {
       await _ensureFirebaseInitialized().timeout(const Duration(seconds: 8));
       return await FirebaseMessaging.instance
@@ -220,7 +128,7 @@ class NotificationService {
           .timeout(const Duration(seconds: 6));
     } catch (e, st) {
       developer.log(
-        'getNotificationSettings timed out or failed (mobile can hang on FCM): $e',
+        'getNotificationSettings failed: $e',
         name: 'Jars',
         error: e,
         stackTrace: st,
@@ -229,15 +137,14 @@ class NotificationService {
     }
   }
 
-  /// FCM token for this install, if permission allows (may be null on web).
   static Future<String?> getCurrentFcmToken() async {
+    if (kIsWeb) return _lastKnownLocalToken;
     try {
       await _ensureFirebaseInitialized();
       return getMessagingTokenWithRetries(
         FirebaseMessaging.instance,
-        maxAttempts: kIsWeb ? 4 : 2,
-        delayBetween:
-            kIsWeb ? const Duration(milliseconds: 350) : const Duration(milliseconds: 150),
+        maxAttempts: 2,
+        delayBetween: const Duration(milliseconds: 150),
       );
     } catch (_) {
       return null;
@@ -247,56 +154,79 @@ class NotificationService {
   static Future<List<FcmDevice>> listMyDevices() async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return [];
+    final out = <FcmDevice>[];
     try {
-      final rows = await (() async {
-        return _db
-            .from('user_fcm_tokens')
-            .select('id, platform, last_seen_at, token')
-            .eq('user_id', uid)
-            .order('last_seen_at', ascending: false);
-      })().timeout(const Duration(seconds: 20));
-      final out = <FcmDevice>[];
+      final rows = await _db
+          .from('user_fcm_tokens')
+          .select('id, platform, last_seen_at, token')
+          .eq('user_id', uid)
+          .order('last_seen_at', ascending: false)
+          .timeout(const Duration(seconds: 20));
       for (final r in rows as List) {
         try {
           if (r is! Map) continue;
           out.add(FcmDevice.fromJson(Map<String, dynamic>.from(r)));
         } catch (e) {
-          developer.log(
-            'NotificationService.listMyDevices: skip bad row $e',
-            name: 'Jars',
-          );
+          developer.log('listMyDevices fcm skip: $e', name: 'Jars');
         }
       }
-      return out;
     } catch (e) {
-      final s = e.toString();
-      if (s.contains('404') ||
-          s.contains('PGRST205') ||
-          s.contains('Could not find the table')) {
-        developer.log(
-          'user_fcm_tokens is missing — in Supabase SQL Editor run the '
-          '"11 user_fcm_tokens" block in supabase_patches/00_apply_all.sql '
-          '(or 11_fcm_multi_device.sql), then reload the app. ($e)',
-          name: 'Jars',
-        );
-      } else {
-        developer.log('NotificationService.listMyDevices: $e', name: 'Jars');
-      }
-      return [];
+      developer.log('listMyDevices user_fcm_tokens: $e', name: 'Jars');
     }
+    try {
+      final webRows = await _db
+          .from('user_web_push_subscriptions')
+          .select('id, endpoint, last_seen_at')
+          .eq('user_id', uid)
+          .eq('enabled', true)
+          .order('last_seen_at', ascending: false)
+          .timeout(const Duration(seconds: 15));
+      for (final r in webRows as List) {
+        try {
+          if (r is! Map) continue;
+          final m = Map<String, dynamic>.from(r);
+          final seen = m['last_seen_at'];
+          out.add(FcmDevice(
+            id: m['id'] as String,
+            platform: 'web_push',
+            lastSeenAt: seen is String ? DateTime.tryParse(seen) : null,
+            token: m['endpoint'] as String,
+          ));
+        } catch (e) {
+          developer.log('listMyDevices web skip: $e', name: 'Jars');
+        }
+      }
+    } catch (e) {
+      developer.log('listMyDevices user_web_push_subscriptions: $e', name: 'Jars');
+    }
+    out.sort((a, b) {
+      final ta = a.lastSeenAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final tb = b.lastSeenAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return tb.compareTo(ta);
+    });
+    return out;
   }
 
-  /// Removes a registered device from Supabase. If it matches this install, also calls [FirebaseMessaging.deleteToken].
   static Future<bool> revokeDevice(FcmDevice device) async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return false;
     try {
+      if (device.platform == 'web_push') {
+        await _db
+            .from('user_web_push_subscriptions')
+            .delete()
+            .eq('id', device.id)
+            .eq('user_id', uid);
+        if (_lastKnownLocalToken == device.token) {
+          _lastKnownLocalToken = null;
+        }
+        return true;
+      }
       await _db
           .from('user_fcm_tokens')
           .delete()
           .eq('id', device.id)
           .eq('user_id', uid);
-
       if (_lastKnownLocalToken == device.token) {
         try {
           await FirebaseMessaging.instance.deleteToken();
@@ -306,15 +236,7 @@ class NotificationService {
       await _syncProfileLegacyToken();
       return true;
     } catch (e) {
-      final s = e.toString();
-      if (s.contains('404') || s.contains('PGRST205')) {
-        developer.log(
-          'user_fcm_tokens missing — apply SQL patch (see listMyDevices log). $e',
-          name: 'Jars',
-        );
-      } else {
-        developer.log('NotificationService.revokeDevice: $e', name: 'Jars');
-      }
+      developer.log('NotificationService.revokeDevice: $e', name: 'Jars');
       return false;
     }
   }
@@ -333,8 +255,7 @@ class NotificationService {
       final next = list.isEmpty ? null : list.first['token'] as String?;
       await _db.from('profiles').update({'fcm_token': next}).eq('id', uid);
     } catch (e) {
-      developer.log('NotificationService._syncProfileLegacyToken: $e',
-          name: 'Jars');
+      developer.log('NotificationService._syncProfileLegacyToken: $e', name: 'Jars');
     }
   }
 
@@ -356,7 +277,6 @@ class NotificationService {
     }
   }
 
-  /// All FCM → Supabase writes go through one chain (init, enable button, token refresh).
   static Future<T> _enqueuePersistTail<T>(Future<T> Function() work) {
     final c = Completer<T>();
     _persistTail = _persistTail.then((_) async {
@@ -396,37 +316,9 @@ class NotificationService {
       });
     }
     _lastKnownLocalToken = token;
-    final saved = await _saveFcmToken(token);
-    // Web: attach foreground listener *after* token save — on some builds it can
-    // throw during setup right after Allow; isolating it avoids blocking registration.
-    if (kIsWeb && saved && !_foregroundWebAttached) {
-      _foregroundWebAttached = true;
-      try {
-        attachForegroundWebPushDisplay();
-      } catch (e, st) {
-        developer.log(
-          'NotificationService: attachForegroundWebPushDisplay failed (non-fatal): $e',
-          name: 'Jars',
-          error: e,
-          stackTrace: st,
-        );
-      }
-    }
-    if (!saved) {
-      developer.log(
-        'NotificationService: token not saved (signed in?)',
-        name: 'Jars',
-      );
-    }
-    return saved;
+    return _saveFcmToken(token);
   }
 
-  /// Registers this device’s FCM token after **requesting permission**.
-  ///
-  /// **Must run from a direct user gesture** (e.g. `onPressed` on a button) —
-  /// especially on **iPhone Safari / Home Screen web apps**, where calling
-  /// [FirebaseMessaging.requestPermission] from init or post-login `async`
-  /// code does not show the system prompt and can leave permission denied.
   static void _traceRegisterStep(String step) {
     lastRegisterTokenStep = step;
     developer.log('registerToken ▶ $step', name: 'Jars');
@@ -437,92 +329,10 @@ class NotificationService {
     lastRegisterTokenStep = null;
     lastRegisterTokenStackHint = null;
     try {
-      // Web / iOS PWA: the **first** await in this handler must be the browser’s
-      // Notification.requestPermission — not Firebase.initializeApp. Otherwise
-      // WebKit leaves the user-gesture stack and the prompt never appears.
       if (kIsWeb) {
-        _traceRegisterStep('web_dom_notification_permission');
-        final domOk = await dom_notif.requestDomNotificationPermission();
-        if (!domOk) {
-          developer.log(
-            'NotificationService: browser Notification.requestPermission denied',
-            name: 'Jars',
-          );
-          return false;
-        }
+        return await _registerTokenWeb();
       }
-
-      _traceRegisterStep('firebase_initialize_app');
-      await _ensureFirebaseInitialized();
-
-      final messaging = FirebaseMessaging.instance;
-
-      var permissionOk = false;
-      _traceRegisterStep('firebase_messaging_request_permission');
-      try {
-        final settings = await messaging.requestPermission(
-          alert: true,
-          badge: true,
-          sound: true,
-        );
-        permissionOk = settings.authorizationStatus ==
-                AuthorizationStatus.authorized ||
-            settings.authorizationStatus == AuthorizationStatus.provisional;
-      } catch (e, st) {
-        developer.log(
-          'NotificationService: FCM requestPermission threw: $e',
-          name: 'Jars',
-          error: e,
-          stackTrace: st,
-        );
-        // Web: if the browser prompt already granted, FCM can still throw; try getToken.
-        if (kIsWeb && dom_notif.browserNotificationPermissionIsGranted()) {
-          permissionOk = true;
-        } else {
-          rethrow;
-        }
-      }
-
-      if (!permissionOk) {
-        developer.log(
-          'NotificationService: FCM permission not authorized',
-          name: 'Jars',
-        );
-        return false;
-      }
-
-      _traceRegisterStep('firebase_get_token');
-      final token = await getMessagingTokenWithRetries(
-        messaging,
-        maxAttempts: kIsWeb ? 4 : 3,
-        delayBetween: kIsWeb
-            ? const Duration(milliseconds: 550)
-            : const Duration(milliseconds: 200),
-      );
-
-      if (token == null || token.isEmpty) {
-        developer.log(
-          'NotificationService: getToken still null after retries '
-          '(web: service worker / VAPID; wait and tap Enable again)',
-          name: 'Jars',
-        );
-        lastRegisterTokenError = kIsWeb
-            ? 'Push token not ready yet (common on iPhone web after Allow). '
-                'Wait a few seconds and tap Enable again.'
-            : 'Could not get a push token on this device.';
-        return false;
-      }
-
-      _traceRegisterStep('persist_token_and_listeners');
-      final persisted = await _persistTokenAndAttachListeners(token);
-      if (!persisted && SupabaseService.currentUserId == null) {
-        lastRegisterTokenError =
-            'You’re signed out. Sign in, then tap again to save this device for push.';
-      }
-      if (persisted) {
-        lastRegisterTokenStep = 'ok';
-      }
-      return persisted;
+      return await _registerTokenNative();
     } catch (e, st) {
       lastRegisterTokenStackHint = st
           .toString()
@@ -541,7 +351,138 @@ class NotificationService {
     }
   }
 
-  /// Human-readable status for settings UI.
+  static Future<bool> _registerTokenWeb() async {
+    _traceRegisterStep('web_dom_notification_permission');
+    final domOk = await dom_notif.requestDomNotificationPermission();
+    if (!domOk) return false;
+
+    _traceRegisterStep('web_push_subscribe_js');
+    final sub = await web_push_js.subscribeWebPushWithJs();
+    if (sub == null) {
+      lastRegisterTokenError = 'Could not create Web Push subscription.';
+      return false;
+    }
+    final endpoint = sub['endpoint'] as String?;
+    final p256dh = sub['p256dh'] as String?;
+    final auth = sub['auth'] as String?;
+    if (endpoint == null || p256dh == null || auth == null) {
+      lastRegisterTokenError = 'Invalid subscription payload from browser.';
+      return false;
+    }
+
+    _traceRegisterStep('persist_web_push');
+    final ok = await _saveWebPushSubscription(
+      endpoint: endpoint,
+      p256dh: p256dh,
+      auth: auth,
+    );
+    if (!ok && SupabaseService.currentUserId == null) {
+      lastRegisterTokenError =
+          'You’re signed out. Sign in, then tap again to save this device for push.';
+    }
+    if (ok) {
+      _lastKnownLocalToken = endpoint;
+      lastRegisterTokenStep = 'ok';
+    }
+    return ok;
+  }
+
+  static Future<bool> _registerTokenNative() async {
+    await _ensureFirebaseInitialized();
+    final messaging = FirebaseMessaging.instance;
+    var permissionOk = false;
+    _traceRegisterStep('firebase_messaging_request_permission');
+    try {
+      final settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      permissionOk = settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+    } catch (e, st) {
+      developer.log(
+        'NotificationService: FCM requestPermission threw: $e',
+        name: 'Jars',
+        error: e,
+        stackTrace: st,
+      );
+      rethrow;
+    }
+    if (!permissionOk) return false;
+
+    _traceRegisterStep('firebase_get_token');
+    final token = await getMessagingTokenWithRetries(
+      messaging,
+      maxAttempts: 3,
+      delayBetween: const Duration(milliseconds: 200),
+    );
+    if (token == null || token.isEmpty) {
+      lastRegisterTokenError = 'Could not get a push token on this device.';
+      return false;
+    }
+    _traceRegisterStep('persist_token_and_listeners');
+    final persisted = await _persistTokenAndAttachListeners(token);
+    if (!persisted && SupabaseService.currentUserId == null) {
+      lastRegisterTokenError =
+          'You’re signed out. Sign in, then tap again to save this device for push.';
+    }
+    if (persisted) lastRegisterTokenStep = 'ok';
+    return persisted;
+  }
+
+  static Future<void> _pruneOtherWebPushSubs(String userId, String keepEndpoint) async {
+    if (!kIsWeb) return;
+    try {
+      final rows = await _db
+          .from('user_web_push_subscriptions')
+          .select('id,endpoint')
+          .eq('user_id', userId);
+      for (final r in rows as List) {
+        final m = Map<String, dynamic>.from(r as Map);
+        final id = m['id'] as String?;
+        final ep = m['endpoint'] as String?;
+        if (id == null || ep == null || ep == keepEndpoint) continue;
+        await _db.from('user_web_push_subscriptions').delete().eq('id', id);
+      }
+    } catch (e) {
+      developer.log('_pruneOtherWebPushSubs: $e', name: 'Jars');
+    }
+  }
+
+  static Future<bool> _saveWebPushSubscription({
+    required String endpoint,
+    required String p256dh,
+    required String auth,
+  }) async {
+    final userId = SupabaseService.currentUserId;
+    if (userId == null) return false;
+    final now = DateTime.now().toUtc().toIso8601String();
+    try {
+      await _db.from('user_web_push_subscriptions').upsert(
+        {
+          'user_id': userId,
+          'endpoint': endpoint,
+          'p256dh': p256dh,
+          'auth': auth,
+          'last_seen_at': now,
+          'enabled': true,
+        },
+        onConflict: 'endpoint',
+      );
+      await _pruneOtherWebPushSubs(userId, endpoint);
+      if (kDebugMode) {
+        developer.log('Web push subscription saved', name: 'Jars');
+      }
+      return true;
+    } catch (e) {
+      developer.log('_saveWebPushSubscription: $e', name: 'Jars');
+      lastRegisterTokenError =
+          'Save failed. Run SQL patch 16_web_push_subscriptions.sql in Supabase. ($e)';
+      return false;
+    }
+  }
+
   static String describeAuthorization(AuthorizationStatus s) {
     switch (s) {
       case AuthorizationStatus.authorized:
@@ -555,40 +496,9 @@ class NotificationService {
     }
   }
 
-  /// Web: one browser profile can mint many FCM tokens if [getToken] / SW registration runs often.
-  /// Keep only the latest web row per user so push fan-out does not duplicate notifications.
-  static Future<void> _pruneOtherWebTokens(String userId, String keepToken) async {
-    if (!kIsWeb) return;
-    try {
-      // Select + delete by id: PostgREST delete builder may not chain `.neq`
-      // (web compile / client API); this matches any stale web rows.
-      final rows = await _db
-          .from('user_fcm_tokens')
-          .select('id,token')
-          .eq('user_id', userId)
-          .eq('platform', 'web');
-      for (final r in rows as List) {
-        final m = Map<String, dynamic>.from(r as Map);
-        final id = m['id'] as String?;
-        final t = m['token'] as String?;
-        if (id == null || t == null || t == keepToken) continue;
-        await _db.from('user_fcm_tokens').delete().eq('id', id);
-      }
-    } catch (e) {
-      developer.log('NotificationService._pruneOtherWebTokens: $e', name: 'Jars');
-    }
-  }
-
-  /// Saves to [user_fcm_tokens] (multi-device) and mirrors last token on [profiles] for legacy tools.
   static Future<bool> _saveFcmToken(String token) async {
     final userId = SupabaseService.currentUserId;
-    if (userId == null) {
-      developer.log(
-        'NotificationService._saveFcmToken: no Supabase user',
-        name: 'Jars',
-      );
-      return false;
-    }
+    if (userId == null) return false;
     final now = DateTime.now().toUtc().toIso8601String();
     final platform = _platformLabel();
     try {
@@ -601,29 +511,17 @@ class NotificationService {
         },
         onConflict: 'token',
       );
-      await _pruneOtherWebTokens(userId, token);
-      await _db
-          .from('profiles')
-          .update({'fcm_token': token})
-          .eq('id', userId);
+      await _db.from('profiles').update({'fcm_token': token}).eq('id', userId);
       if (kDebugMode) {
         developer.log(
-          'NotificationService: token registered ($platform, ${token.length} chars)',
+          'NotificationService: FCM token registered ($platform)',
           name: 'Jars',
         );
       }
       return true;
     } catch (e) {
       developer.log('NotificationService._saveFcmToken: $e', name: 'Jars');
-      try {
-        await _db
-            .from('profiles')
-            .update({'fcm_token': token})
-            .eq('id', userId);
-        return true;
-      } catch (_) {
-        return false;
-      }
+      return false;
     }
   }
 
@@ -643,8 +541,6 @@ class NotificationService {
     }
   }
 
-  /// One row per member except [excludeUserId] (typically the actor). Use for
-  /// room-visible events (first log, PR, streak, rank-up, etc.).
   static Future<void> notifyRoomMembersExcept({
     required String roomId,
     required String excludeUserId,
@@ -657,7 +553,6 @@ class NotificationService {
     );
   }
 
-  /// Same as [notifyRoomMembersExcept] but skips multiple users (e.g. overtaker + overtaken).
   static Future<void> notifyRoomMembersExceptIds({
     required String roomId,
     required Set<String> excludeUserIds,

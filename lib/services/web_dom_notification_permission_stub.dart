@@ -2,3 +2,7 @@
 Future<bool> requestDomNotificationPermission() async => false;
 
 bool browserNotificationPermissionIsGranted() => false;
+
+bool browserNotificationPermissionIsDenied() => false;
+
+String describeBrowserNotificationPermission() => 'Unknown';

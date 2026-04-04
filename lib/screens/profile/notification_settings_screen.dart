@@ -9,6 +9,9 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../models/fcm_device.dart';
 import '../../services/notification_service.dart';
+import '../../services/web_dom_notification_permission_stub.dart'
+    if (dart.library.html) '../../services/web_dom_notification_permission_web.dart'
+    as dom_notif;
 
 /// Request push permission (important for iPhone “Add to Home Screen” web apps),
 /// list registered FCM endpoints, and revoke them.
@@ -121,8 +124,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   if (kIsWeb) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Tip: on iPhone, open Notifications here and expand “Deploy & Firebase debug” '
-                      'for build label + config + JS probe. On desktop Chrome, DevTools → Console.',
+                      'Web: build with --dart-define=WEB_PUSH_VAPID_PUBLIC_KEY=… (from '
+                      'npx @pushforge/builder vapid) and set VAPID_PRIVATE_KEY (JWK JSON) '
+                      '+ VAPID_SUBJECT on the Supabase push function.',
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         color: Colors.white70,
@@ -196,9 +200,14 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   @override
   Widget build(BuildContext context) {
     final status = _settings?.authorizationStatus;
-    final statusLabel = status == null
-        ? 'Unknown — tap Enable to refresh'
-        : NotificationService.describeAuthorization(status);
+    final statusLabel = kIsWeb
+        ? dom_notif.describeBrowserNotificationPermission()
+        : (status == null
+            ? 'Unknown — tap Enable to refresh'
+            : NotificationService.describeAuthorization(status));
+    final denied = kIsWeb
+        ? dom_notif.browserNotificationPermissionIsDenied()
+        : status == AuthorizationStatus.denied;
 
     return Scaffold(
       backgroundColor: JarsColors.surface,
@@ -222,82 +231,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           : ListView(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
                   children: [
-                    if (kIsWeb &&
-                        NotificationService.webFirebaseStartupDiagnostics !=
-                            null) ...[
-                      Theme(
-                        data: Theme.of(context).copyWith(
-                          dividerColor: Colors.transparent,
-                        ),
-                        child: ExpansionTile(
-                          tilePadding: EdgeInsets.zero,
-                          title: Text(
-                            'Deploy & Firebase debug (tap to expand, long-press to copy)',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: JarsColors.textSecondary,
-                            ),
-                          ),
-                          children: [
-                            SelectableText(
-                              NotificationService.webFirebaseStartupDiagnostics!,
-                              style: GoogleFonts.spaceMono(
-                                fontSize: 10,
-                                height: 1.35,
-                                color: JarsColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    if (kIsWeb &&
-                        NotificationService.webFirebaseStartupError != null) ...[
-                      Material(
-                        color: JarsColors.red.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(14),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Firebase failed at startup (web)',
-                                style: GoogleFonts.spaceGrotesk(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: JarsColors.red,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              SelectableText(
-                                NotificationService.webFirebaseStartupError!,
-                                style: GoogleFonts.spaceMono(
-                                  fontSize: 11,
-                                  height: 1.35,
-                                  color: JarsColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Tapping “Show permission prompt” will retry the same step and may show the same error. '
-                                'After a deploy, clear the site data for this URL or remove and re-add the Home Screen icon, '
-                                'then open the app again. Expand “Deploy & Firebase debug” above for the full snapshot.',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: JarsColors.textSecondary,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                    ],
                     Text(
                       'Permission: $statusLabel',
                       style: GoogleFonts.inter(
@@ -390,8 +323,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                                         ),
                                       )
                                     : Text(
-                                        status ==
-                                                AuthorizationStatus.denied
+                                        denied
                                             ? 'I turned them on in Settings — register'
                                             : 'Show permission prompt',
                                         textAlign: TextAlign.center,

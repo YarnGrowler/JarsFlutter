@@ -35,3 +35,17 @@ Future<bool> requestDomNotificationPermission() async {
 
 bool browserNotificationPermissionIsGranted() =>
     html.Notification.permission == 'granted';
+
+bool browserNotificationPermissionIsDenied() =>
+    html.Notification.permission == 'denied';
+
+String describeBrowserNotificationPermission() {
+  switch (html.Notification.permission) {
+    case 'granted':
+      return 'Allowed';
+    case 'denied':
+      return 'Denied';
+    default:
+      return 'Not asked yet';
+  }
+}
