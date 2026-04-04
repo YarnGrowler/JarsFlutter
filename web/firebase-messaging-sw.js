@@ -1,7 +1,8 @@
 // FCM web push — served at /firebase-messaging-sw.js
 // Must show notifications here; FCM accepting the message is not enough on web.
-// Keep importScripts on the same major Firebase JS line as web/index.html
-// (firebase_core_web 2.24.x → 11.9.1 per pub.dev changelog).
+// Worker scope only: compat importScripts here does NOT set window.firebase on
+// the page. Main document must NOT load compat scripts — FlutterFire uses modular.
+// Keep this Firebase JS version aligned with firebase_core_web (see pub.dev changelog).
 /* eslint-disable no-undef */
 importScripts('https://www.gstatic.com/firebasejs/11.9.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/11.9.1/firebase-messaging-compat.js');

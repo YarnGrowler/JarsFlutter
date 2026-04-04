@@ -26,11 +26,12 @@
       return Notification.requestPermission();
     };
   </script>
-  <!-- firebase_core_web 2.24.x → Firebase JS 11.9.1 (pub.dev changelog). Load
-       synchronously before flutter_bootstrap so `firebase` exists when Dart runs;
-       relying only on FlutterFire injection can leave interop null at initializeApp. -->
-  <script src="https://www.gstatic.com/firebasejs/11.9.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/11.9.1/firebase-messaging-compat.js"></script>
+  <!-- Pin modular SDK line to match firebase_core_web in pubspec.lock (changelog). -->
+  <script>window.flutterfire_web_sdk_version = '11.9.1';</script>
+  <!-- Do NOT load firebase-*-compat.js here. FlutterFire injects the modular
+       Firebase JS SDK (dynamic import); compat on the main page breaks
+       initializeApp with a null inside the interop bridge. FCM background
+       handling stays in firebase-messaging-sw.js (separate worker scope). -->
 </head>
 <body style="background-color:#08080E;margin:0;">
   <script src="flutter_bootstrap.js" async></script>

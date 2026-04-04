@@ -60,6 +60,7 @@ class NotificationService {
     return [
       'Jars build: $kJarsDeployLabel',
       jsGlobalLine,
+      'FlutterFire web = modular SDK only; do not load firebase-*-compat.js in index.html.',
       '--- Dart FirebaseOptions ---',
       'apiKey: ${o.apiKey}',
       'appId: ${o.appId}',

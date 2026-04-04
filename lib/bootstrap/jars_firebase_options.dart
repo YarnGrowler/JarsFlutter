@@ -1,8 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 
 /// Shared Firebase config (same project as [web/firebase-messaging-sw.js]).
-/// Web: CDN scripts in [web/index.html] must match `firebase_core_web`’s Firebase
-/// JS version (see pubspec.lock → firebase_core_web → changelog on pub.dev).
+/// Web: do not add Firebase compat `<script>` tags to [web/index.html]; FlutterFire
+/// loads the modular SDK. The service worker may still use compat `importScripts`.
 /// Initialize in [main.dart] before [runApp].
 const jarsFirebaseOptions = FirebaseOptions(
   apiKey: 'AIzaSyDI1yg8xMRFK42Nz6n2Tiiwq7_ugIW8RUo',
