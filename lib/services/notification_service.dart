@@ -33,6 +33,15 @@ class NotificationService {
   static bool _tokenListenersAttached = false;
   static bool _foregroundWebAttached = false;
 
+  /// Prevents overlapping silent syncs (auth can fire [initialSession] + [signedIn] back-to-back).
+  static bool _syncTokenIfPermittedRunning = false;
+
+  /// Coalesces rapid [init] from auth events.
+  static DateTime? _lastInitAt;
+
+  /// Serialize token persist so [init] + [registerToken] + [onTokenRefresh] don’t interleave saves.
+  static Future<void> _persistTail = Future.value();
+
   /// Last error from [registerToken] (for settings UI). Cleared on success.
   static String? lastRegisterTokenError;
 
@@ -95,6 +104,8 @@ class NotificationService {
   /// Safe on session restore / sign-in: **does not** call [requestPermission].
   /// Re-fetches and saves the FCM token only if the user already allowed notifications.
   static Future<bool> syncTokenIfPermitted() async {
+    if (_syncTokenIfPermittedRunning) return false;
+    _syncTokenIfPermittedRunning = true;
     try {
       await _ensureFirebaseInitialized();
       final messaging = FirebaseMessaging.instance;
@@ -107,12 +118,12 @@ class NotificationService {
       }
       final token = await getMessagingTokenWithRetries(
         messaging,
-        maxAttempts: kIsWeb ? 5 : 2,
+        maxAttempts: kIsWeb ? 3 : 2,
         delayBetween:
-            kIsWeb ? const Duration(milliseconds: 400) : const Duration(milliseconds: 200),
+            kIsWeb ? const Duration(milliseconds: 500) : const Duration(milliseconds: 200),
       );
       if (token == null || token.isEmpty) return false;
-      return _persistTokenAndAttachListeners(token);
+      return await _persistTokenAndAttachListeners(token);
     } catch (e, st) {
       developer.log(
         'NotificationService.syncTokenIfPermitted: $e',
@@ -121,6 +132,8 @@ class NotificationService {
         stackTrace: st,
       );
       return false;
+    } finally {
+      _syncTokenIfPermittedRunning = false;
     }
   }
 
@@ -128,6 +141,12 @@ class NotificationService {
   /// Never shows the permission dialog (unlike [registerToken]).
   static Future<void> init() async {
     try {
+      final now = DateTime.now();
+      if (_lastInitAt != null &&
+          now.difference(_lastInitAt!) < const Duration(seconds: 10)) {
+        return;
+      }
+      _lastInitAt = now;
       await _ensureFirebaseInitialized();
       await syncTokenIfPermitted();
     } catch (e, st) {
@@ -270,13 +289,41 @@ class NotificationService {
     }
   }
 
-  static Future<bool> _persistTokenAndAttachListeners(String token) async {
+  /// All FCM → Supabase writes go through one chain (init, enable button, token refresh).
+  static Future<T> _enqueuePersistTail<T>(Future<T> Function() work) {
+    final c = Completer<T>();
+    _persistTail = _persistTail.then((_) async {
+      try {
+        final v = await work();
+        if (!c.isCompleted) c.complete(v);
+      } catch (e, st) {
+        developer.log(
+          'NotificationService._enqueuePersistTail: $e',
+          name: 'Jars',
+          error: e,
+          stackTrace: st,
+        );
+        if (!c.isCompleted) c.completeError(e, st);
+      }
+    });
+    return c.future;
+  }
+
+  static Future<bool> _persistTokenAndAttachListeners(String token) {
+    return _enqueuePersistTail(() => _persistTokenAndAttachListenersSerial(token));
+  }
+
+  static Future<bool> _persistTokenAndAttachListenersSerial(String token) async {
     final messaging = FirebaseMessaging.instance;
     if (!_tokenListenersAttached) {
       _tokenListenersAttached = true;
       messaging.onTokenRefresh.listen((t) {
-        _lastKnownLocalToken = t;
-        _saveFcmToken(t);
+        unawaited(
+          _enqueuePersistTail(() async {
+            _lastKnownLocalToken = t;
+            return _saveFcmToken(t);
+          }),
+        );
       });
     }
     if (kIsWeb && !_foregroundWebAttached) {
@@ -356,9 +403,9 @@ class NotificationService {
 
       final token = await getMessagingTokenWithRetries(
         messaging,
-        maxAttempts: kIsWeb ? 6 : 3,
+        maxAttempts: kIsWeb ? 4 : 3,
         delayBetween: kIsWeb
-            ? const Duration(milliseconds: 450)
+            ? const Duration(milliseconds: 550)
             : const Duration(milliseconds: 200),
       );
 
@@ -402,6 +449,22 @@ class NotificationService {
     }
   }
 
+  /// Web: one browser profile can mint many FCM tokens if [getToken] / SW registration runs often.
+  /// Keep only the latest web row per user so push fan-out does not duplicate notifications.
+  static Future<void> _pruneOtherWebTokens(String userId, String keepToken) async {
+    if (!kIsWeb) return;
+    try {
+      await _db
+          .from('user_fcm_tokens')
+          .delete()
+          .eq('user_id', userId)
+          .eq('platform', 'web')
+          .neq('token', keepToken);
+    } catch (e) {
+      developer.log('NotificationService._pruneOtherWebTokens: $e', name: 'Jars');
+    }
+  }
+
   /// Saves to [user_fcm_tokens] (multi-device) and mirrors last token on [profiles] for legacy tools.
   static Future<bool> _saveFcmToken(String token) async {
     final userId = SupabaseService.currentUserId;
@@ -424,6 +487,7 @@ class NotificationService {
         },
         onConflict: 'token',
       );
+      await _pruneOtherWebTokens(userId, token);
       await _db
           .from('profiles')
           .update({'fcm_token': token})

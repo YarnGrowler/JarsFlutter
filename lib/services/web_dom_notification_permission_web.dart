@@ -11,8 +11,14 @@ Future<bool> requestDomNotificationPermission() async {
         'jarsRequestNotificationPermission',
         const <Object?>[],
       );
-      final result =
-          await js_util.promiseToFuture<Object?>(promise as Object);
+      if (promise == null) {
+        html.window.console.log(
+          'jarsRequestNotificationPermission returned null; falling back.',
+        );
+        final r = await html.Notification.requestPermission();
+        return r == 'granted';
+      }
+      final result = await js_util.promiseToFuture<Object?>(promise);
       return result == 'granted';
     }
     final r = await html.Notification.requestPermission();
