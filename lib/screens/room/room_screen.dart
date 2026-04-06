@@ -144,41 +144,87 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   if (items.isEmpty) {
                     return _buildEmptyFeed();
                   }
-                  return RefreshIndicator(
-                    color: JarsColors.primary,
-                    onRefresh: () async {
-                      ref.invalidate(roomFeedWithReactionsProvider);
-                      ref.invalidate(roomFeedProvider);
-                      ref.invalidate(roomScoresProvider);
-                      ref.invalidate(myScoreProvider);
-                      ref.invalidate(groupGoalProgressProvider);
-                    },
-                    child: ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final row = items[index];
-                        final delayMs = (index * 12).clamp(0, 96);
-                        return _buildFeedItem(
-                          context,
-                          row.log,
-                          row.reactions,
-                        )
-                            .animate()
-                            .fadeIn(
-                              duration: 110.ms,
-                              delay: Duration(milliseconds: delayMs),
-                              curve: Curves.easeOut,
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      RefreshIndicator(
+                        color: JarsColors.primary,
+                        onRefresh: () async {
+                          ref.invalidate(roomFeedWithReactionsProvider);
+                          ref.invalidate(roomFeedProvider);
+                          ref.invalidate(roomScoresProvider);
+                          ref.invalidate(myScoreProvider);
+                          ref.invalidate(groupGoalProgressProvider);
+                        },
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final row = items[index];
+                            final delayMs = (index * 12).clamp(0, 96);
+                            return _buildFeedItem(
+                              context,
+                              row.log,
+                              row.reactions,
                             )
-                            .slideY(
-                              begin: 0.028,
-                              duration: 110.ms,
-                              delay: Duration(milliseconds: delayMs),
-                              curve: Curves.easeOut,
-                            );
-                      },
-                    ),
+                                .animate()
+                                .fadeIn(
+                                  duration: 110.ms,
+                                  delay: Duration(milliseconds: delayMs),
+                                  curve: Curves.easeOut,
+                                )
+                                .slideY(
+                                  begin: 0.028,
+                                  duration: 110.ms,
+                                  delay: Duration(milliseconds: delayMs),
+                                  curve: Curves.easeOut,
+                                );
+                          },
+                        ),
+                      ),
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 28,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  JarsColors.background,
+                                  JarsColors.background.withValues(alpha: 0),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        height: 36,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  JarsColors.background,
+                                  JarsColors.background.withValues(alpha: 0),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   );
                 },
                 loading: () => const Center(

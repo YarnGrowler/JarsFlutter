@@ -8,10 +8,13 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/count_unit.dart';
+import '../../core/streak_bonus.dart';
 import '../../core/level_data.dart';
 import '../../core/log_screen_style.dart';
 import '../../core/theme.dart';
 import '../../models/exercise.dart';
+import '../../models/score.dart';
 import '../../providers/active_room_provider.dart';
 import '../../providers/exercise_provider.dart';
 import '../../providers/goal_provider.dart';
@@ -19,7 +22,7 @@ import '../../providers/score_provider.dart';
 import '../../services/event_service.dart';
 import '../../services/log_service.dart';
 import '../../services/notification_service.dart';
-import '../../services/score_service.dart';
+import '../../services/score_service.dart' show ScoreService, previewStreakDaysForBonus;
 import '../../services/supabase_service.dart';
 import '../../widgets/ui/rank_badge.dart';
 import 'rank_up_ceremony_screen.dart';
@@ -35,9 +38,9 @@ const double _kSwipeUpThreshold = 18.0; // px upward before opening picker
 
 /// Hold-progress ring: small canvas + repaint boundary so web/mobile don’t
 /// repaint a full-screen layer every tick; size ≥ 2× ring radius + stroke.
-const double _kHoldRingCanvasSize = 10.0;
+const double _kHoldRingCanvasSize = 200.0;
 /// Nudge ring center down so it wraps the Space Mono rep (glyph sits low).
-const double _kHoldRingCenterYOffset = 10.0;
+const double _kHoldRingCenterYOffset = 48.0;
 
 const String _kRecentExercisesKey = 'jars_recent_exercises';
 const String _kWeightKeyPrefix = 'jars_weight_';
@@ -57,11 +60,22 @@ class LogSheet extends ConsumerStatefulWidget {
 }
 
 class _LogSheetState extends ConsumerState<LogSheet>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   String? _selectedCategory;
   Exercise? _selectedExercise;
   int _reps = 0;
   double _weight = 0;
+
+  /// Plank-style stopwatch (ms accumulated + optional running [Stopwatch]).
+  int _timerAccumMs = 0;
+  Stopwatch? _timerSw;
+  Timer? _timerUiTick;
+
+  /// Post-submit streak bonus animation (null = normal points preview).
+  int? _celebrationBase;
+  int? _celebrationStreakBonus;
+  int? _celebrationTotal;
+  int? _celebrationStreakDays;
 
   // recents / search
   List<String> _recentIds = [];
@@ -98,9 +112,73 @@ class _LogSheetState extends ConsumerState<LogSheet>
   double _sheetExtent = _kLogSheetMin;
   final DraggableScrollableController _sheetCtrl = DraggableScrollableController();
 
+  bool get _timerUiActive {
+    final e = _selectedExercise;
+    return e != null && e.effectiveTimerUi;
+  }
+
+  int get _timerMsTotal =>
+      _timerAccumMs + (_timerSw?.elapsedMilliseconds ?? 0);
+
+  void _resetTimerState() {
+    _timerUiTick?.cancel();
+    _timerUiTick = null;
+    _timerSw?.stop();
+    _timerSw = null;
+    _timerAccumMs = 0;
+  }
+
+  /// Web / PWA: pause when the tab or app goes to background so time isn’t counted while away.
+  void _pauseTimerClock() {
+    if (_timerSw != null) {
+      _timerAccumMs += _timerSw!.elapsedMilliseconds;
+      _timerSw!.stop();
+      _timerSw = null;
+    }
+    _timerUiTick?.cancel();
+    _timerUiTick = null;
+    if (mounted) {
+      setState(() {
+        _reps = (_timerMsTotal / 1000).floor();
+      });
+    }
+  }
+
+  void _toggleTimer() {
+    if (_timerSw?.isRunning ?? false) {
+      _pauseTimerClock();
+      return;
+    }
+    _timerSw = Stopwatch()..start();
+    _timerUiTick?.cancel();
+    _timerUiTick = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      if (!mounted) return;
+      setState(() {
+        _reps = (_timerMsTotal / 1000).floor();
+      });
+    });
+    HapticFeedback.selectionClick();
+  }
+
+  /// Under 1 min: compact `5.2s` (no leading minute digits). At 1+ min: `1:05.2`.
+  String _formatTimerMs(int ms) {
+    var t = ms;
+    if (t < 0) t = 0;
+    if (t < 60000) {
+      final sec = t / 1000.0;
+      return '${sec.toStringAsFixed(1)}s';
+    }
+    final m = t ~/ 60000;
+    final rem = t % 60000;
+    final s = rem ~/ 1000;
+    final tenths = ((rem % 1000) / 100).floor().clamp(0, 9);
+    return '$m:${s.toString().padLeft(2, '0')}.$tenths';
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _repBump = AnimationController(vsync: this, duration: kRepBumpTotal)
       ..addListener(() => setState(() {}))
       ..addStatusListener((s) {
@@ -114,11 +192,24 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timerUiTick?.cancel();
+    _timerSw?.stop();
     _sheetCtrl.dispose();
     _holdCtrl?.dispose();
     _repBump.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_timerUiActive) return;
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _pauseTimerClock();
+    }
   }
 
   // ── SharedPreferences ─────────────────────────────────────────────────────
@@ -181,6 +272,9 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
   void _incrementRep() {
     if (_selectedExercise == null) return;
+    if (_selectedExercise!.effectiveTimerUi) {
+      return;
+    }
     final power = _random.nextDouble() < 0.2;
     if (power) {
       HapticFeedback.mediumImpact();
@@ -200,11 +294,12 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
   // ── Hold-to-log ────────────────────────────────────────────────────────────
   void _startHold(Offset globalPos) {
-    if (_selectedExercise == null ||
-        _reps < 1 ||
-        _logging ||
-        _pickerOpen ||
-        _weightPanelOpen) {
+    if (_selectedExercise == null || _logging || _pickerOpen || _weightPanelOpen) {
+      return;
+    }
+    if (_timerUiActive) {
+      if (_timerMsTotal < 1000) return;
+    } else if (_reps < 1) {
       return;
     }
     _cancelHold();
@@ -331,10 +426,14 @@ class _LogSheetState extends ConsumerState<LogSheet>
     final didSwipe = _movedEnoughForSwipe;
     _movedEnoughForSwipe = false;
 
-    // If it was a quick tap and not a swipe → increment rep
+    // Quick tap: timer exercises toggle stopwatch; others increment count.
     if (!didSwipe && !_pickerOpen && elapsed < _kTapMax) {
       _cancelHold();
-      _incrementRep();
+      if (_timerUiActive) {
+        _toggleTimer();
+      } else {
+        _incrementRep();
+      }
     } else if (!didSwipe) {
       // Long press ended before completion → cancel
       _cancelHold();
@@ -352,6 +451,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
   void _openRepPicker() {
     if (_pickerOpen) return;
+    if (_timerUiActive) _pauseTimerClock();
     _pickerOpen = true;
     HapticFeedback.mediumImpact();
     showModalBottomSheet<void>(
@@ -362,11 +462,31 @@ class _LogSheetState extends ConsumerState<LogSheet>
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
+        if (_timerUiActive) {
+          final totalSec =
+              (_timerMsTotal / 1000).floor().clamp(0, MinSecWheelPicker.maxTotalSeconds);
+          return SafeArea(
+            child: MinSecWheelPicker(
+              initialTotalSeconds: totalSec,
+              onTotalSecondsChanged: (sec) {
+                if (!mounted) return;
+                setState(() {
+                  _reps = sec;
+                  _timerAccumMs = sec * 1000;
+                  _timerSw?.stop();
+                  _timerSw = null;
+                });
+              },
+            ),
+          );
+        }
         return SafeArea(
           child: RadialRepPicker(
             initialValue: _reps,
+            countUnit: _selectedExercise?.countUnit ?? CountUnit.reps,
             onRepsChanged: (v) {
-              if (mounted) setState(() => _reps = v);
+              if (!mounted) return;
+              setState(() => _reps = v);
             },
           ),
         );
@@ -381,10 +501,18 @@ class _LogSheetState extends ConsumerState<LogSheet>
     if (_logging) return;
     final exercise = _selectedExercise;
     final room = ref.read(activeRoomProvider);
-    if (exercise == null || room == null || _reps < 1) return;
+    if (exercise == null || room == null) return;
+
+    var count = _reps;
+    if (exercise.effectiveTimerUi) {
+      _pauseTimerClock();
+      count = (_timerMsTotal / 1000).floor();
+    }
+    if (count < 1) return;
 
     final userId = SupabaseService.currentUserId!;
-    final pts = exercise.calculatePoints(_reps, _weight > 0 ? _weight : null);
+    final basePts =
+        exercise.calculatePoints(count, _weight > 0 ? _weight : null);
     setState(() => _logging = true);
 
     if (_weight > 0) await _saveWeight(exercise.id, _weight);
@@ -394,18 +522,37 @@ class _LogSheetState extends ConsumerState<LogSheet>
       final totalBefore = before?.totalScore ?? 0;
       final oldLevel = getLevelForScore(totalBefore);
 
+      final streakDays = before == null
+          ? 0
+          : previewStreakDaysForBonus(
+              score: before,
+              basePoints: basePts,
+              streakMinimum: room.streakMinimum,
+            );
+      final streakBonusPts = streakBonusPointsRounded(
+        basePoints: basePts,
+        streakDaysForBonus: streakDays,
+      );
+      final baseRounded = basePts.round();
+      final totalPts = baseRounded + streakBonusPts;
+      final totalEarned = totalPts.toDouble();
+
       final log = await LogService.insertLog(
         roomId: room.id,
         exerciseId: exercise.id,
         exerciseName: exercise.name,
-        count: _reps,
+        count: count,
         weight: _weight,
-        pointsEarned: pts,
+        pointsEarned: totalEarned,
+      );
+
+      unawaited(
+        LogService.ensureIdleWakeCards(room.id, actorUserId: userId),
       );
 
       await ScoreService.addPoints(
         roomId: room.id,
-        points: pts,
+        points: totalEarned,
         streakMinimum: room.streakMinimum,
       );
       ref.invalidate(myScoreProvider);
@@ -413,7 +560,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
       ref.invalidate(groupGoalProgressProvider);
 
       final after = await ScoreService.getUserScore(room.id, userId);
-      final totalAfter = after?.totalScore ?? totalBefore + pts;
+      final totalAfter = after?.totalScore ?? totalBefore + totalEarned;
       final newLevel = getLevelForScore(totalAfter);
       final username = after?.username ?? before?.username ?? 'You';
 
@@ -422,13 +569,27 @@ class _LogSheetState extends ConsumerState<LogSheet>
         userId: userId,
         username: username,
         exerciseName: exercise.name,
-        repCount: _reps,
+        repCount: count,
         pointsBefore: totalBefore,
         pointsAfter: totalAfter,
         streakBefore: before?.streakCurrent ?? 0,
         streakAfter: after?.streakCurrent ?? 0,
         currentLogId: log.id,
       ));
+
+      if (mounted) {
+        setState(() {
+          if (streakBonusPts > 0) {
+            _celebrationBase = baseRounded;
+            _celebrationStreakBonus = streakBonusPts;
+            _celebrationTotal = totalPts;
+            _celebrationStreakDays = streakDays > 0 ? streakDays : 1;
+          }
+        });
+        final waitMs = streakBonusPts > 0 ? 2000 : 350;
+        await Future<void>.delayed(Duration(milliseconds: waitMs));
+      }
+      if (!mounted) return;
 
       if (newLevel.level > oldLevel.level) {
         await LogService.insertRankUpBroadcast(
@@ -457,12 +618,17 @@ class _LogSheetState extends ConsumerState<LogSheet>
       }
 
       if (mounted) {
+        _resetTimerState();
         setState(() {
           _undoLogId = log.id;
-          _undoPoints = pts;
+          _undoPoints = totalEarned;
           _reps = 0;
           _weight = 0;
           _logging = false;
+          _celebrationBase = null;
+          _celebrationStreakBonus = null;
+          _celebrationTotal = null;
+          _celebrationStreakDays = null;
         });
         if (!alreadyFlashed) await _flashWhite();
         if (mounted) context.go('/');
@@ -521,9 +687,35 @@ class _LogSheetState extends ConsumerState<LogSheet>
     }
 
     final exercise = _selectedExercise;
+    final countUnit = exercise?.countUnit ?? CountUnit.reps;
+    final countUnitPlural = countUnit.pickerHint;
+    final swipePickerHint = exercise != null && exercise.effectiveTimerUi
+        ? 'minutes & seconds'
+        : countUnitPlural;
+    String tapCountHint() {
+      if (exercise != null && exercise.effectiveTimerUi) {
+        return 'tap to start/pause · swipe up for min:sec · hold 2s to log';
+      }
+      switch (countUnit) {
+        case CountUnit.reps:
+          return 'tap to count · hold 2s to log';
+        case CountUnit.seconds:
+          return 'tap to add seconds · hold 2s to log';
+        case CountUnit.minutes:
+          return 'tap to add minutes · hold 2s to log';
+      }
+    }
+
+    final previewCount =
+        exercise != null && exercise.effectiveTimerUi
+            ? (_timerMsTotal / 1000).floor()
+            : _reps;
     final ptsPreview = exercise == null
         ? 0.0
-        : exercise.calculatePoints(_reps, _weight > 0 ? _weight : null);
+        : exercise.calculatePoints(
+            previewCount.clamp(0, 999999),
+            _weight > 0 ? _weight : null,
+          );
     final holdProgress = _holdCtrl?.value ?? 0.0;
     final showFlood = (_holding && holdProgress > 0) || _sustainingFlood;
     final floodProgress = _sustainingFlood ? 1.0 : holdProgress;
@@ -615,7 +807,9 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                             ),
                                           ),
                                         if (_selectedExercise != null &&
-                                            _reps > 0 &&
+                                            (previewCount > 0 ||
+                                                (_timerUiActive &&
+                                                    _timerMsTotal > 0)) &&
                                             !_holding)
                                           Positioned(
                                             top: 12,
@@ -624,7 +818,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                             child: IgnorePointer(
                                               child: Center(
                                                 child: Text(
-                                                  '↑ swipe up here (or on points) to set reps',
+                                                  '↑ swipe up here (or on points) to set $swipePickerHint',
                                                   textAlign: TextAlign.center,
                                                   style: GoogleFonts.inter(
                                                     fontSize: 11,
@@ -656,7 +850,9 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                             ),
                                           ),
                                         if (_selectedExercise != null &&
-                                            _reps == 0)
+                                            previewCount == 0 &&
+                                            (!_timerUiActive ||
+                                                _timerMsTotal == 0))
                                           Positioned(
                                             bottom: 16,
                                             left: 0,
@@ -664,7 +860,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                             child: IgnorePointer(
                                               child: Center(
                                                 child: Text(
-                                                  'tap to count · hold 2s to log',
+                                                  tapCountHint(),
                                                   style: GoogleFonts.inter(
                                                     fontSize: 13,
                                                     color: Colors.white
@@ -717,9 +913,15 @@ class _LogSheetState extends ConsumerState<LogSheet>
                             height: h * 0.12,
                             child: Center(
                               child: AnimatedPointsDisplay(
-                                key: ValueKey(exercise?.id ?? 'none'),
+                                key: ValueKey(
+                                  '${exercise?.id ?? 'none'}_${_celebrationTotal ?? 0}',
+                                ),
                                 targetPoints: ptsPreview,
                                 visible: exercise != null,
+                                celebrationBase: _celebrationBase,
+                                celebrationStreakBonus: _celebrationStreakBonus,
+                                celebrationTotal: _celebrationTotal,
+                                celebrationStreakDays: _celebrationStreakDays,
                               ),
                             ),
                           ),
@@ -742,10 +944,12 @@ class _LogSheetState extends ConsumerState<LogSheet>
                               child: Transform.rotate(
                                 angle: _bumpTurn(),
                                 child: Text(
-                                  '$_reps',
+                                  _timerUiActive
+                                      ? _formatTimerMs(_timerMsTotal)
+                                      : '$_reps',
                                   key: _numberKey,
                                   style: GoogleFonts.spaceMono(
-                                    fontSize: 96,
+                                    fontSize: _timerUiActive ? 72 : 96,
                                     fontWeight: FontWeight.w700,
                                     color: (_holding || _sustainingFlood)
                                         ? Colors.white
@@ -939,6 +1143,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                                 final saved =
                                                     await _loadWeight(ex.id);
                                                 if (!mounted) return;
+                                                _resetTimerState();
                                                 setState(() {
                                                   _selectedExercise = ex;
                                                   _reps = 0;
@@ -1348,9 +1553,13 @@ class _WeightBadge extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TopBar extends StatelessWidget {
-  final AsyncValue scoreAsync;
+  final AsyncValue<Score?> scoreAsync;
   final VoidCallback onHistoryTap;
-  const _TopBar({required this.scoreAsync, required this.onHistoryTap});
+
+  const _TopBar({
+    required this.scoreAsync,
+    required this.onHistoryTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1358,8 +1567,7 @@ class _TopBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 12, 16, 0),
       child: scoreAsync.when(
         data: (score) {
-          final s = score as dynamic;
-          final total = (s?.totalScore as num?)?.toDouble() ?? 0.0;
+          final total = score?.totalScore ?? 0.0;
           final level = getLevelForScore(total);
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,

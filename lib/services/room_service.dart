@@ -8,6 +8,7 @@ import 'profile_service.dart';
 import 'supabase_service.dart';
 import '../models/room.dart';
 import '../core/constants.dart';
+import '../core/count_unit.dart';
 import '../core/exercise_data.dart';
 
 class InvalidRoomPasswordException implements Exception {}
@@ -329,6 +330,14 @@ class RoomService {
       if (e.weightMultiplier != null) {
         m['weight_multiplier'] = e.weightMultiplier;
       }
+      m['count_unit'] = e.countUnit.name;
+      if (e.countUnit == CountUnit.seconds && e.timePointsMode != null) {
+        m['time_points_mode'] = timePointsModeToJson(e.timePointsMode!);
+      } else {
+        m['time_points_mode'] = null;
+      }
+      m['uses_time'] = e.usesTime;
+      m['timer_ui'] = e.timerUiPreferred;
       return m;
     }).toList();
 

@@ -50,7 +50,7 @@ class ExerciseTile extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '${exercise.points} pts/rep',
+              exercise.pointsPerUnitLabel,
               style: GoogleFonts.spaceMono(
                 fontSize: 11,
                 color: JarsColors.gold,

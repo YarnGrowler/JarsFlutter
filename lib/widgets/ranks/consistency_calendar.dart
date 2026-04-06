@@ -15,10 +15,14 @@ class ConsistencyCalendar extends StatelessWidget {
   /// How many weeks to show (columns). Default 16 ≈ 4 months.
   final int weeks;
 
+  /// When false, the built-in "Consistency" title row is omitted (parent supplies it).
+  final bool showHeader;
+
   const ConsistencyCalendar({
     super.key,
     required this.dailyPoints,
     this.weeks = 16,
+    this.showHeader = true,
   });
 
   @override
@@ -67,27 +71,29 @@ class ConsistencyCalendar extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Consistency',
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: JarsColors.textPrimary,
+        if (showHeader) ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Consistency',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: JarsColors.textPrimary,
+                ),
               ),
-            ),
-            Text(
-              '${dailyPoints.length} active days',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: JarsColors.textTertiary,
+              Text(
+                '${dailyPoints.length} active days',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: JarsColors.textTertiary,
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
 
         // Month header
         SizedBox(

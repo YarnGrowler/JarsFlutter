@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'supabase_service.dart';
+import '../core/jars_timezone.dart';
 import 'log_service.dart';
 import 'notification_service.dart';
 import 'score_service.dart';
@@ -136,15 +137,9 @@ class EventService {
     String userId,
     String username,
   ) async {
-    final todayStart = DateTime.now().toUtc().copyWith(
-          hour: 0,
-          minute: 0,
-          second: 0,
-          millisecond: 0,
-          microsecond: 0,
-        );
+    final todayStart = JarsTimezone.startOfTodayChicagoUtc();
 
-    // Count non-broadcast logs from this user today
+    // Count non-broadcast logs from this user today (Chicago calendar day)
     final rows = await _db
         .from('exercise_logs')
         .select('id')
@@ -163,7 +158,7 @@ class EventService {
         roomId: roomId,
         userId: userId,
         prefix: ExerciseLog.kFirstLogPrefix,
-        payload: '⚡ $username just woke up · $timeStr',
+        payload: '⚡ $username first log today · $timeStr',
       );
       await NotificationService.notifyRoomMembersExcept(
         roomId: roomId,

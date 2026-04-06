@@ -1,3 +1,5 @@
+import 'count_unit.dart';
+
 class ExerciseDefinition {
   final String id;
   final String name;
@@ -8,6 +10,15 @@ class ExerciseDefinition {
   final double? weightThreshold;
   final double? weightMultiplier;
 
+  /// `reps` | `seconds` | `minutes` — must match DB `count_unit`.
+  final CountUnit countUnit;
+
+  /// Only when [countUnit] is [CountUnit.seconds]: `per_second` (plank) vs `per_minute` (sports blocks).
+  final TimePointsMode? timePointsMode;
+
+  /// Stopwatch tap UI (plank / holds). Stored as `timer_ui` in Postgres.
+  final bool timerUiPreferred;
+
   const ExerciseDefinition({
     required this.id,
     required this.name,
@@ -17,7 +28,13 @@ class ExerciseDefinition {
     this.supportsWeight = false,
     this.weightThreshold,
     this.weightMultiplier,
+    this.countUnit = CountUnit.reps,
+    this.timePointsMode,
+    this.timerUiPreferred = false,
   });
+
+  /// Persisted as `uses_time` — true when logging time, not rep count.
+  bool get usesTime => countUnit != CountUnit.reps;
 }
 
 const kSystemExercises = <ExerciseDefinition>[
@@ -39,9 +56,27 @@ const kSystemExercises = <ExerciseDefinition>[
 
   // Core
   ExerciseDefinition(id: 'situps', name: 'Sit-ups', points: 1.2, icon: '🔄', category: 'Core', supportsWeight: true, weightThreshold: 5, weightMultiplier: 1),
-  ExerciseDefinition(id: 'plank', name: 'Plank(5s)', points: 1, icon: '⚰️', category: 'Core'),
+  ExerciseDefinition(
+    id: 'plank',
+    name: 'Plank(5s)',
+    points: 1,
+    icon: '⚰️',
+    category: 'Core',
+    countUnit: CountUnit.seconds,
+    timePointsMode: TimePointsMode.perSecond,
+    timerUiPreferred: true,
+  ),
   ExerciseDefinition(id: 'crunches', name: 'Crunches', points: 1, icon: '🌟', category: 'Core'),
-  ExerciseDefinition(id: 'lsit_hold', name: 'L-Sit Hold(5s)', points: 3, icon: '📏', category: 'Core'),
+  ExerciseDefinition(
+    id: 'lsit_hold',
+    name: 'L-Sit Hold(5s)',
+    points: 3,
+    icon: '📏',
+    category: 'Core',
+    countUnit: CountUnit.seconds,
+    timePointsMode: TimePointsMode.perSecond,
+    timerUiPreferred: true,
+  ),
   ExerciseDefinition(id: 'abwheel_knees', name: 'Ab Wheel (Knees)', points: 2.5, icon: '⚙️', category: 'Core', supportsWeight: true, weightThreshold: 7, weightMultiplier: 1),
   ExerciseDefinition(id: 'abwheel_full', name: 'Ab Wheel (Full)', points: 4, icon: '⚙️', category: 'Core', supportsWeight: true, weightThreshold: 5, weightMultiplier: 1),
   ExerciseDefinition(id: 'bicycle_crunch', name: 'Bicycle Crunch', points: 1.4, icon: '🚴', category: 'Core'),
@@ -66,17 +101,87 @@ const kSystemExercises = <ExerciseDefinition>[
   ExerciseDefinition(id: 'skaters', name: 'Skaters', points: 0.5, icon: '⛸️', category: 'Cardio'),
   ExerciseDefinition(id: 'jump_rope', name: 'Jump Rope', points: 0.5, icon: '🤾', category: 'Cardio'),
   ExerciseDefinition(id: 'box_jumps', name: 'Box Jumps', points: 3, icon: '📦', category: 'Cardio'),
-  ExerciseDefinition(id: 'running1', name: 'Running(5 min)', points: 10, icon: '🏃🏿', category: 'Cardio'),
+  ExerciseDefinition(
+    id: 'running1',
+    name: 'Running(5 min)',
+    points: 10,
+    icon: '🏃🏿',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
   ExerciseDefinition(id: 'running2', name: 'Running(1 mile)', points: 40, icon: '🏃‍♂️', category: 'Cardio'),
-  ExerciseDefinition(id: 'soccer', name: 'Futbol/Soccer (5 min)', points: 15, icon: '⚽', category: 'Cardio'),
-  ExerciseDefinition(id: 'basketball', name: 'Basketball (5 min)', points: 16, icon: '🏀', category: 'Cardio'),
-  ExerciseDefinition(id: 'swimming', name: 'Swimming (5 min)', points: 22, icon: '🏊', category: 'Cardio'),
-  ExerciseDefinition(id: 'cycling', name: 'Cycling (5 min)', points: 12, icon: '🚴', category: 'Cardio'),
-  ExerciseDefinition(id: 'tennis', name: 'Tennis (5 min)', points: 5, icon: '🎾', category: 'Cardio'),
-  ExerciseDefinition(id: 'golf', name: 'Golf (5 min)', points: 4, icon: '⛳', category: 'Cardio'),
-  ExerciseDefinition(id: 'volleyball', name: 'Volleyball (5 min)', points: 10, icon: '🏐', category: 'Cardio'),
-  ExerciseDefinition(id: 'baseball', name: 'Baseball (5 min)', points: 7, icon: '⚾', category: 'Cardio'),
-  ExerciseDefinition(id: 'football', name: 'American Football (5 min)', points: 16, icon: '🏈', category: 'Cardio'),
+  ExerciseDefinition(
+    id: 'soccer',
+    name: 'Futbol/Soccer (5 min)',
+    points: 15,
+    icon: '⚽',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
+  ExerciseDefinition(
+    id: 'basketball',
+    name: 'Basketball (5 min)',
+    points: 16,
+    icon: '🏀',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
+  ExerciseDefinition(
+    id: 'swimming',
+    name: 'Swimming (5 min)',
+    points: 22,
+    icon: '🏊',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
+  ExerciseDefinition(
+    id: 'cycling',
+    name: 'Cycling (5 min)',
+    points: 12,
+    icon: '🚴',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
+  ExerciseDefinition(
+    id: 'tennis',
+    name: 'Tennis (5 min)',
+    points: 5,
+    icon: '🎾',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
+  ExerciseDefinition(
+    id: 'golf',
+    name: 'Golf (5 min)',
+    points: 4,
+    icon: '⛳',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
+  ExerciseDefinition(
+    id: 'volleyball',
+    name: 'Volleyball (5 min)',
+    points: 10,
+    icon: '🏐',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
+  ExerciseDefinition(
+    id: 'baseball',
+    name: 'Baseball (5 min)',
+    points: 7,
+    icon: '⚾',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
+  ExerciseDefinition(
+    id: 'football',
+    name: 'American Football (5 min)',
+    points: 16,
+    icon: '🏈',
+    category: 'Cardio',
+    countUnit: CountUnit.minutes,
+  ),
 
   // Strength
   ExerciseDefinition(id: 'bicep_curls', name: 'Bicep Curls', points: 2.5, icon: '💪', category: 'Strength', supportsWeight: true, weightThreshold: 5, weightMultiplier: 1),

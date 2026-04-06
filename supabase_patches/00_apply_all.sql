@@ -158,3 +158,12 @@ grant select, insert, update, delete on table public.user_fcm_tokens to service_
 -- === 15 wake room push + nudge limits + admin wake: run supabase_patches/15_wake_nudge_room_notify.sql ===
 -- === 16 Web Push (VAPID): run supabase_patches/16_web_push_subscriptions.sql ===
 -- === 17 idle wake last-seen fix: run supabase_patches/17_idle_wake_fix_last_seen.sql ===
+-- === 18 idle wake uses real workout logs only: run supabase_patches/18_idle_wake_real_logs_only.sql ===
+-- === 19 exercise count_unit column: run supabase_patches/19_exercise_count_unit.sql ===
+-- === 20 idle wake: skip never-logged + cap days: run supabase_patches/20_idle_wake_skip_never_logged_cap_days.sql ===
+-- === 21 exercise time_points_mode (per min vs per sec): run supabase_patches/21_time_points_mode.sql ===
+-- === 22 exercise uses_time + timer_ui + backfill all rows: run supabase_patches/22_exercise_uses_time_and_backfill.sql ===
+-- === 23 (5 min) sports → count_unit minutes + null time_points_mode: run supabase_patches/23_sports_blocks_use_minutes.sql ===
+-- === 24 idle wake last-activity + 15m grace: run supabase_patches/24_idle_wake_activity_and_grace.sql ===
+-- === 25 idle wake: skip actor + 48h floor: run supabase_patches/25_idle_wake_actor_skip_and_floor.sql ===
+-- === 26 idle wake: skip auth.uid() caller (old app safe): run supabase_patches/26_idle_wake_skip_rpc_caller_auth_uid.sql ===

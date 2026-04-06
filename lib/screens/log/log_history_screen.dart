@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/count_unit.dart';
 import '../../core/log_screen_style.dart';
 import '../../models/exercise.dart';
 import '../../models/exercise_log.dart';
@@ -346,7 +347,7 @@ class _LogRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${log.count} reps'
+                      '${log.count} ${inferCountUnitFromExerciseName(log.exerciseName).shortLabel}'
                       '${log.weight > 0 ? ' · ${log.weight.toStringAsFixed(0)} lbs' : ''}',
                       style: GoogleFonts.inter(
                         fontSize: 12,
@@ -484,6 +485,21 @@ class _EditLogSheetState extends ConsumerState<_EditLogSheet> {
         .firstOrNull;
   }
 
+  CountUnit get _countUnit =>
+      _exercise?.countUnit ??
+      inferCountUnitFromExerciseName(widget.log.exerciseName);
+
+  String get _countUnitTitle {
+    switch (_countUnit) {
+      case CountUnit.reps:
+        return 'Reps';
+      case CountUnit.seconds:
+        return 'Seconds';
+      case CountUnit.minutes:
+        return 'Minutes';
+    }
+  }
+
   double get _pts {
     final ex = _exercise;
     if (ex != null) {
@@ -595,9 +611,9 @@ class _EditLogSheetState extends ConsumerState<_EditLogSheet> {
           ),
           const SizedBox(height: 24),
 
-          // Reps
+          // Reps / seconds / minutes
           Text(
-            'Reps',
+            _countUnitTitle,
             style: GoogleFonts.inter(
               fontSize: 13,
               color: Colors.white.withValues(alpha: 0.5),

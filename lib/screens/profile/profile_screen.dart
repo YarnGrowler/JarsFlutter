@@ -21,6 +21,7 @@ import '../../models/badge.dart';
 import '../../providers/exercise_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../providers/profile_provider.dart';
+import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../providers/ui_text_scale_provider.dart';
 import '../../core/user_display_name.dart';
 import '../../widgets/ui/rank_badge.dart';
@@ -779,6 +780,52 @@ class _AdminRoomSettingsSheetState
                           ],
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: () {
+                          final root = widget.dialogContext;
+                          Navigator.pop(context);
+                          showGroupGoalSheet(root, room.id);
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: JarsColors.textPrimary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 14),
+                          side: const BorderSide(color: JarsColors.border),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.flag_outlined, color: JarsColors.green),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Group goal',
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: JarsColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Set a room-wide points target',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: JarsColors.textTertiary,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.chevron_right_rounded,
+                                color: JarsColors.textTertiary),
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 24),
                       SizedBox(
                         width: double.infinity,
@@ -1050,6 +1097,9 @@ class _RoomCustomizationSheetState
       if (msg.contains('wake_recently_posted')) {
         msg =
             'A wake card for that member was already posted in the last hour.';
+      } else if (msg.contains('target_has_no_workout_logs')) {
+        msg =
+            'That member has no workout logs yet — idle wake only applies after their first log.';
       } else if (msg.contains('not_room_admin')) {
         msg = 'Only the room admin can post this.';
       }

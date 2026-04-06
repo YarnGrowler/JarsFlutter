@@ -124,6 +124,7 @@ class _LeaderboardTab extends ConsumerWidget {
     final leaderboardAsync = ref.watch(leaderboardProvider);
     final room = ref.watch(activeRoomProvider);
     final dailyGoal = room?.dailyGoalPoints;
+    final streakMin = room?.streakMinimum;
 
     return Column(
       children: [
@@ -198,16 +199,21 @@ class _LeaderboardTab extends ConsumerWidget {
                     onTap: () {
                       final roomId = ref.read(activeRoomProvider)?.id;
                       if (roomId == null) return;
+                      final sw = MediaQuery.sizeOf(context).width;
                       showModalBottomSheet<void>(
                         context: context,
                         isScrollControlled: true,
                         backgroundColor: Colors.transparent,
-                        builder: (_) => MemberProfileSheet(
-                          userId: entry.userId,
-                          username: entry.username,
-                          totalScore: entry.score,
-                          streak: entry.streak,
-                          roomId: roomId,
+                        constraints: BoxConstraints(maxWidth: sw),
+                        builder: (_) => SizedBox(
+                          width: sw,
+                          child: MemberProfileSheet(
+                            userId: entry.userId,
+                            username: entry.username,
+                            totalScore: entry.score,
+                            streak: entry.streak,
+                            roomId: roomId,
+                          ),
                         ),
                       );
                     },
@@ -217,6 +223,7 @@ class _LeaderboardTab extends ConsumerWidget {
                       maxScore: maxScore,
                       period: period,
                       dailyGoalPoints: dailyGoal,
+                      streakMinimum: streakMin,
                     ),
                   )
                       .animate()
@@ -465,13 +472,18 @@ class _ExerciseBreakdownChartState extends State<_ExerciseBreakdownChart> {
               onTap: () {
                 final userId = SupabaseService.currentUserId;
                 if (userId == null) return;
+                final sw = MediaQuery.sizeOf(context).width;
                 showModalBottomSheet<void>(
                   context: context,
                   isScrollControlled: true,
                   backgroundColor: Colors.transparent,
-                  builder: (_) => ExerciseStatsSheet(
-                    roomId: widget.roomId,
-                    userId: userId,
+                  constraints: BoxConstraints(maxWidth: sw),
+                  builder: (_) => SizedBox(
+                    width: sw,
+                    child: ExerciseStatsSheet(
+                      roomId: widget.roomId,
+                      userId: userId,
+                    ),
                   ),
                 );
               },

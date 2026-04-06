@@ -66,13 +66,36 @@ class StatusBar extends ConsumerWidget {
                 scoreAsync.when(
                   data: (score) {
                     final daily = score?.displayDailyPoints ?? 0;
-                    return Text(
-                      'Today: ${daily.toInt()} pts',
-                      style: GoogleFonts.spaceMono(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: JarsColors.textSecondary,
-                      ),
+                    final streakMin = room?.streakMinimum ?? 0;
+                    final need = streakMin > 0
+                        ? (streakMin - daily).ceil().clamp(0, 999999)
+                        : 0;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Today: ${daily.toInt()} pts',
+                          style: GoogleFonts.spaceMono(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: JarsColors.textSecondary,
+                          ),
+                        ),
+                        if (streakMin > 0)
+                          Text(
+                            daily >= streakMin
+                                ? 'Streak safe'
+                                : '$need pts to streak',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              height: 1.2,
+                              color: daily >= streakMin
+                                  ? JarsColors.green.withValues(alpha: 0.85)
+                                  : JarsColors.textTertiary,
+                            ),
+                          ),
+                      ],
                     );
                   },
                   loading: () => const SizedBox.shrink(),

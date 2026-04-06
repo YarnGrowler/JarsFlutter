@@ -45,7 +45,11 @@ create table public.exercises (
   weight_threshold double precision,
   weight_multiplier double precision,
   created_by text not null default 'system',
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  count_unit text default 'reps',
+  time_points_mode text,
+  uses_time boolean not null default false,
+  timer_ui boolean not null default false
 );
 
 create table public.exercise_logs (

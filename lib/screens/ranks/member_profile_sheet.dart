@@ -107,12 +107,14 @@ class _MemberProfileSheetState extends State<MemberProfileSheet> {
                 controller: controller,
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
                 children: [
-                  // Header
+                  // Header — rank once (badge ring + title), not duplicated
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       RankBadge(
                         level: level,
-                        size: 40,
+                        size: 48,
+                        showTitle: false,
                         totalScore: widget.totalScore,
                       ),
                       const SizedBox(width: 16),
@@ -128,10 +130,12 @@ class _MemberProfileSheetState extends State<MemberProfileSheet> {
                                 color: JarsColors.textPrimary,
                               ),
                             ),
+                            const SizedBox(height: 4),
                             Text(
-                              '${level.icon} ${level.title}',
+                              level.title,
                               style: GoogleFonts.inter(
-                                fontSize: 14,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
                                 color: level.color,
                               ),
                             ),
@@ -142,36 +146,60 @@ class _MemberProfileSheetState extends State<MemberProfileSheet> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Stats row
-                  Row(
-                    children: [
-                      _StatBox(
-                        label: 'Total Points',
-                        value: '${widget.totalScore.toInt()}',
-                        color: JarsColors.gold,
-                      ),
-                      const SizedBox(width: 12),
-                      _StatBox(
-                        label: 'Streak',
-                        value: '${widget.streak}',
-                        icon: '🔥',
-                        color: JarsColors.green,
-                      ),
-                    ],
+                  // Stats row — equal visual weight
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _StatBox(
+                            label: 'Total Points',
+                            value: '${widget.totalScore.toInt()}',
+                            color: JarsColors.gold,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _StatBox(
+                            label: 'Streak',
+                            value: '${widget.streak}',
+                            icon: '🔥',
+                            color: JarsColors.green,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 24),
 
-                  // Consistency calendar
-                  Text(
-                    'Consistency',
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: JarsColors.textPrimary,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Consistency',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: JarsColors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        '${_dailyPoints.length} active days',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: JarsColors.textTertiary,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
-                  ConsistencyCalendar(dailyPoints: _dailyPoints),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: ConsistencyCalendar(
+                      dailyPoints: _dailyPoints,
+                      showHeader: false,
+                    ),
+                  ),
                   const SizedBox(height: 24),
 
                   // Top exercises
@@ -270,37 +298,40 @@ class _StatBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: JarsColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: JarsColors.border),
-        ),
-        child: Column(
-          children: [
-            if (icon != null)
-              Text(icon!, style: const TextStyle(fontSize: 18)),
-            Text(
-              value,
-              style: GoogleFonts.spaceMono(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: JarsColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: JarsColors.border),
+      ),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null)
+            Text(icon!, style: const TextStyle(fontSize: 16)),
+          if (icon != null) const SizedBox(height: 4),
+          Text(
+            value,
+            style: GoogleFonts.spaceMono(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: color,
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                color: JarsColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: JarsColors.textSecondary,
             ),
-          ],
-        ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+          ),
+        ],
       ),
     );
   }

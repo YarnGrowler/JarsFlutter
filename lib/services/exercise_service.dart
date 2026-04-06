@@ -38,6 +38,9 @@ class ExerciseService {
       'weight_threshold': weightThreshold,
       'weight_multiplier': weightMultiplier,
       'created_by': userId,
+      'count_unit': 'reps',
+      'uses_time': false,
+      'timer_ui': false,
     }).select().single();
 
     return Exercise.fromJson(data);

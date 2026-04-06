@@ -22,8 +22,8 @@ class LogExerciseCard extends StatelessWidget {
     final letter = exercise.name.isNotEmpty
         ? String.fromCharCode(exercise.name.runes.first).toUpperCase()
         : '?';
-    final ptsLabel =
-        '${exercise.points % 1 == 0 ? exercise.points.toStringAsFixed(0) : exercise.points.toStringAsFixed(1)} pts/rep';
+    final ptsLabel = exercise.pointsPerUnitLabel;
+    final timerBadge = exercise.effectiveTimerUi;
 
     return GestureDetector(
       onTap: onTap,
@@ -61,30 +61,42 @@ class LogExerciseCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Icon top-left
-                showEmoji
-                    ? Text(
-                        exercise.icon,
-                        style: const TextStyle(fontSize: 22, height: 1),
-                      )
-                    : Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: letterColor,
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          letter,
-                          style: GoogleFonts.spaceGrotesk(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            height: 1,
+                // Icon top-left (+ timer hint for stopwatch exercises)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    showEmoji
+                        ? Text(
+                            exercise.icon,
+                            style: const TextStyle(fontSize: 22, height: 1),
+                          )
+                        : Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: letterColor,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              letter,
+                              style: GoogleFonts.spaceGrotesk(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                height: 1,
+                              ),
+                            ),
                           ),
-                        ),
+                    if (timerBadge)
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 16,
+                        color: kLogGold.withValues(alpha: 0.75),
                       ),
+                  ],
+                ),
 
                 // Name + pts bottom
                 Column(

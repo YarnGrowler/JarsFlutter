@@ -14,7 +14,18 @@ import 'web_dom_notification_permission_stub.dart'
 import 'web_push_js_stub.dart'
     if (dart.library.html) 'web_push_js_web.dart' as web_push_js;
 
-/// Push icon path on web (same origin as the app, e.g. Vercel).
+// ── In-app / push notification inventory (rows → Supabase `notifications` → Edge → FCM/Web Push)
+//
+// • Idle wake card (SQL `notify_room_on_wake_card` on __WAKE__| insert): “👻 {user} is idle…”
+//   to all room members except the absent user. (Fix spurious wakes: patch 18 + feed throttle.)
+// • Wake nudge (`send_wake_nudge` RPC): random body to the absent user only (max 2 taps/card).
+// • EventService (after a real exercise log): overtaken, PR, first log of day, streak milestone,
+//   dead streak, close gap — `sendNotification` / `notifyRoomMembersExcept*`.
+// • “Same time yesterday” workout reminder: not implemented — see [kJarsNotificationInventory].
+//
+// Full matrix: lib/core/notifications_catalog.dart
+//
+// Push icon path on web (same origin as the app, e.g. Vercel).
 const kWebPushIconPath = '/icons/jars-notification.svg';
 
 /// **Web:** standard Web Push (VAPID) → `user_web_push_subscriptions` + Edge `web-push`.

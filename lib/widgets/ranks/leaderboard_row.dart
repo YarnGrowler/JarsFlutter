@@ -12,6 +12,9 @@ class LeaderboardRow extends StatelessWidget {
   final LeaderboardPeriod period;
   final int? dailyGoalPoints;
 
+  /// Room streak floor (pts today) — shown for you on Today tab only.
+  final int? streakMinimum;
+
   const LeaderboardRow({
     super.key,
     required this.rank,
@@ -19,6 +22,7 @@ class LeaderboardRow extends StatelessWidget {
     required this.maxScore,
     required this.period,
     this.dailyGoalPoints,
+    this.streakMinimum,
   });
 
   /// Bar fill: goal-based when [dailyGoalPoints] is set; otherwise relative to [maxScore].
@@ -147,6 +151,23 @@ class LeaderboardRow extends StatelessWidget {
               ),
             ),
           ),
+          if (isMe &&
+              period == LeaderboardPeriod.today &&
+              streakMinimum != null &&
+              streakMinimum! > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              entry.score >= streakMinimum!
+                  ? 'Streak minimum met for today'
+                  : '${(streakMinimum! - entry.score).ceil()} pts to go to keep your streak',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: entry.score >= streakMinimum!
+                    ? JarsColors.green
+                    : JarsColors.textSecondary,
+              ),
+            ),
+          ],
         ],
       ),
     );

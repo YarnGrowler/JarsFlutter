@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/log_screen_style.dart';
+import '../../../core/streak_bonus.dart';
 
 /// Digit-flip display showing "= X pts".
 /// Each digit column flips independently like a slot machine / flip clock.
@@ -9,10 +10,20 @@ class AnimatedPointsDisplay extends StatefulWidget {
   final double targetPoints;
   final bool visible;
 
+  /// When set after a successful log, shows base → streak bonus → total (staggered).
+  final int? celebrationBase;
+  final int? celebrationStreakBonus;
+  final int? celebrationTotal;
+  final int? celebrationStreakDays;
+
   const AnimatedPointsDisplay({
     super.key,
     required this.targetPoints,
     this.visible = true,
+    this.celebrationBase,
+    this.celebrationStreakBonus,
+    this.celebrationTotal,
+    this.celebrationStreakDays,
   });
 
   @override
@@ -45,6 +56,24 @@ class _AnimatedPointsDisplayState extends State<AnimatedPointsDisplay> {
   @override
   Widget build(BuildContext context) {
     if (!widget.visible) return const SizedBox(height: 56);
+
+    final cBase = widget.celebrationBase;
+    final cStreak = widget.celebrationStreakBonus;
+    final cTotal = widget.celebrationTotal;
+    if (cBase != null &&
+        cStreak != null &&
+        cTotal != null &&
+        cStreak > 0) {
+      final days = widget.celebrationStreakDays ?? 1;
+      final pct =
+          (streakBonusFraction(days) * 100).clamp(0.0, 25.0).toDouble();
+      return _LogStreakCelebration(
+        base: cBase,
+        streakBonus: cStreak,
+        total: cTotal,
+        streakPercent: pct,
+      );
+    }
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -79,12 +108,84 @@ class _AnimatedPointsDisplayState extends State<AnimatedPointsDisplay> {
   }
 }
 
+/// Same "= … pts" row as normal log; digits flip from base → total; streak line explains the bonus.
+class _LogStreakCelebration extends StatelessWidget {
+  final int base;
+  final int streakBonus;
+  final int total;
+  final double streakPercent;
+
+  const _LogStreakCelebration({
+    required this.base,
+    required this.streakBonus,
+    required this.total,
+    required this.streakPercent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pctLabel = streakPercent.round();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              '= ',
+              style: GoogleFonts.spaceMono(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: kLogGoldMuted,
+                height: 1,
+              ),
+            ),
+            _FlipNumber(
+              value: total,
+              previousValue: base,
+              fontSize: 36,
+            ),
+            Text(
+              ' pts',
+              style: GoogleFonts.spaceMono(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: kLogGoldMuted,
+                height: 1,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '+$streakBonus streak · $pctLabel%',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: kLogPurple.withValues(alpha: 0.95),
+            height: 1.2,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Splits an integer into digits and animates each column independently.
 class _FlipNumber extends StatefulWidget {
   final int value;
   final int previousValue;
+  final double fontSize;
 
-  const _FlipNumber({required this.value, required this.previousValue});
+  const _FlipNumber({
+    required this.value,
+    required this.previousValue,
+    this.fontSize = 48,
+  });
 
   @override
   State<_FlipNumber> createState() => _FlipNumberState();
@@ -151,7 +252,7 @@ class _FlipNumberState extends State<_FlipNumber> {
           to: currD,
           goingUp: going,
           delay: delay,
-          fontSize: 48,
+          fontSize: widget.fontSize,
         );
       }),
     );

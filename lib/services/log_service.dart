@@ -1,3 +1,6 @@
+import 'package:timezone/timezone.dart' as tz;
+
+import '../core/jars_timezone.dart';
 import 'supabase_service.dart';
 import '../models/exercise_log.dart';
 
@@ -27,9 +30,18 @@ class LogService {
   }
 
   /// Server may insert idle "__WAKE__" feed rows (see [ensureIdleWakeCards]).
-  static Future<void> ensureIdleWakeCards(String roomId) async {
+  /// Pass [actorUserId] after a successful log so the server never marks *you* idle
+  /// on the same run (avoids races with feed refresh).
+  static Future<void> ensureIdleWakeCards(
+    String roomId, {
+    String? actorUserId,
+  }) async {
     try {
-      await _db.rpc('ensure_idle_wake_cards', params: {'p_room_id': roomId});
+      final params = <String, dynamic>{'p_room_id': roomId};
+      if (actorUserId != null) {
+        params['p_actor_user_id'] = actorUserId;
+      }
+      await _db.rpc('ensure_idle_wake_cards', params: params);
     } catch (_) {}
   }
 
@@ -71,6 +83,7 @@ class LogService {
         .select()
         .eq('room_id', roomId)
         .eq('user_id', userId)
+        .not('exercise_name', 'match', r'^__')
         .order('created_at', ascending: false)
         .limit(limit);
 
@@ -147,14 +160,17 @@ class LogService {
         .order('created_at', ascending: true);
 
     final map = <DateTime, double>{};
+    JarsTimezone.ensureInitialized();
+    final chicago = tz.getLocation(JarsTimezone.locationName);
     for (final row in rows) {
       final name = row['exercise_name'] as String? ?? '';
       if (name.startsWith('__')) continue;
       final pts = (row['points_earned'] as num?)?.toDouble() ?? 0.0;
       final raw = row['created_at'] as String?;
       if (raw == null) continue;
-      final dt = DateTime.parse(raw).toLocal();
-      final day = DateTime(dt.year, dt.month, dt.day);
+      final utc = DateTime.parse(raw).toUtc();
+      final local = tz.TZDateTime.from(utc, chicago);
+      final day = DateTime(local.year, local.month, local.day);
       map[day] = (map[day] ?? 0) + pts;
     }
     return map;

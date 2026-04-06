@@ -1,3 +1,5 @@
+import '../core/jars_timezone.dart';
+
 class Score {
   final String roomId;
   final String userId;
@@ -12,13 +14,10 @@ class Score {
   // Joined fields
   final String? username;
 
-  /// True when [lastDailyReset] is on a calendar day before today (device local).
-  /// Used so leaderboard / status bar show 0 until someone logs after midnight
-  /// even if the DB row was not rewritten overnight.
+  /// True when [lastDailyReset] is before **today in America/Chicago** (CST/CDT).
   static bool isDailyResetStale(DateTime? lastDailyReset) {
     if (lastDailyReset == null) return false;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final today = JarsTimezone.todayChicago();
     final last = DateTime(
       lastDailyReset.year,
       lastDailyReset.month,
