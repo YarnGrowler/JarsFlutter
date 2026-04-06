@@ -1,5 +1,7 @@
 import 'dart:developer' as developer;
 
+import 'package:timezone/timezone.dart' as tz;
+
 import 'supabase_service.dart';
 import '../core/jars_timezone.dart';
 import 'log_service.dart';
@@ -149,9 +151,13 @@ class EventService {
         .not('exercise_name', 'match', r'^__'); // exclude feed broadcast rows
 
     if (rows.length == 1) {
-      // This is the first log of the day for this user
-      final hour = DateTime.now().hour;
-      final minute = DateTime.now().minute;
+      // First real log of the Chicago calendar day (same window as [todayStart]).
+      // Push: [NotificationService.notifyRoomMembersExcept] → notifications table → Edge/FCM.
+      JarsTimezone.ensureInitialized();
+      final nowChi =
+          tz.TZDateTime.now(tz.getLocation(JarsTimezone.locationName));
+      final hour = nowChi.hour;
+      final minute = nowChi.minute;
       final timeStr =
           '${hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour)}:${minute.toString().padLeft(2, '0')}${hour >= 12 ? 'pm' : 'am'}';
       await _insertBroadcast(

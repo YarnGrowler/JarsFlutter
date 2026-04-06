@@ -1,23 +1,11 @@
--- Wake cards: room-wide push (excluding absent), rate-limited nudges (2 per user per card),
--- admin manual wake post RPC.
--- Run in Supabase SQL editor after 14_room_wake_password.sql.
+-- CRITICAL: POSIX regex uses `|` as alternation. Patterns like `^__WAKE__\|`
+-- do NOT reliably match only "__WAKE__|..." — the notify trigger can treat
+-- *every* exercise_logs insert as a wake row → idle push on every log, rank-up, etc.
+--
+-- Fix: use starts_with(exercise_name, '__WAKE__|') everywhere we mean that prefix.
+--
+-- Run in SQL Editor after all prior idle/patches (esp. 15 + 28).
 
--- ── Nudge taps (max 2 per wake_log_id + from_user_id enforced in RPC) ───────
-create table if not exists public.wake_nudge_taps (
-  id uuid primary key default gen_random_uuid(),
-  wake_log_id uuid not null references public.exercise_logs(id) on delete cascade,
-  from_user_id uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_wake_nudge_taps_log_from
-  on public.wake_nudge_taps (wake_log_id, from_user_id);
-
-alter table public.wake_nudge_taps enable row level security;
-
--- No policies: only security definer RPC touches this table.
-
--- ── After each __WAKE__ feed row, notify room members (not the absent person) ─
 create or replace function public.notify_room_on_wake_card()
 returns trigger
 language plpgsql
@@ -28,7 +16,6 @@ declare
   rname text;
   uname text;
 begin
-  -- Literal prefix only — do not use regex with | (POSIX alternation breaks matching).
   if new.exercise_name is null or not starts_with(new.exercise_name, '__WAKE__|') then
     return new;
   end if;
@@ -52,13 +39,6 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_exercise_logs_notify_wake on public.exercise_logs;
-create trigger trg_exercise_logs_notify_wake
-  after insert on public.exercise_logs
-  for each row
-  execute procedure public.notify_room_on_wake_card();
-
--- ── Member taps "Wake them up" (max 2 per member per wake card) ──────────────
 create or replace function public.send_wake_nudge(p_log_id uuid)
 returns void
 language plpgsql
@@ -125,7 +105,6 @@ $$;
 revoke all on function public.send_wake_nudge(uuid) from public;
 grant execute on function public.send_wake_nudge(uuid) to authenticated;
 
--- ── Admin: post a wake card for a member (1/hour per target cooldown) ───────
 create or replace function public.admin_post_wake_reminder(
   p_room_id uuid,
   p_target_user_id uuid

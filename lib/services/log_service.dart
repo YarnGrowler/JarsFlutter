@@ -64,7 +64,7 @@ class LogService {
     );
   }
 
-  static Future<List<ExerciseLog>> getRoomFeed(String roomId, {int limit = 50}) async {
+  static Future<List<ExerciseLog>> getRoomFeed(String roomId, {int limit = 100}) async {
     final rows = await _db
         .from('exercise_logs')
         .select('*, profiles(username)')
@@ -146,7 +146,7 @@ class LogService {
         .stream(primaryKey: ['id'])
         .eq('room_id', roomId)
         .order('created_at', ascending: false)
-        .limit(50);
+        .limit(100);
   }
 
   /// Returns a map of UTC-midnight [DateTime] → sum of points for that day.

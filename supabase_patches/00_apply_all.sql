@@ -167,3 +167,6 @@ grant select, insert, update, delete on table public.user_fcm_tokens to service_
 -- === 24 idle wake last-activity + 15m grace: run supabase_patches/24_idle_wake_activity_and_grace.sql ===
 -- === 25 idle wake: skip actor + 48h floor: run supabase_patches/25_idle_wake_actor_skip_and_floor.sql ===
 -- === 26 idle wake: skip auth.uid() caller (old app safe): run supabase_patches/26_idle_wake_skip_rpc_caller_auth_uid.sql ===
+-- === 27 idle wake: fresh snapshot before insert (fixes cross-user race): run supabase_patches/27_idle_wake_fresh_snapshot_before_insert.sql ===
+-- === 28 block spurious __WAKE__ at INSERT time (no ghost push): run supabase_patches/28_block_spurious_wake_before_insert.sql ===
+-- === 29 fix notify trigger: | was regex alternation → idle spam on every log: run supabase_patches/29_fix_wake_regex_pipe_alternation.sql ===

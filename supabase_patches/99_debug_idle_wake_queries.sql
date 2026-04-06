@@ -1,0 +1,32 @@
+-- Run in Supabase → SQL Editor (replace room id / usernames as needed).
+-- No CLI required; use this to verify idle wake behavior after applying patches 27–28.
+--
+-- "I got the idle push but no ghost card in the feed"
+-- • Idle pushes are ONLY sent when a __WAKE__| row is inserted (trigger on exercise_logs).
+-- • If you truly have no matching row in exercise_logs, check notifications table for duplicates
+--   or delayed FCM; otherwise the card may be below the feed limit (app now loads 100 rows).
+
+-- 1) Recent __WAKE__ feed rows (who was marked "idle", when)
+-- select id, user_id, room_id, created_at, left(exercise_name, 80) as wake_prefix
+-- from public.exercise_logs
+-- where exercise_name ~ '^__WAKE__\|'
+-- order by created_at desc
+-- limit 30;
+
+-- 2) For a specific user, last *real* workout time vs last wake card
+-- select
+--   (select max(el.created_at) from public.exercise_logs el
+--    where el.user_id = 'USER_UUID_HERE'
+--      and el.room_id = 'ROOM_UUID_HERE'
+--      and (el.exercise_id is not null
+--           or (coalesce(el.points_earned,0) > 0 and el.exercise_name !~ '^__'))) as last_real_log_at,
+--   (select max(el.created_at) from public.exercise_logs el
+--    where el.user_id = 'USER_UUID_HERE'
+--      and el.room_id = 'ROOM_UUID_HERE'
+--      and el.exercise_name ~ '^__WAKE__\|') as last_wake_card_at;
+
+-- 3) Confirm live function is two-arg version (after patch 25+)
+-- select p.proname, pg_get_function_identity_arguments(p.oid) as args
+-- from pg_proc p
+-- join pg_namespace n on n.oid = p.pronamespace
+-- where n.nspname = 'public' and p.proname = 'ensure_idle_wake_cards';
