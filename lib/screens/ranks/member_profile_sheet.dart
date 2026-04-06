@@ -5,6 +5,7 @@ import '../../core/level_data.dart';
 import '../../services/log_service.dart';
 import '../../widgets/ranks/consistency_calendar.dart';
 import '../../widgets/ui/rank_badge.dart';
+import 'exercise_stats_sheet.dart';
 
 class MemberProfileSheet extends StatefulWidget {
   final String userId;
@@ -203,13 +204,53 @@ class _MemberProfileSheetState extends State<MemberProfileSheet> {
                   const SizedBox(height: 24),
 
                   // Top exercises
-                  Text(
-                    'Top Exercises',
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: JarsColors.textPrimary,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Top Exercises',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: JarsColors.textPrimary,
+                        ),
+                      ),
+                      if (!_loading && _topExercises.isNotEmpty)
+                        GestureDetector(
+                          onTap: () {
+                            final sw = MediaQuery.sizeOf(context).width;
+                            showModalBottomSheet<void>(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              constraints: BoxConstraints(maxWidth: sw),
+                              builder: (_) => SizedBox(
+                                width: sw,
+                                child: ExerciseStatsSheet(
+                                  roomId: widget.roomId,
+                                  userId: widget.userId,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              Text(
+                                'All exercises',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  color: JarsColors.primary,
+                                ),
+                              ),
+                              const Icon(
+                                Icons.chevron_right_rounded,
+                                size: 18,
+                                color: JarsColors.primary,
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   if (_loading)

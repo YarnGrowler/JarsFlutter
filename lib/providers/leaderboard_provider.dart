@@ -7,7 +7,7 @@ import 'active_room_provider.dart';
 enum LeaderboardPeriod { today, week, month, allTime }
 
 final leaderboardPeriodProvider =
-    StateProvider<LeaderboardPeriod>((ref) => LeaderboardPeriod.today);
+    StateProvider<LeaderboardPeriod>((ref) => LeaderboardPeriod.allTime);
 
 class LeaderboardEntry {
   final String userId;
