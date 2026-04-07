@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/super_reaction_meta.dart';
 import '../../core/theme.dart';
 import '../../models/exercise_log.dart';
 import '../../models/reaction.dart';
@@ -15,6 +16,7 @@ import '../../providers/score_provider.dart';
 import '../../providers/room_provider.dart';
 import '../../services/log_service.dart';
 import '../../services/reaction_service.dart';
+import '../../services/score_service.dart';
 import '../../services/supabase_service.dart';
 import '../../services/wake_nudge_service.dart';
 import '../../widgets/feed/feed_card.dart';
@@ -359,10 +361,41 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ? null
           : (emoji) async {
               try {
-                await ReactionService.addReaction(
-                    logId: log.id, emoji: emoji);
+                SuperReactionDef? superDef;
+                if (isSuperReactionKey(emoji)) {
+                  superDef = tryParseSuperReaction(emoji);
+                  if (superDef == null) return;
+                  if (room == null || uid == null) return;
+                  final score = await ScoreService.getUserScore(room.id, uid);
+                  if (score == null ||
+                      score.totalScore < superDef.cost) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Need ${superDef.cost} points (you have '
+                          '${score?.totalScore.floor() ?? 0}).',
+                        ),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                    return;
+                  }
+                }
+
+                final added = await ReactionService.addReaction(
+                  logId: log.id,
+                  emoji: emoji,
+                );
+                if (added != null && superDef != null && room != null) {
+                  await ScoreService.subtractPoints(
+                    roomId: room.id,
+                    points: superDef.cost.toDouble(),
+                  );
+                }
                 ref.invalidate(roomFeedWithReactionsProvider);
                 ref.invalidate(roomFeedProvider);
+                ref.invalidate(myScoreProvider);
               } catch (e) {
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(

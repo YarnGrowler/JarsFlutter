@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/super_reaction_meta.dart';
 import '../../core/theme.dart';
 import '../../models/reaction.dart';
+import '../../providers/score_provider.dart';
 import '../../services/supabase_service.dart';
+import 'super_reaction_catalog.dart';
 
 /// Opens the curated emoji grid (compact picker, no full “react” chrome).
 Future<void> showReactionEmojiPicker(
@@ -186,6 +190,7 @@ class _ReactionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final superDef = tryParseSuperReaction(emoji);
     return Material(
       color: isMine
           ? JarsColors.primary.withValues(alpha: 0.25)
@@ -195,20 +200,28 @@ class _ReactionChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: EdgeInsets.symmetric(
+            horizontal: superDef != null ? 8 : 10,
+            vertical: 6,
+          ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: isMine
-                  ? JarsColors.primary.withValues(alpha: 0.5)
-                  : JarsColors.border,
+              color: superDef != null
+                  ? JarsColors.primary.withValues(alpha: isMine ? 0.55 : 0.35)
+                  : (isMine
+                      ? JarsColors.primary.withValues(alpha: 0.5)
+                      : JarsColors.border),
               width: 1,
             ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(emoji, style: const TextStyle(fontSize: 15)),
+              if (superDef != null)
+                SuperReactionPreview(id: superDef.id, size: 28)
+              else
+                Text(emoji, style: const TextStyle(fontSize: 15)),
               const SizedBox(width: 4),
               Text(
                 '$count',
@@ -228,10 +241,136 @@ class _ReactionChip extends StatelessWidget {
   }
 }
 
-class ReactionPickerSheet extends StatelessWidget {
+/// Big tappable row so Standard vs Super is obvious in the bottom sheet.
+class _SegmentedPickerTab extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SegmentedPickerTab({
+    required this.label,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected
+          ? JarsColors.primary.withValues(alpha: 0.18)
+          : JarsColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected
+                  ? JarsColors.primary.withValues(alpha: 0.75)
+                  : JarsColors.border,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: selected
+                      ? JarsColors.primary
+                      : JarsColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: JarsColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ReactionPickerSheet extends StatefulWidget {
   final ValueChanged<String> onPick;
 
   const ReactionPickerSheet({super.key, required this.onPick});
+
+  @override
+  State<ReactionPickerSheet> createState() => _ReactionPickerSheetState();
+}
+
+class _ReactionPickerSheetState extends State<ReactionPickerSheet> {
+  /// 0 = Standard emoji grid, 1 = Super (point cost).
+  int _segment = 0;
+
+  Future<void> _pickSuper(SuperReactionDef def) async {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final score = await container.read(myScoreProvider.future);
+    if (!mounted) return;
+    if (score == null || score.totalScore < def.cost) {
+      final have = score?.totalScore.floor() ?? 0;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Need ${def.cost} points to use ${def.label} (you have $have).',
+            style: GoogleFonts.inter(),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text(
+          'Use ${def.label}?',
+          style: GoogleFonts.spaceGrotesk(
+            fontWeight: FontWeight.w700,
+            color: JarsColors.textPrimary,
+          ),
+        ),
+        content: Text(
+          'Spend ${def.cost} points from your room score. '
+          'You currently have ${score.totalScore.toStringAsFixed(0)}.',
+          style: GoogleFonts.inter(color: JarsColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.inter()),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Use', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+    HapticFeedback.mediumImpact();
+    widget.onPick(def.storageKey);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -240,7 +379,7 @@ class ReactionPickerSheet extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Center(
               child: Container(
@@ -261,38 +400,133 @@ class ReactionPickerSheet extends StatelessWidget {
                 color: JarsColors.textPrimary,
               ),
             ),
-            const SizedBox(height: 16),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 8,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1,
-              ),
-              itemCount: kReactionPickerEmojis.length,
-              itemBuilder: (_, i) {
-                final emoji = kReactionPickerEmojis[i];
-                return Material(
-                  color: JarsColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      onPick(emoji);
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Center(
-                      child: Text(emoji, style: const TextStyle(fontSize: 26)),
-                    ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _SegmentedPickerTab(
+                    label: 'Standard',
+                    subtitle: 'Free',
+                    selected: _segment == 0,
+                    onTap: () => setState(() => _segment = 0),
                   ),
-                );
-              },
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _SegmentedPickerTab(
+                    label: 'Super',
+                    subtitle: 'Points',
+                    selected: _segment == 1,
+                    onTap: () => setState(() => _segment = 1),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 380,
+              child: _segment == 0
+                  ? _buildStandardGrid()
+                  : _buildSuperGrid(),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildStandardGrid() {
+    return GridView.builder(
+      physics: const ClampingScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 8,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
+      itemCount: kReactionPickerEmojis.length,
+      itemBuilder: (_, i) {
+        final emoji = kReactionPickerEmojis[i];
+        return Material(
+          color: JarsColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              widget.onPick(emoji);
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Center(
+              child: Text(emoji, style: const TextStyle(fontSize: 26)),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSuperGrid() {
+    return GridView.builder(
+      physics: const ClampingScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 0.82,
+      ),
+      itemCount: kSuperReactions.length,
+      itemBuilder: (_, i) {
+        final def = kSuperReactions[i];
+        return Material(
+          color: JarsColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: JarsColors.border),
+          child: InkWell(
+            onTap: () => _pickSuper(def),
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SuperReactionPreview(id: def.id, size: 52),
+                  const SizedBox(height: 6),
+                  Text(
+                    def.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: JarsColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.stars_rounded,
+                        size: 12,
+                        color: JarsColors.primary.withValues(alpha: 0.9),
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${def.cost} pts',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: JarsColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

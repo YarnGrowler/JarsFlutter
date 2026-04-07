@@ -306,7 +306,7 @@ class _AiPostCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
       decoration: BoxDecoration(
-        color: JarsColors.background,
+        color: JarsColors.surface,
         borderRadius: BorderRadius.circular(JarsRadius.md),
         border: Border.all(color: JarsColors.border),
       ),
@@ -399,7 +399,7 @@ class _AiReplyCardState extends State<_AiReplyCard> {
         borderRadius: BorderRadius.circular(_outerR),
         child: Container(
           decoration: BoxDecoration(
-            color: JarsColors.background,
+            color: JarsColors.surface,
             borderRadius: BorderRadius.circular(_outerR),
             border: Border.all(
               color: JarsColors.border,
@@ -414,7 +414,7 @@ class _AiReplyCardState extends State<_AiReplyCard> {
                 children: [
                   Container(
                     width: 3,
-                    color: JarsColors.primary.withValues(alpha: 0.35),
+                    color: JarsColors.primary.withValues(alpha: 0.14),
                   ),
                   Expanded(
                     child: Padding(

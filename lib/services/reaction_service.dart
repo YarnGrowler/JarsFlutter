@@ -1,6 +1,7 @@
 import 'notification_service.dart';
 import 'supabase_service.dart';
 import '../models/reaction.dart';
+import '../core/super_reaction_meta.dart';
 
 class ReactionService {
   static final _db = SupabaseService.client;
@@ -83,9 +84,12 @@ class ReactionService {
           .maybeSingle();
       final u = me?['username'] as String?;
       if (u != null && u.isNotEmpty) reactorLabel = u;
+      final reactWhat = isSuperReactionKey(emoji)
+          ? superReactionNotificationLabel(emoji)
+          : emoji;
       await NotificationService.sendNotification(
         targetUserId: ownerId,
-        body: '$reactorLabel reacted $emoji on your log.',
+        body: '$reactorLabel reacted $reactWhat on your log.',
       );
     }
 
