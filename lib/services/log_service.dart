@@ -2,6 +2,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../core/jars_timezone.dart';
 import 'supabase_service.dart';
+import '../core/count_unit.dart';
 import '../models/exercise_log.dart';
 
 class LogService {
@@ -14,6 +15,7 @@ class LogService {
     required int count,
     required double weight,
     required double pointsEarned,
+    required CountUnit countUnit,
   }) async {
     final userId = SupabaseService.currentUserId!;
     final data = await _db.from('exercise_logs').insert({
@@ -24,6 +26,7 @@ class LogService {
       'count': count,
       'weight': weight,
       'points_earned': pointsEarned,
+      'count_unit': countUnit.name,
     }).select('*, profiles(username)').single();
 
     return ExerciseLog.fromJson(data);

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../core/count_unit.dart';
+
 class ExerciseLog {
   final String id;
   final String roomId;
@@ -17,6 +19,9 @@ class ExerciseLog {
   /// Set on AI-generated reply cards; references the log that triggered the event.
   final String? replyToLogId;
 
+  /// `reps` | `seconds` | `minutes` — how [count] is interpreted (matches exercise).
+  final String? countUnitRaw;
+
   const ExerciseLog({
     required this.id,
     required this.roomId,
@@ -29,7 +34,15 @@ class ExerciseLog {
     required this.createdAt,
     this.username,
     this.replyToLogId,
+    this.countUnitRaw,
   });
+
+  /// How to interpret [count] for display (DB column, else name heuristic).
+  CountUnit get effectiveCountUnit {
+    final raw = countUnitRaw?.trim();
+    if (raw != null && raw.isNotEmpty) return countUnitFromJson(raw);
+    return inferCountUnitFromExerciseName(exerciseName);
+  }
 
   // ── Special broadcast row prefixes ───────────────────────────────────────
   static const kRankUpPrefix   = '__RANKUP__|';
@@ -128,6 +141,13 @@ class ExerciseLog {
     return v is num ? v.toInt() : null;
   }
 
+  /// Preformatted "2 min", "45s", "12 reps" for AI reply chip when present.
+  String? get aiReplyToVolumeHuman {
+    final m = aiPayload;
+    final v = m?['replyToVolumeHuman'];
+    return v is String && v.isNotEmpty ? v : null;
+  }
+
   /// Emoji the AI decided to react with (may be set with or without text).
   String? get aiEmoji {
     final m = aiPayload;
@@ -198,6 +218,7 @@ class ExerciseLog {
       createdAt: DateTime.parse(json['created_at'] as String),
       username: username,
       replyToLogId: json['reply_to_log_id'] as String?,
+      countUnitRaw: json['count_unit'] as String?,
     );
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/log_display.dart';
 import '../../core/theme.dart';
 import '../../core/extensions.dart';
 import '../../core/level_data.dart';
@@ -132,7 +133,7 @@ class FeedCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${log.count} ${log.exerciseName}${log.weight > 0 ? ' · ${log.weight % 1 == 0 ? log.weight.toInt() : log.weight} lbs' : ''}',
+            formatExerciseLogQuantityLine(log),
             style: GoogleFonts.inter(
               fontSize: 14,
               color: JarsColors.textSecondary,
@@ -259,51 +260,29 @@ class _MemberKickCard extends StatelessWidget {
 
 // ─── AI feed cards ────────────────────────────────────────────────────────────
 
-/// Shared header row: 🏺 Jars · PersonaLabel  [emoji]  ·  timeAgo
+/// Shared header: small Jars label + optional emoji — muted so it doesn't dominate the feed.
 Widget _aiHeader(ExerciseLog log) {
-  final personaLabel = log.aiPersona;
   final emoji = log.aiEmoji;
-  final isReactOnly = log.isAiReactOnly;
 
   return Row(
     children: [
-      const Text('🏺', style: TextStyle(fontSize: 15)),
-      const SizedBox(width: 7),
       Text(
         'Jars',
-        style: GoogleFonts.spaceGrotesk(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          color: JarsColors.textPrimary,
-          letterSpacing: 0.2,
+        style: GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: JarsColors.textTertiary,
+          letterSpacing: 0.3,
         ),
       ),
-      if (!isReactOnly && personaLabel != null) ...[
-        const SizedBox(width: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: JarsColors.primary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            personaLabel,
-            style: GoogleFonts.inter(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: JarsColors.primary,
-            ),
-          ),
-        ),
-      ],
       if (emoji != null) ...[
-        const SizedBox(width: 8),
-        Text(emoji, style: const TextStyle(fontSize: 16)),
+        const SizedBox(width: 6),
+        Text(emoji, style: const TextStyle(fontSize: 14)),
       ],
       const Spacer(),
       Text(
         log.createdAt.timeAgo,
-        style: GoogleFonts.inter(fontSize: 11, color: JarsColors.textTertiary),
+        style: GoogleFonts.inter(fontSize: 10, color: JarsColors.textTertiary),
       ),
     ],
   );
@@ -325,24 +304,24 @@ class _AiPostCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = log.aiText;
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
       decoration: BoxDecoration(
-        color: JarsColors.surface,
-        borderRadius: BorderRadius.circular(JarsRadius.card),
-        border: Border.all(color: JarsColors.primary.withValues(alpha: 0.30)),
+        color: JarsColors.background,
+        borderRadius: BorderRadius.circular(JarsRadius.md),
+        border: Border.all(color: JarsColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _aiHeader(log),
           if (text != null && text.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             Text(
               text,
               style: GoogleFonts.inter(
-                fontSize: 14,
-                color: JarsColors.textPrimary,
-                height: 1.45,
+                fontSize: 13,
+                color: JarsColors.textSecondary,
+                height: 1.4,
               ),
             ),
           ],
@@ -387,10 +366,17 @@ class _AiReplyCardState extends State<_AiReplyCard> {
     _expanded = !collapsible;
   }
 
-  String _replyChipText(String username, String? exercise, int? reps) {
-    if (exercise == null) return username;
-    if (reps != null && reps > 0) return '$username · $exercise · ${reps}x';
-    return '$username · $exercise';
+  String _replyChipText(ExerciseLog log) {
+    final u = log.aiReplyToUsername;
+    if (u == null) return '';
+    final vol = log.aiReplyToVolumeHuman;
+    final ex = log.aiReplyToExercise;
+    final reps = log.aiReplyToReps;
+    if (vol != null && ex != null && ex.isNotEmpty) return '$u · $vol · $ex';
+    if (vol != null) return '$u · $vol';
+    if (ex != null && reps != null && reps > 0) return '$u · $ex · ${reps}x';
+    if (ex != null) return '$u · $ex';
+    return u;
   }
 
   @override
@@ -398,10 +384,7 @@ class _AiReplyCardState extends State<_AiReplyCard> {
     final log = widget.log;
     final text = log.aiText;
     final isReactOnly = log.isAiReactOnly;
-    final replyUsername = log.aiReplyToUsername;
-    final replyExercise = log.aiReplyToExercise;
-    final replyReps = log.aiReplyToReps;
-    final hasReplyContext = replyUsername != null;
+    final hasReplyContext = log.aiReplyToUsername != null;
 
     final t = text ?? '';
     final canCollapse = !isReactOnly &&
@@ -411,22 +394,15 @@ class _AiReplyCardState extends State<_AiReplyCard> {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(_outerR),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(_outerR),
         child: Container(
           decoration: BoxDecoration(
-            color: JarsColors.surfaceRaised,
+            color: JarsColors.background,
             borderRadius: BorderRadius.circular(_outerR),
             border: Border.all(
-              color: JarsColors.primary.withValues(alpha: 0.28),
+              color: JarsColors.border,
               width: 1,
             ),
           ),
@@ -436,14 +412,13 @@ class _AiReplyCardState extends State<_AiReplyCard> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Accent: full height, clipped by parent → matches rounded corners
                   Container(
-                    width: 4,
-                    color: JarsColors.primary.withValues(alpha: 0.75),
+                    width: 3,
+                    color: JarsColors.primary.withValues(alpha: 0.35),
                   ),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+                      padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -453,30 +428,26 @@ class _AiReplyCardState extends State<_AiReplyCard> {
                               children: [
                                 Icon(
                                   Icons.subdirectory_arrow_right_rounded,
-                                  size: 15,
-                                  color: JarsColors.primary.withValues(alpha: 0.85),
+                                  size: 14,
+                                  color: JarsColors.textTertiary,
                                 ),
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    _replyChipText(
-                                      replyUsername,
-                                      replyExercise,
-                                      replyReps,
-                                    ),
+                                    _replyChipText(log),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: GoogleFonts.inter(
-                                      fontSize: 11,
+                                      fontSize: 10,
                                       letterSpacing: 0.1,
-                                      color: JarsColors.textSecondary,
-                                      fontWeight: FontWeight.w600,
+                                      color: JarsColors.textTertiary,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                           ],
                           _aiHeader(log),
                           if (!isReactOnly && t.isNotEmpty) ...[
@@ -487,9 +458,9 @@ class _AiReplyCardState extends State<_AiReplyCard> {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.inter(
-                                  fontSize: 13,
+                                  fontSize: 12,
                                   height: 1.4,
-                                  color: JarsColors.textPrimary,
+                                  color: JarsColors.textSecondary,
                                 ),
                               ),
                               Align(
@@ -506,9 +477,9 @@ class _AiReplyCardState extends State<_AiReplyCard> {
                                   child: Text(
                                     'Show more',
                                     style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: JarsColors.primary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: JarsColors.textTertiary,
                                     ),
                                   ),
                                 ),
@@ -517,9 +488,9 @@ class _AiReplyCardState extends State<_AiReplyCard> {
                               Text(
                                 t,
                                 style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  height: 1.45,
-                                  color: JarsColors.textPrimary,
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  color: JarsColors.textSecondary,
                                 ),
                               ),
                               if (canCollapse && _expanded)

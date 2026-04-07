@@ -215,17 +215,44 @@ function pickContextualEmoji(eventKeys: string[], rankAfter: number, pointsEarne
  * Slim, focused context → forces model to pick ONE angle not summarize everything.
  * Only emit what's needed for the detected events.
  */
+function volumeHumanLabel(count: number, unitRaw: string): string {
+  const u = (unitRaw ?? "reps").toLowerCase();
+  if (u === "seconds") {
+    const s = Math.floor(Math.max(0, count));
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    if (r === 0) return `${m} min`;
+    return `${m}m ${r}s`;
+  }
+  if (u === "minutes") return `${count} min`;
+  return `${count} reps`;
+}
+
 function buildKeyStats(params: {
   actor: string;
   exercise: string;
-  reps: number;
+  rawCount: number;
+  countUnit: string;
+  volumeHuman: string;
   pointsAdded: number;
   actorRank: number;
   actorTotal: number;
   mainEvent: string | null;
   top3: Array<{ rank: number; username: string; total: number; isActor: boolean }>;
 }): Record<string, unknown> {
-  const { actor, exercise, reps, pointsAdded, actorRank, actorTotal, mainEvent, top3 } = params;
+  const {
+    actor,
+    exercise,
+    rawCount,
+    countUnit,
+    volumeHuman,
+    pointsAdded,
+    actorRank,
+    actorTotal,
+    mainEvent,
+    top3,
+  } = params;
   const leader = top3.find((t) => t.rank === 1);
   const rivals = top3.filter((t) => !t.isActor).slice(0, 2);
   const gapToLeader = actorRank > 1 && leader && !leader.isActor
@@ -235,7 +262,10 @@ function buildKeyStats(params: {
   const stats: Record<string, unknown> = {
     actor,
     exercise,
-    reps,
+    count_unit: countUnit,
+    volume_human: volumeHuman,
+    work: `${volumeHuman} ${exercise}`.trim(),
+    raw_count: rawCount,
     points_added: pointsAdded,
     actor_total: actorTotal,
     actor_rank: actorRank,
@@ -259,13 +289,15 @@ function buildSystemPrompt(persona: Persona, instruction: string): string {
     `- Pick ONE angle only: domination / embarrassment / gap / challenge. Not all of them.`,
     `- Name at least 2 real people from context. Create tension between them.`,
     `- Use real numbers (points, ranks). Stats = credibility.`,
+    `- If work or volume_human is present, use that for time/reps — never confuse seconds with reps.`,
     `- Third-person only. Never "you" or "your".`,
     `- BANNED WORDS: report, update, currently, basically, officially, "in the room"`,
     `- Do NOT summarize. Do NOT list facts. ONE thing. Hit hard. Leave.`,
+    `- Never name a "persona" or voice label.`,
     ``,
     instruction,
     ``,
-    `PERSONA: ${persona.label} — ${persona.style}`,
+    `Style (do not name it): ${persona.style}`,
   ].join("\n");
 }
 
@@ -448,7 +480,7 @@ Deno.serve(async (req) => {
 
     const { data: log, error: logErr } = await sb
       .from("exercise_logs")
-      .select("id, room_id, user_id, exercise_name, count, weight, points_earned, created_at")
+      .select("id, room_id, user_id, exercise_name, count, weight, points_earned, created_at, count_unit")
       .eq("id", logId)
       .maybeSingle();
 
@@ -479,6 +511,8 @@ Deno.serve(async (req) => {
     const actorExerciseName = safeUsername((log as Record<string, unknown>).exercise_name as string);
     const actorReps = Number((log as Record<string, unknown>).count ?? 0);
     const actorWeight = Number((log as Record<string, unknown>).weight ?? 0);
+    const actorCountUnit = String((log as Record<string, unknown>).count_unit ?? "reps").toLowerCase();
+    const actorVolumeHuman = volumeHumanLabel(actorReps, actorCountUnit);
 
     const { data: room } = await sb.from("rooms").select("id, name, streak_minimum").eq("id", roomId).single();
     const streakMin = (room as { streak_minimum?: number })?.streak_minimum ?? 10;
@@ -830,6 +864,7 @@ Deno.serve(async (req) => {
         replyToUsername: actorUsername,
         replyToExercise: actorExerciseName,
         replyToReps: actorReps,
+        replyToVolumeHuman: actorVolumeHuman,
       };
       await sb.from("exercise_logs").insert({
         room_id: roomId,
@@ -869,7 +904,9 @@ Deno.serve(async (req) => {
     const keyStats = buildKeyStats({
       actor: actorUsername,
       exercise: actorExerciseName,
-      reps: actorReps,
+      rawCount: actorReps,
+      countUnit: actorCountUnit,
+      volumeHuman: actorVolumeHuman,
       pointsAdded: pointsEarned,
       actorRank: rankAfter,
       actorTotal: totalAfter,
@@ -880,9 +917,9 @@ Deno.serve(async (req) => {
     const userPrompt = JSON.stringify(keyStats);
 
     const instruction = shouldCasualReply
-      ? `React to ${actorUsername}'s workout. ONE angle: hype the rank, call out the gap to a rival, or create pressure. Be specific. Raw.`
+      ? `React to ${actorUsername}'s workout (${actorVolumeHuman} ${actorExerciseName}). ONE angle: hype the rank, call out the gap to a rival, or create pressure. Be specific. Raw.`
       : isReplyMode
-        ? `React to ${actorUsername}'s log. Hit ONE thing: the rank jump, the gap to the leader, or the pressure on a rival. No summaries.`
+        ? `React to ${actorUsername}'s log (${actorVolumeHuman} ${actorExerciseName}). Hit ONE thing: the rank jump, the gap to the leader, or the pressure on a rival. No summaries.`
         : `Announce a room-wide development. Name the top players. Create tension between them. No summaries.`;
 
     const system = buildSystemPrompt(persona, instruction);
@@ -915,7 +952,6 @@ Deno.serve(async (req) => {
       v: 1,
       text: cleaned,
       aiEmoji,
-      persona: persona.label,
       mode: isReplyMode ? "reply" : "post",
       model: openaiModel,
       model_returned: modelReturned,
@@ -928,6 +964,7 @@ Deno.serve(async (req) => {
       payload.replyToUsername = actorUsername;
       payload.replyToExercise = actorExerciseName;
       payload.replyToReps = actorReps;
+      payload.replyToVolumeHuman = actorVolumeHuman;
     }
 
     await sb.from("exercise_logs").insert({

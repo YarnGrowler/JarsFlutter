@@ -570,6 +570,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
         count: count,
         weight: _weight,
         pointsEarned: totalEarned,
+        countUnit: exercise.countUnit,
       );
 
       unawaited(

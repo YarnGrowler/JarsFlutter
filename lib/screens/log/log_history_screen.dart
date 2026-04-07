@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/count_unit.dart';
+import '../../core/log_display.dart';
 import '../../core/log_screen_style.dart';
 import '../../models/exercise.dart';
 import '../../models/exercise_log.dart';
@@ -347,8 +348,7 @@ class _LogRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${log.count} ${inferCountUnitFromExerciseName(log.exerciseName).shortLabel}'
-                      '${log.weight > 0 ? ' · ${log.weight.toStringAsFixed(0)} lbs' : ''}',
+                      formatExerciseLogDetailSubtitle(log),
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.45),
@@ -486,8 +486,7 @@ class _EditLogSheetState extends ConsumerState<_EditLogSheet> {
   }
 
   CountUnit get _countUnit =>
-      _exercise?.countUnit ??
-      inferCountUnitFromExerciseName(widget.log.exerciseName);
+      _exercise?.countUnit ?? widget.log.effectiveCountUnit;
 
   String get _countUnitTitle {
     switch (_countUnit) {
