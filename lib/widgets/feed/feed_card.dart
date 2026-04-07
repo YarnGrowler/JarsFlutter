@@ -59,11 +59,10 @@ class FeedCard extends StatelessWidget {
       return _MemberKickCard(log: log);
     }
     if (log.isAiBroadcast) {
-      return _AiFeedCard(
-        log: log,
-        reactions: reactions,
-        onReact: onReact,
-      );
+      if (log.isAiReply) {
+        return _AiReplyCard(log: log, reactions: reactions, onReact: onReact);
+      }
+      return _AiPostCard(log: log, reactions: reactions, onReact: onReact);
     }
     if (log.isRankUpBroadcast) {
       return _RankUpCard(
@@ -258,14 +257,56 @@ class _MemberKickCard extends StatelessWidget {
   }
 }
 
-// ─── AI narrator card ─────────────────────────────────────────────────────────
+// ─── AI feed cards ────────────────────────────────────────────────────────────
 
-class _AiFeedCard extends StatelessWidget {
+/// Shared header row: 🏺 Jars · PersonaLabel  ·  timeAgo
+Widget _aiHeader(ExerciseLog log) {
+  final personaLabel = log.aiPersona ?? 'Analyst';
+  return Row(
+    children: [
+      const Text('🏺', style: TextStyle(fontSize: 15)),
+      const SizedBox(width: 7),
+      Text(
+        'Jars',
+        style: GoogleFonts.spaceGrotesk(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: JarsColors.textPrimary,
+          letterSpacing: 0.2,
+        ),
+      ),
+      const SizedBox(width: 6),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: JarsColors.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          personaLabel,
+          style: GoogleFonts.inter(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: JarsColors.primary,
+          ),
+        ),
+      ),
+      const Spacer(),
+      Text(
+        log.createdAt.timeAgo,
+        style: GoogleFonts.inter(fontSize: 11, color: JarsColors.textTertiary),
+      ),
+    ],
+  );
+}
+
+/// Standalone room-wide AI announcement (milestone, domination, rivalry, cron events).
+class _AiPostCard extends StatelessWidget {
   final ExerciseLog log;
   final List<Reaction> reactions;
   final ValueChanged<String>? onReact;
 
-  const _AiFeedCard({
+  const _AiPostCard({
     required this.log,
     this.reactions = const [],
     this.onReact,
@@ -274,63 +315,129 @@ class _AiFeedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = log.aiText ?? '…';
-    final persona = log.aiPayload?['persona'];
-    final personaLabel = persona is String && persona.isNotEmpty ? persona : 'Announcer';
-
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: JarsColors.surface,
         borderRadius: BorderRadius.circular(JarsRadius.card),
-        border: Border.all(color: JarsColors.primary.withValues(alpha: 0.35)),
+        border: Border.all(color: JarsColors.primary.withValues(alpha: 0.30)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Text('🏺', style: TextStyle(fontSize: 16)),
-              const SizedBox(width: 8),
-              Text(
-                'Jars',
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: JarsColors.textPrimary,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                personaLabel,
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: JarsColors.textTertiary,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                log.createdAt.timeAgo,
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: JarsColors.textTertiary,
-                ),
-              ),
-            ],
-          ),
+          _aiHeader(log),
           const SizedBox(height: 10),
           Text(
             text,
             style: GoogleFonts.inter(
               fontSize: 14,
               color: JarsColors.textPrimary,
-              height: 1.4,
+              height: 1.45,
             ),
           ),
           _feedReactionBar(context, reactions: reactions, onReact: onReact),
         ],
       ),
     );
+  }
+}
+
+/// AI card generated in direct reaction to a specific person's log.
+/// Renders with a reply-chip showing who/what triggered it.
+class _AiReplyCard extends StatelessWidget {
+  final ExerciseLog log;
+  final List<Reaction> reactions;
+  final ValueChanged<String>? onReact;
+
+  const _AiReplyCard({
+    required this.log,
+    this.reactions = const [],
+    this.onReact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = log.aiText ?? '…';
+    final replyUsername = log.aiReplyToUsername;
+    final replyExercise = log.aiReplyToExercise;
+    final replyReps = log.aiReplyToReps;
+
+    final hasReplyContext = replyUsername != null;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: JarsColors.surface,
+        borderRadius: BorderRadius.circular(JarsRadius.card),
+        border: Border.all(color: JarsColors.primary.withValues(alpha: 0.20)),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Left accent strip (Discord-reply style)
+            Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: JarsColors.primary.withValues(alpha: 0.55),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(JarsRadius.card),
+                  bottomLeft: Radius.circular(JarsRadius.card),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Reply-to chip
+                    if (hasReplyContext) ...[
+                      Row(
+                        children: [
+                          Icon(Icons.reply_rounded,
+                              size: 13, color: JarsColors.textTertiary),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              _replyChipText(replyUsername, replyExercise, replyReps),
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: JarsColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    _aiHeader(log),
+                    const SizedBox(height: 10),
+                    Text(
+                      text,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: JarsColors.textPrimary,
+                        height: 1.45,
+                      ),
+                    ),
+                    _feedReactionBar(context, reactions: reactions, onReact: onReact),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _replyChipText(String username, String? exercise, int? reps) {
+    if (exercise == null) return username;
+    if (reps != null && reps > 0) return '$username · $exercise · ${reps}x';
+    return '$username · $exercise';
   }
 }
 

@@ -33,32 +33,120 @@ function pickWeighted<T extends { weight: number }>(items: T[]): T {
   return items[items.length - 1];
 }
 
+// ─── 6 personas ──────────────────────────────────────────────────────────────
+
 function getPersonas(): Persona[] {
-  // Tunable via env. Keep defaults sane.
-  const common = Number(Deno.env.get("AI_PERSONA_COMMON_WEIGHT") ?? 82);
-  const rare = Number(Deno.env.get("AI_PERSONA_RARE_WEIGHT") ?? 15);
-  const legendary = Number(Deno.env.get("AI_PERSONA_LEGENDARY_WEIGHT") ?? 3);
   return [
     {
-      label: "Coach",
-      weight: common,
+      label: "Analyst",
+      weight: Number(Deno.env.get("AI_PERSONA_ANALYST_WEIGHT") ?? 35),
       style:
-        "Warm competitor-coach. Short, punchy, no cringe, no emojis. Praise effort, nudge rivalry.",
+        "Sharp, precise, grounded. Reference exact stats: ranks, points, gaps. " +
+        "No hype — just the cold hard truth laid out with confidence. Make it feel smart and real.",
     },
     {
-      label: "Announcer",
-      weight: rare,
+      label: "Hype Man",
+      weight: Number(Deno.env.get("AI_PERSONA_HYPE_WEIGHT") ?? 30),
       style:
-        "Arena announcer vibe. Dramatic but not corny. One clever line max. No slang overload.",
+        "Pure energy. Celebrates big plays and wins, keeps the dopamine high. " +
+        "Short punchy lines, slightly theatrical. Never hollow — always tied to actual stats.",
     },
     {
-      label: "Gremlin Jar",
-      weight: legendary,
+      label: "Disappointed Coach",
+      weight: Number(Deno.env.get("AI_PERSONA_COACH_WEIGHT") ?? 15),
       style:
-        "Chaotic mascot energy, but still tasteful. Teasing, never mean. No 'AI' references.",
+        "Not angry — just notices the gap between potential and performance. " +
+        "The quiet kind of pressure: 'you had it, you fumbled it, you know it.' No cruelty.",
+    },
+    {
+      label: "Historian",
+      weight: Number(Deno.env.get("AI_PERSONA_HISTORIAN_WEIGHT") ?? 10),
+      style:
+        "Makes the moment feel legendary. Sports-broadcaster gravitas — 'for the third time this week...', " +
+        "'a dynasty forming...'. Weight and lore. Reserve for truly big moves.",
+    },
+    {
+      label: "Chaos Agent",
+      weight: Number(Deno.env.get("AI_PERSONA_CHAOS_WEIGHT") ?? 7),
+      style:
+        "Wildcard energy. Unpredictable, genuinely funny. Keeps the feed surprising. " +
+        "Tasteful chaos — teasing, never mean, never edgy for its own sake.",
+    },
+    {
+      label: "Conspiracy Theorist",
+      weight: Number(Deno.env.get("AI_PERSONA_CONSPIRACY_WEIGHT") ?? 3),
+      style:
+        "Finds suspicious patterns in the timing and data. 'Coincidence? Doubt it.' " +
+        "Playful paranoia — not actually accusing anyone, just dramatically suspicious.",
     },
   ];
 }
+
+/** Multiply base persona weights by event-affinity multipliers before picking. */
+function pickPersonaForEvents(eventKeys: string[]): Persona {
+  const personas = getPersonas();
+  const mult = new Map<string, number>(personas.map((p) => [p.label, 1.0]));
+
+  for (const key of eventKeys) {
+    switch (key) {
+      case "spam_surge":
+        mult.set("Chaos Agent", (mult.get("Chaos Agent") ?? 1) * 3);
+        mult.set("Hype Man", (mult.get("Hype Man") ?? 1) * 2);
+        mult.set("Historian", (mult.get("Historian") ?? 1) * 0.2);
+        break;
+      case "heist":
+        mult.set("Hype Man", (mult.get("Hype Man") ?? 1) * 2.5);
+        mult.set("Conspiracy Theorist", (mult.get("Conspiracy Theorist") ?? 1) * 2.5);
+        break;
+      case "carry":
+        mult.set("Historian", (mult.get("Historian") ?? 1) * 3);
+        mult.set("Hype Man", (mult.get("Hype Man") ?? 1) * 2);
+        break;
+      case "domination":
+        mult.set("Historian", (mult.get("Historian") ?? 1) * 4);
+        mult.set("Disappointed Coach", (mult.get("Disappointed Coach") ?? 1) * 2);
+        break;
+      case "rivalry":
+        mult.set("Analyst", (mult.get("Analyst") ?? 1) * 2.5);
+        mult.set("Historian", (mult.get("Historian") ?? 1) * 2);
+        break;
+      case "near_tie":
+        mult.set("Analyst", (mult.get("Analyst") ?? 1) * 2.5);
+        mult.set("Hype Man", (mult.get("Hype Man") ?? 1) * 1.5);
+        break;
+      case "ghost_return":
+        mult.set("Conspiracy Theorist", (mult.get("Conspiracy Theorist") ?? 1) * 4);
+        mult.set("Historian", (mult.get("Historian") ?? 1) * 2);
+        break;
+      case "uno_reverse":
+        mult.set("Chaos Agent", (mult.get("Chaos Agent") ?? 1) * 2.5);
+        mult.set("Hype Man", (mult.get("Hype Man") ?? 1) * 2);
+        break;
+      case "room_milestone":
+        mult.set("Historian", (mult.get("Historian") ?? 1) * 3);
+        mult.set("Hype Man", (mult.get("Hype Man") ?? 1) * 2);
+        break;
+      case "silence_break":
+        mult.set("Conspiracy Theorist", (mult.get("Conspiracy Theorist") ?? 1) * 2);
+        mult.set("Disappointed Coach", (mult.get("Disappointed Coach") ?? 1) * 1.5);
+        break;
+    }
+  }
+
+  const weighted = personas.map((p) => ({
+    ...p,
+    weight: Math.max(0.1, p.weight * (mult.get(p.label) ?? 1)),
+  }));
+  return pickWeighted(weighted);
+}
+
+/** Events directly about one person's log action → get reply_to_log_id set. */
+const PER_LOG_EVENT_KEYS = new Set([
+  "heist", "ghost_return", "spam_surge", "near_tie", "uno_reverse", "carry", "silence_break",
+]);
+
+/** Events about the room's broader state → standalone post card. */
+const ROOM_WIDE_EVENT_KEYS = new Set(["room_milestone", "domination", "rivalry"]);
 
 function eventTitle(key: string): string {
   switch (key) {
@@ -278,7 +366,7 @@ Deno.serve(async (req) => {
 
     const { data: log, error: logErr } = await sb
       .from("exercise_logs")
-      .select("id, room_id, user_id, exercise_name, points_earned, created_at")
+      .select("id, room_id, user_id, exercise_name, count, weight, points_earned, created_at")
       .eq("id", logId)
       .maybeSingle();
 
@@ -306,6 +394,9 @@ Deno.serve(async (req) => {
     const roomId = log.room_id as string;
     const pointsEarned = Number(log.points_earned ?? 0);
     const logCreatedAt = log.created_at as string;
+    const actorExerciseName = safeUsername((log as Record<string, unknown>).exercise_name as string);
+    const actorReps = Number((log as Record<string, unknown>).count ?? 0);
+    const actorWeight = Number((log as Record<string, unknown>).weight ?? 0);
 
     const { data: room } = await sb.from("rooms").select("id, name, streak_minimum").eq("id", roomId).single();
     const streakMin = (room as { streak_minimum?: number })?.streak_minimum ?? 10;
@@ -629,38 +720,74 @@ Deno.serve(async (req) => {
       });
     }
 
+    const actorUsername = safeUsername(myRow?.profiles?.username);
+
     const top3 = sorted.slice(0, 3).map((s, i) => ({
       rank: i + 1,
       username: safeUsername(s.profiles?.username),
       total: Number(s.total_score ?? 0),
+      isActor: s.user_id === uid,
     }));
 
-    const persona = pickWeighted(getPersonas());
+    const eventKeys = events.map((e) => e.key);
+    const persona = pickPersonaForEvents(eventKeys);
+
+    // Classify: is this about one person's action, or a room-wide development?
+    const isReplyMode = events.some((e) => PER_LOG_EVENT_KEYS.has(e.key)) &&
+      !events.some((e) => ROOM_WIDE_EVENT_KEYS.has(e.key));
+
     const eventsForAi = events.map((e) => ({
       title: eventTitle(e.key),
       payload: e.payload ?? {},
     }));
 
-    const userPrompt = JSON.stringify({
+    const contextData = {
       room: (room as { name?: string })?.name ?? "Room",
       streakMinimum: streakMin,
-      actorUserId: uid,
-      log: { points: pointsEarned, rankBefore, rankAfter },
+      actor: {
+        username: actorUsername,
+        rankBefore,
+        rankAfter,
+        pointsThisLog: pointsEarned,
+        totalPoints: totalAfter,
+        exercise: actorExerciseName,
+        reps: actorReps,
+        ...(actorWeight > 0 ? { weightKg: actorWeight } : {}),
+      },
       top3,
       events: eventsForAi,
-    });
+    };
+
+    const userPrompt = JSON.stringify(contextData);
+
+    const replyModeInstruction = isReplyMode
+      ? [
+          `MODE: REPLY — you are reacting directly to ${actorUsername}'s log (${actorReps} ${actorExerciseName}).`,
+          `React to what they just did. Be vivid and specific — name them, the exercise, the rank change.`,
+          `Write as if calling the play live, not narrating history.`,
+        ].join(" ")
+      : [
+          `MODE: POST — this is a room-wide development, not one person's single action.`,
+          `Announce the state of the room. Name the relevant players. Make it feel like a broadcast update.`,
+        ].join(" ");
 
     const system = [
-      `You are "Jars", the room's mascot commentator.`,
-      `Write as a fellow competitor/announcer, NOT as an AI.`,
-      `ABSOLUTE RULES:`,
-      `- Never say "I am an AI" or mention prompts/models.`,
-      `- Never use second-person ("you/your"). Speak to the room in third-person.`,
-      `- Never output internal codes/keys. Only natural language.`,
-      `- 1–2 sentences. No bullet points. No hashtags.`,
-      `- Keep it specific: usernames + ranks + points when relevant.`,
-      `- Competitive, playful, not cruel.`,
-      `STYLE: ${persona.style}`,
+      `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
+      `You are NOT an AI assistant — you're the room's character voice.`,
+      ``,
+      `ABSOLUTE RULES (never break these):`,
+      `- Never say "I", "I am", or reference AI, prompts, or models.`,
+      `- Never use second-person ("you" / "your"). Always third-person.`,
+      `- Never output raw keys like spam_surge, uno_reverse etc — use natural language only.`,
+      `- No bullet points, hashtags, or lists.`,
+      `- ALWAYS reference real names, ranks, and numbers from the context. No generics.`,
+      `- 1–2 sentences max. Tight. No filler words.`,
+      `- Competitive, playful, never cruel.`,
+      ``,
+      replyModeInstruction,
+      ``,
+      `PERSONA: ${persona.label}`,
+      `STYLE GUIDE: ${persona.style}`,
       `LENGTH: max 260 characters.`,
     ].join("\n");
 
@@ -672,28 +799,41 @@ Deno.serve(async (req) => {
       { logContext: { log_id: logId, room_id: roomId } },
     );
 
-    // Extra safety in case the model slips.
+    // Safety pass — strip any leaked internal keys or second-person slippage.
     const cleaned = clampText(
       text
-        .replaceAll(/\bspam_surge\b/gi, "rapid-fire session")
-        .replaceAll(/\bAI\b/gi, "")
+        .replaceAll(/\bspam[_\s]surge\b/gi, "rapid-fire session")
+        .replaceAll(/\buno[_\s]reverse\b/gi, "flip")
+        .replaceAll(/\bghost[_\s]return\b/gi, "return")
+        .replaceAll(/\bnear[_\s]tie\b/gi, "photo finish")
+        .replaceAll(/\broom[_\s]milestone\b/gi, "milestone")
+        .replaceAll(/\bAI\b/g, "")
         .replaceAll(/\byou\b/gi, "they")
         .replaceAll(/\byour\b/gi, "their")
         .trim(),
       320,
     );
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       v: 1,
       text: cleaned,
       persona: persona.label,
+      mode: isReplyMode ? "reply" : "post",
       model: openaiModel,
       model_returned: modelReturned,
       openai_response_id: responseId,
       usage,
-      events: events.map((e) => e.key),
+      events: eventKeys,
       eventPayloads: events,
     };
+
+    // Embed reply context so Flutter card doesn't need a second DB lookup.
+    if (isReplyMode) {
+      payload.replyToUsername = actorUsername;
+      payload.replyToExercise = actorExerciseName;
+      payload.replyToReps = actorReps;
+      payload.replyToPoints = pointsEarned;
+    }
 
     await sb.from("exercise_logs").insert({
       room_id: roomId,
@@ -703,6 +843,7 @@ Deno.serve(async (req) => {
       count: 0,
       weight: 0,
       points_earned: 0,
+      ...(isReplyMode ? { reply_to_log_id: logId } : {}),
     });
 
     if (Deno.env.get("AI_EVENTS_SEND_PUSH") === "true") {

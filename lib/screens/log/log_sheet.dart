@@ -572,8 +572,6 @@ class _LogSheetState extends ConsumerState<LogSheet>
         pointsEarned: totalEarned,
       );
 
-      unawaited(AiEventsService.processAfterLog(log.id));
-
       unawaited(
         LogService.ensureIdleWakeCards(room.id, actorUserId: userId),
       );
@@ -583,6 +581,9 @@ class _LogSheetState extends ConsumerState<LogSheet>
         points: totalEarned,
         streakMinimum: room.streakMinimum,
       );
+
+      // Invoked AFTER addPoints so the Edge function reads fresh scores.
+      unawaited(AiEventsService.processAfterLog(log.id));
       ref.invalidate(myScoreProvider);
       ref.invalidate(roomScoresProvider);
       ref.invalidate(groupGoalProgressProvider);

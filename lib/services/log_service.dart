@@ -72,9 +72,45 @@ class LogService {
         .order('created_at', ascending: false)
         .limit(limit);
 
-    return rows
-        .map((r) => ExerciseLog.fromJson(r))
-        .toList();
+    final flat = rows.map((r) => ExerciseLog.fromJson(r)).toList();
+    return _groupAiReplies(flat);
+  }
+
+  /// Re-sort the flat feed so each AI reply card sits immediately after
+  /// the parent log it responded to. Non-reply items keep created_at DESC order.
+  static List<ExerciseLog> _groupAiReplies(List<ExerciseLog> flat) {
+    final replies = <ExerciseLog>[];
+    final base = <ExerciseLog>[];
+
+    for (final log in flat) {
+      if (log.isAiReply && log.replyToLogId != null) {
+        replies.add(log);
+      } else {
+        base.add(log);
+      }
+    }
+
+    if (replies.isEmpty) return flat;
+
+    final result = List<ExerciseLog>.from(base);
+
+    // Walk backwards so earlier insertions don't shift un-processed indices.
+    for (var i = result.length - 1; i >= 0; i--) {
+      final myReplies = replies
+          .where((r) => r.replyToLogId == result[i].id)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      if (myReplies.isNotEmpty) {
+        result.insertAll(i + 1, myReplies);
+      }
+    }
+
+    // Orphaned replies (parent not in the current page) go at the top.
+    final inResult = result.map((l) => l.id).toSet();
+    final orphans = replies.where((r) => !inResult.contains(r.id)).toList();
+    result.insertAll(0, orphans);
+
+    return result;
   }
 
   static Future<List<ExerciseLog>> getUserLogs(String roomId, String userId, {int limit = 100}) async {

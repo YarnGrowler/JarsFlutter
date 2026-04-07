@@ -33,29 +33,80 @@ function pickWeighted<T extends { weight: number }>(items: T[]): T {
 }
 
 function getPersonas(): Persona[] {
-  const common = Number(Deno.env.get("AI_PERSONA_COMMON_WEIGHT") ?? 82);
-  const rare = Number(Deno.env.get("AI_PERSONA_RARE_WEIGHT") ?? 15);
-  const legendary = Number(Deno.env.get("AI_PERSONA_LEGENDARY_WEIGHT") ?? 3);
   return [
     {
-      label: "Coach",
-      weight: common,
+      label: "Analyst",
+      weight: Number(Deno.env.get("AI_PERSONA_ANALYST_WEIGHT") ?? 35),
       style:
-        "Warm competitor-coach. Short, punchy, no cringe, no emojis. Praise effort, nudge rivalry.",
+        "Sharp, precise, grounded. Reference exact stats: ranks, points, gaps. " +
+        "No hype — just the cold hard truth laid out with confidence. Make it feel smart and real.",
     },
     {
-      label: "Announcer",
-      weight: rare,
+      label: "Hype Man",
+      weight: Number(Deno.env.get("AI_PERSONA_HYPE_WEIGHT") ?? 30),
       style:
-        "Arena announcer vibe. Dramatic but not corny. One clever line max. No slang overload.",
+        "Pure energy. Celebrates big plays and wins, keeps the dopamine high. " +
+        "Short punchy lines, slightly theatrical. Never hollow — always tied to actual stats.",
     },
     {
-      label: "Gremlin Jar",
-      weight: legendary,
+      label: "Disappointed Coach",
+      weight: Number(Deno.env.get("AI_PERSONA_COACH_WEIGHT") ?? 15),
       style:
-        "Chaotic mascot energy, but still tasteful. Teasing, never mean. No 'AI' references.",
+        "Not angry — just notices the gap between potential and performance. " +
+        "The quiet kind of pressure: 'you had it, you fumbled it, you know it.' No cruelty.",
+    },
+    {
+      label: "Historian",
+      weight: Number(Deno.env.get("AI_PERSONA_HISTORIAN_WEIGHT") ?? 10),
+      style:
+        "Makes the moment feel legendary. Sports-broadcaster gravitas — 'for the third time this week...', " +
+        "'a dynasty forming...'. Weight and lore. Reserve for truly big moves.",
+    },
+    {
+      label: "Chaos Agent",
+      weight: Number(Deno.env.get("AI_PERSONA_CHAOS_WEIGHT") ?? 7),
+      style:
+        "Wildcard energy. Unpredictable, genuinely funny. Keeps the feed surprising. " +
+        "Tasteful chaos — teasing, never mean, never edgy for its own sake.",
+    },
+    {
+      label: "Conspiracy Theorist",
+      weight: Number(Deno.env.get("AI_PERSONA_CONSPIRACY_WEIGHT") ?? 3),
+      style:
+        "Finds suspicious patterns in the timing and data. 'Coincidence? Doubt it.' " +
+        "Playful paranoia — not actually accusing anyone, just dramatically suspicious.",
     },
   ];
+}
+
+/** Event-affinity: multiply base weights for the cron event type. */
+function pickPersonaForEvent(eventKey: string): Persona {
+  const personas = getPersonas();
+  const mult = new Map<string, number>(personas.map((p) => [p.label, 1.0]));
+  switch (eventKey) {
+    case "last_stand":
+      mult.set("Disappointed Coach", 4);
+      mult.set("Historian", 2);
+      break;
+    case "response_gap":
+      mult.set("Conspiracy Theorist", 4);
+      mult.set("Analyst", 2);
+      break;
+    case "retirement":
+      mult.set("Historian", 3);
+      mult.set("Disappointed Coach", 2);
+      mult.set("Chaos Agent", 2);
+      break;
+    case "carry_lore":
+      mult.set("Historian", 3);
+      mult.set("Hype Man", 2);
+      break;
+  }
+  const weighted = personas.map((p) => ({
+    ...p,
+    weight: Math.max(0.1, p.weight * (mult.get(p.label) ?? 1)),
+  }));
+  return pickWeighted(weighted);
 }
 
 function safeUsername(s: unknown): string {
@@ -223,7 +274,7 @@ Deno.serve(async (req) => {
         lastStand !== today
       ) {
         const names = behind.map((b) => safeUsername(b.profiles?.username)).join(", ");
-        const persona = pickWeighted(getPersonas());
+        const persona = pickPersonaForEvent("last_stand");
         const prompt = JSON.stringify({
           kind: "last_stand",
           room: roomName,
@@ -234,15 +285,16 @@ Deno.serve(async (req) => {
           })),
         });
         const system = [
-          `You are "Jars", the room's mascot commentator.`,
-          `Write as a fellow competitor/announcer, NOT as an AI.`,
+          `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
+          `You are NOT an AI assistant — you are the room's character voice.`,
           `ABSOLUTE RULES:`,
-          `- Never use second-person ("you/your"). Speak to the room in third-person.`,
-          `- 1–2 sentences. No bullet points. No hashtags.`,
-          `- Urgent but fun. Not cruel.`,
+          `- Never use second-person ("you/your"). Always third-person.`,
+          `- 1–2 sentences. No bullet points, no hashtags.`,
+          `- Reference the names naturally. Urgent but fun. Not cruel.`,
+          `PERSONA: ${persona.label}`,
           `STYLE: ${persona.style}`,
           `LENGTH: max 260 characters.`,
-          `NAMES (reference these naturally): ${names}`,
+          `NAMES BEHIND ON STREAK: ${names}`,
         ].join("\n");
         const { text } = await openAiComplete(openaiKey, openaiModel, system, prompt, {
           kind: "last_stand",
@@ -325,14 +377,16 @@ Deno.serve(async (req) => {
             actor: safeUsername((actorProf as { username?: string })?.username),
             victim: safeUsername((victimProf as { username?: string })?.username),
           });
-          const persona = pickWeighted(getPersonas());
+          const persona = pickPersonaForEvent("response_gap");
           const system = [
-            `You are "Jars", the room's mascot commentator.`,
-            `Write as a fellow competitor/announcer, NOT as an AI.`,
+            `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
+            `You are NOT an AI assistant — you are the room's character voice.`,
             `ABSOLUTE RULES:`,
-            `- Never use second-person ("you/your"). Speak to the room in third-person.`,
-            `- 1–2 sentences. No bullet points. No hashtags.`,
+            `- Never use second-person ("you/your"). Always third-person.`,
+            `- 1–2 sentences. No bullet points, no hashtags.`,
+            `- Reference real names and stats. No generic filler.`,
             `- Fun, not cruel.`,
+            `PERSONA: ${persona.label}`,
             `STYLE: ${persona.style}`,
             `LENGTH: max 240 characters.`,
           ].join("\n");
@@ -396,18 +450,19 @@ Deno.serve(async (req) => {
           }
         }
         if (inactive.length > 0) {
-          const persona = pickWeighted(getPersonas());
+          const persona = pickPersonaForEvent("retirement");
           const prompt = JSON.stringify({ kind: "retirement", room: roomName, inactiveCount: inactive.length });
           const { text } = await openAiComplete(
             openaiKey,
             openaiModel,
             [
-              `You are "Jars", the room's mascot commentator.`,
-              `Write as a fellow competitor/announcer, NOT as an AI.`,
+              `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
+              `You are NOT an AI assistant — you are the room's character voice.`,
               `ABSOLUTE RULES:`,
-              `- Never use second-person ("you/your"). Speak to the room in third-person.`,
-              `- 1–2 sentences. No bullet points. No hashtags.`,
-              `- Funny/dramatic, not cruel.`,
+              `- Never use second-person ("you/your"). Always third-person.`,
+              `- 1–2 sentences. No bullet points, no hashtags.`,
+              `- Reference real names and stats. Funny/dramatic, not cruel.`,
+              `PERSONA: ${persona.label}`,
               `STYLE: ${persona.style}`,
               `LENGTH: max 220 characters.`,
             ].join("\n"),
@@ -460,7 +515,7 @@ Deno.serve(async (req) => {
           profiles?: { username?: string };
         } | null;
         if (top) {
-          const persona = pickWeighted(getPersonas());
+          const persona = pickPersonaForEvent("carry_lore");
           const prompt = JSON.stringify({
             kind: "carry_lore",
             room: roomName,
@@ -471,12 +526,13 @@ Deno.serve(async (req) => {
             openaiKey,
             openaiModel,
             [
-              `You are "Jars", the room's mascot commentator.`,
-              `Write as a fellow competitor/announcer, NOT as an AI.`,
+              `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
+              `You are NOT an AI assistant — you are the room's character voice.`,
               `ABSOLUTE RULES:`,
-              `- Never use second-person ("you/your"). Speak to the room in third-person.`,
-              `- 1–2 sentences. No bullet points. No hashtags.`,
-              `- Funny, competitive, not cruel.`,
+              `- Never use second-person ("you/your"). Always third-person.`,
+              `- 1–2 sentences. No bullet points, no hashtags.`,
+              `- Reference the leader by name and points. Funny, competitive, not cruel.`,
+              `PERSONA: ${persona.label}`,
               `STYLE: ${persona.style}`,
               `LENGTH: max 200 characters.`,
             ].join("\n"),

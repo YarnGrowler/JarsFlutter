@@ -14,6 +14,9 @@ class ExerciseLog {
   // Joined fields (not stored in DB)
   final String? username;
 
+  /// Set on AI-generated reply cards; references the log that triggered the event.
+  final String? replyToLogId;
+
   const ExerciseLog({
     required this.id,
     required this.roomId,
@@ -25,6 +28,7 @@ class ExerciseLog {
     required this.pointsEarned,
     required this.createdAt,
     this.username,
+    this.replyToLogId,
   });
 
   // ── Special broadcast row prefixes ───────────────────────────────────────
@@ -93,6 +97,37 @@ class ExerciseLog {
     return t is String ? t : null;
   }
 
+  /// True when this is an AI card generated in direct response to a specific log.
+  bool get isAiReply => isAiBroadcast && replyToLogId != null;
+
+  /// The persona label stored in the AI payload (e.g. "Analyst", "Hype Man").
+  String? get aiPersona {
+    final m = aiPayload;
+    final p = m?['persona'];
+    return p is String && p.isNotEmpty ? p : null;
+  }
+
+  /// For reply cards: the username of the person whose log triggered this AI card.
+  String? get aiReplyToUsername {
+    final m = aiPayload;
+    final v = m?['replyToUsername'];
+    return v is String && v.isNotEmpty ? v : null;
+  }
+
+  /// For reply cards: the exercise name that triggered this AI card.
+  String? get aiReplyToExercise {
+    final m = aiPayload;
+    final v = m?['replyToExercise'];
+    return v is String && v.isNotEmpty ? v : null;
+  }
+
+  /// For reply cards: the rep count on the triggering log.
+  int? get aiReplyToReps {
+    final m = aiPayload;
+    final v = m?['replyToReps'];
+    return v is num ? v.toInt() : null;
+  }
+
   String? get broadcastPayload {
     for (final prefix in [
       kOvertakePrefix,
@@ -147,6 +182,7 @@ class ExerciseLog {
       pointsEarned: (json['points_earned'] as num?)?.toDouble() ?? 0,
       createdAt: DateTime.parse(json['created_at'] as String),
       username: username,
+      replyToLogId: json['reply_to_log_id'] as String?,
     );
   }
 
