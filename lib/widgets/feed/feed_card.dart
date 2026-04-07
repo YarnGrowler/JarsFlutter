@@ -355,15 +355,25 @@ class _AiReplyCardState extends State<_AiReplyCard> {
   /// Inner clip: sits just inside the 1px border so corners align visually.
   static const double _innerR = _outerR - 1;
 
-  late bool _expanded;
+  bool _expanded = false;
 
   @override
-  void initState() {
-    super.initState();
-    final t = widget.log.aiText ?? '';
-    final collapsible =
-        t.length > 88 || t.contains('\n') || t.split(RegExp(r'\s+')).length > 14;
-    _expanded = !collapsible;
+  void didUpdateWidget(covariant _AiReplyCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.log.aiText != widget.log.aiText) {
+      _expanded = false;
+    }
+  }
+
+  /// True only when [text] would not fit in two lines at [maxWidth] (same style as collapsed body).
+  bool _exceedsTwoLines(String text, double maxWidth, TextStyle style) {
+    if (text.isEmpty || !maxWidth.isFinite || maxWidth <= 0) return false;
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 2,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    return tp.didExceedMaxLines;
   }
 
   String _replyChipText(ExerciseLog log) {
@@ -387,9 +397,6 @@ class _AiReplyCardState extends State<_AiReplyCard> {
     final hasReplyContext = log.aiReplyToUsername != null;
 
     final t = text ?? '';
-    final canCollapse = !isReactOnly &&
-        t.isNotEmpty &&
-        (t.length > 88 || t.contains('\n') || t.split(RegExp(r'\s+')).length > 14);
 
     return Container(
       decoration: BoxDecoration(
@@ -452,70 +459,98 @@ class _AiReplyCardState extends State<_AiReplyCard> {
                           _aiHeader(log),
                           if (!isReactOnly && t.isNotEmpty) ...[
                             const SizedBox(height: 8),
-                            if (canCollapse && !_expanded) ...[
-                              Text(
-                                t,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final collapsedStyle = GoogleFonts.inter(
                                   fontSize: 12,
                                   height: 1.4,
                                   color: JarsColors.textSecondary,
-                                ),
-                              ),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton(
-                                  onPressed: () =>
-                                      setState(() => _expanded = true),
-                                  style: TextButton.styleFrom(
-                                    padding: const EdgeInsets.only(top: 2),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: Text(
-                                    'Show more',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: JarsColors.textTertiary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ] else ...[
-                              Text(
-                                t,
-                                style: GoogleFonts.inter(
+                                );
+                                final fullStyle = GoogleFonts.inter(
                                   fontSize: 13,
                                   height: 1.4,
                                   color: JarsColors.textSecondary,
-                                ),
-                              ),
-                              if (canCollapse && _expanded)
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: TextButton(
-                                    onPressed: () =>
-                                        setState(() => _expanded = false),
-                                    style: TextButton.styleFrom(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      minimumSize: Size.zero,
-                                      tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    child: Text(
-                                      'Show less',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: JarsColors.textTertiary,
+                                );
+                                final needsTruncation = _exceedsTwoLines(
+                                  t,
+                                  constraints.maxWidth,
+                                  collapsedStyle,
+                                );
+
+                                if (!needsTruncation) {
+                                  return Text(t, style: fullStyle);
+                                }
+
+                                if (!_expanded) {
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        t,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: collapsedStyle,
+                                      ),
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: TextButton(
+                                          onPressed: () => setState(
+                                              () => _expanded = true),
+                                          style: TextButton.styleFrom(
+                                            padding:
+                                                const EdgeInsets.only(top: 2),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                          ),
+                                          child: Text(
+                                            'Show more',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w500,
+                                              color: JarsColors.textTertiary,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }
+
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(t, style: fullStyle),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton(
+                                        onPressed: () => setState(
+                                            () => _expanded = false),
+                                        style: TextButton.styleFrom(
+                                          padding:
+                                              const EdgeInsets.only(top: 4),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize: MaterialTapTargetSize
+                                              .shrinkWrap,
+                                        ),
+                                        child: Text(
+                                          'Show less',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                            color: JarsColors.textTertiary,
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                            ],
+                                  ],
+                                );
+                              },
+                            ),
                           ],
                           _feedReactionBar(
                             context,

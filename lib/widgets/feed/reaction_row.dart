@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/super_reaction_meta.dart';
 import '../../core/theme.dart';
 import '../../models/reaction.dart';
+import '../../models/score.dart';
 import '../../providers/score_provider.dart';
 import '../../services/supabase_service.dart';
 import 'super_reaction_catalog.dart';
@@ -22,10 +23,15 @@ Future<void> showReactionEmojiPicker(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (ctx) => ReactionPickerSheet(
-      onPick: (e) {
-        Navigator.pop(ctx);
-        onPicked(e);
+    builder: (ctx) => Consumer(
+      builder: (context, ref, _) {
+        return ReactionPickerSheet(
+          readMyScore: () => ref.read(myScoreProvider.future),
+          onPick: (e) {
+            Navigator.pop(ctx);
+            onPicked(e);
+          },
+        );
       },
     ),
   );
@@ -309,9 +315,15 @@ class _SegmentedPickerTab extends StatelessWidget {
 }
 
 class ReactionPickerSheet extends StatefulWidget {
+  /// Reads current user’s room score (from [Consumer] above the sheet).
+  final Future<Score?> Function() readMyScore;
   final ValueChanged<String> onPick;
 
-  const ReactionPickerSheet({super.key, required this.onPick});
+  const ReactionPickerSheet({
+    super.key,
+    required this.readMyScore,
+    required this.onPick,
+  });
 
   @override
   State<ReactionPickerSheet> createState() => _ReactionPickerSheetState();
@@ -322,8 +334,7 @@ class _ReactionPickerSheetState extends State<ReactionPickerSheet> {
   int _segment = 0;
 
   Future<void> _pickSuper(SuperReactionDef def) async {
-    final container = ProviderScope.containerOf(context, listen: false);
-    final score = await container.read(myScoreProvider.future);
+    final score = await widget.readMyScore();
     if (!mounted) return;
     if (score == null || score.totalScore < def.cost) {
       final have = score?.totalScore.floor() ?? 0;
@@ -479,8 +490,10 @@ class _ReactionPickerSheetState extends State<ReactionPickerSheet> {
         final def = kSuperReactions[i];
         return Material(
           color: JarsColors.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: JarsColors.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: JarsColors.border),
+          ),
           child: InkWell(
             onTap: () => _pickSuper(def),
             borderRadius: BorderRadius.circular(14),
