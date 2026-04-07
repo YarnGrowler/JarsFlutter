@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/count_unit.dart';
+import '../../core/rank_bonus.dart';
 import '../../core/streak_bonus.dart';
 import '../../core/level_data.dart';
 import '../../core/log_screen_style.dart';
@@ -74,8 +75,10 @@ class _LogSheetState extends ConsumerState<LogSheet>
   /// Post-submit streak bonus animation (null = normal points preview).
   int? _celebrationBase;
   int? _celebrationStreakBonus;
+  int? _celebrationRankBonus;
   int? _celebrationTotal;
   int? _celebrationStreakDays;
+  int? _celebrationRank; // 1/2/3 (null = no rank bonus shown)
 
   // recents / search
   List<String> _recentIds = [];
@@ -534,7 +537,29 @@ class _LogSheetState extends ConsumerState<LogSheet>
         streakDaysForBonus: streakDays,
       );
       final baseRounded = basePts.round();
-      final totalPts = baseRounded + streakBonusPts;
+
+      // Rank bonus: based on *current* all-time rank before this log.
+      // Only ranks 1–3 get a small percentage boost, applied on top of streak bonus.
+      int? myRank;
+      try {
+        final scores = await ScoreService.getRoomScores(room.id);
+        scores.sort((a, b) {
+          final byScore = b.totalScore.compareTo(a.totalScore);
+          if (byScore != 0) return byScore;
+          return b.updatedAt.compareTo(a.updatedAt);
+        });
+        final idx = scores.indexWhere((s) => s.userId == userId);
+        if (idx >= 0) myRank = idx + 1;
+      } catch (_) {
+        // If rank fetch fails, we still allow logging without the bonus.
+      }
+
+      final subtotalPts = baseRounded + streakBonusPts;
+      final rankBonusPts = myRank == null
+          ? 0
+          : rankBonusPointsRounded(pointsSoFar: subtotalPts, rank: myRank!);
+
+      final totalPts = subtotalPts + rankBonusPts;
       final totalEarned = totalPts.toDouble();
 
       final log = await LogService.insertLog(
@@ -579,14 +604,17 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
       if (mounted) {
         setState(() {
-          if (streakBonusPts > 0) {
+          if (streakBonusPts > 0 || rankBonusPts > 0) {
             _celebrationBase = baseRounded;
             _celebrationStreakBonus = streakBonusPts;
+            _celebrationRankBonus = rankBonusPts;
             _celebrationTotal = totalPts;
             _celebrationStreakDays = streakDays > 0 ? streakDays : 1;
+            _celebrationRank = (myRank != null && myRank! <= 3) ? myRank : null;
           }
         });
-        final waitMs = streakBonusPts > 0 ? 2000 : 350;
+        final waitMs = (streakBonusPts > 0 ? 2000 : 350) +
+            (rankBonusPts > 0 ? 700 : 0);
         await Future<void>.delayed(Duration(milliseconds: waitMs));
       }
       if (!mounted) return;
@@ -627,8 +655,10 @@ class _LogSheetState extends ConsumerState<LogSheet>
           _logging = false;
           _celebrationBase = null;
           _celebrationStreakBonus = null;
+          _celebrationRankBonus = null;
           _celebrationTotal = null;
           _celebrationStreakDays = null;
+          _celebrationRank = null;
         });
         if (!alreadyFlashed) await _flashWhite();
         if (mounted) context.go('/');
@@ -920,8 +950,10 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                 visible: exercise != null,
                                 celebrationBase: _celebrationBase,
                                 celebrationStreakBonus: _celebrationStreakBonus,
+                                celebrationRankBonus: _celebrationRankBonus,
                                 celebrationTotal: _celebrationTotal,
                                 celebrationStreakDays: _celebrationStreakDays,
+                                celebrationRank: _celebrationRank,
                               ),
                             ),
                           ),

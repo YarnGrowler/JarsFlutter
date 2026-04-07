@@ -13,8 +13,10 @@ class AnimatedPointsDisplay extends StatefulWidget {
   /// When set after a successful log, shows base → streak bonus → total (staggered).
   final int? celebrationBase;
   final int? celebrationStreakBonus;
+  final int? celebrationRankBonus;
   final int? celebrationTotal;
   final int? celebrationStreakDays;
+  final int? celebrationRank;
 
   const AnimatedPointsDisplay({
     super.key,
@@ -22,8 +24,10 @@ class AnimatedPointsDisplay extends StatefulWidget {
     this.visible = true,
     this.celebrationBase,
     this.celebrationStreakBonus,
+    this.celebrationRankBonus,
     this.celebrationTotal,
     this.celebrationStreakDays,
+    this.celebrationRank,
   });
 
   @override
@@ -59,19 +63,26 @@ class _AnimatedPointsDisplayState extends State<AnimatedPointsDisplay> {
 
     final cBase = widget.celebrationBase;
     final cStreak = widget.celebrationStreakBonus;
+    final cRank = widget.celebrationRankBonus ?? 0;
     final cTotal = widget.celebrationTotal;
     if (cBase != null &&
-        cStreak != null &&
         cTotal != null &&
-        cStreak > 0) {
+        ((cStreak ?? 0) > 0 || cRank > 0)) {
       final days = widget.celebrationStreakDays ?? 1;
-      final pct =
+      final streakPct =
           (streakBonusFraction(days) * 100).clamp(0.0, 25.0).toDouble();
-      return _LogStreakCelebration(
+      final rank = widget.celebrationRank;
+      final rankPct = (rank == null || rank < 1 || rank > 3)
+          ? null
+          : const {1: 5, 2: 3, 3: 1}[rank];
+      return _LogBonusCelebration(
         base: cBase,
-        streakBonus: cStreak,
         total: cTotal,
-        streakPercent: pct,
+        streakBonus: cStreak ?? 0,
+        streakPercent: streakPct,
+        rankBonus: cRank,
+        rank: rank,
+        rankPercent: rankPct,
       );
     }
 
@@ -108,23 +119,48 @@ class _AnimatedPointsDisplayState extends State<AnimatedPointsDisplay> {
   }
 }
 
-/// Same "= … pts" row as normal log; digits flip from base → total; streak line explains the bonus.
-class _LogStreakCelebration extends StatelessWidget {
+/// Same "= … pts" row as normal log; digits flip from base → total; bonus lines explain add-ons.
+class _LogBonusCelebration extends StatefulWidget {
   final int base;
-  final int streakBonus;
   final int total;
+  final int streakBonus;
   final double streakPercent;
+  final int rankBonus;
+  final int? rank;
+  final int? rankPercent;
 
-  const _LogStreakCelebration({
+  const _LogBonusCelebration({
     required this.base,
-    required this.streakBonus,
     required this.total,
+    required this.streakBonus,
     required this.streakPercent,
+    required this.rankBonus,
+    this.rank,
+    this.rankPercent,
   });
 
   @override
+  State<_LogBonusCelebration> createState() => _LogBonusCelebrationState();
+}
+
+class _LogBonusCelebrationState extends State<_LogBonusCelebration> {
+  bool _showRankLine = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // If both bonuses exist, reveal rank bonus line slightly later.
+    if (widget.rankBonus > 0) {
+      final delayMs = widget.streakBonus > 0 ? 700 : 0;
+      Future<void>.delayed(Duration(milliseconds: delayMs), () {
+        if (mounted) setState(() => _showRankLine = true);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final pctLabel = streakPercent.round();
+    final streakPctLabel = widget.streakPercent.round();
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -144,8 +180,8 @@ class _LogStreakCelebration extends StatelessWidget {
               ),
             ),
             _FlipNumber(
-              value: total,
-              previousValue: base,
+              value: widget.total,
+              previousValue: widget.base,
               fontSize: 36,
             ),
             Text(
@@ -160,16 +196,37 @@ class _LogStreakCelebration extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Text(
-          '+$streakBonus streak · $pctLabel%',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: kLogPurple.withValues(alpha: 0.95),
-            height: 1.2,
+        if (widget.streakBonus > 0)
+          Text(
+            '+${widget.streakBonus} streak · $streakPctLabel%',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: kLogPurple.withValues(alpha: 0.95),
+              height: 1.2,
+            ),
           ),
-        ),
+        if (widget.rankBonus > 0)
+          AnimatedOpacity(
+            opacity: _showRankLine ? 1 : 0,
+            duration: const Duration(milliseconds: 220),
+            child: Padding(
+              padding: EdgeInsets.only(top: widget.streakBonus > 0 ? 4 : 0),
+              child: Text(
+                widget.rank != null && widget.rankPercent != null
+                    ? '+${widget.rankBonus} rank #${widget.rank} · ${widget.rankPercent}%'
+                    : '+${widget.rankBonus} rank bonus',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1ED97A).withValues(alpha: 0.95),
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
