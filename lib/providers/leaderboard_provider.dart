@@ -12,7 +12,12 @@ final leaderboardPeriodProvider =
 class LeaderboardEntry {
   final String userId;
   final String username;
+  /// Points shown/sorted for the current period tab (today/week/month/all-time).
   final double score;
+  /// User's official all-time total score (for level/rank display).
+  final double totalScore;
+  /// Official all-time rank in this room (1 = highest totalScore).
+  final int officialRank;
   final double dailyPoints;
   final int streak;
 
@@ -20,6 +25,8 @@ class LeaderboardEntry {
     required this.userId,
     required this.username,
     required this.score,
+    required this.totalScore,
+    required this.officialRank,
     required this.dailyPoints,
     required this.streak,
   });
@@ -31,27 +38,40 @@ final leaderboardProvider =
   final period = ref.watch(leaderboardPeriodProvider);
   if (room == null) return [];
 
+  final scores = await ScoreService.getRoomScores(room.id);
+  // Official all-time rank map (stable display across all tabs).
+  final sortedAllTime = [...scores]
+    ..sort((a, b) {
+      final byScore = b.totalScore.compareTo(a.totalScore);
+      if (byScore != 0) return byScore;
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
+  final officialRankByUser = <String, int>{
+    for (var i = 0; i < sortedAllTime.length; i++) sortedAllTime[i].userId: i + 1,
+  };
+
   if (period == LeaderboardPeriod.allTime) {
-    final scores = await ScoreService.getRoomScores(room.id);
-    return scores
+    return sortedAllTime
         .map((s) => LeaderboardEntry(
               userId: s.userId,
               username: s.username ?? 'Unknown',
               score: s.totalScore,
+              totalScore: s.totalScore,
+              officialRank: officialRankByUser[s.userId] ?? 0,
               dailyPoints: s.displayDailyPoints,
               streak: s.streakCurrent,
             ))
-        .toList()
-      ..sort((a, b) => b.score.compareTo(a.score));
+        .toList();
   }
 
   if (period == LeaderboardPeriod.today) {
-    final scores = await ScoreService.getRoomScores(room.id);
     return scores
         .map((s) => LeaderboardEntry(
               userId: s.userId,
               username: s.username ?? 'Unknown',
               score: s.displayDailyPoints,
+              totalScore: s.totalScore,
+              officialRank: officialRankByUser[s.userId] ?? 0,
               dailyPoints: s.displayDailyPoints,
               streak: s.streakCurrent,
             ))
@@ -59,7 +79,6 @@ final leaderboardProvider =
       ..sort((a, b) => b.score.compareTo(a.score));
   }
 
-  final scores = await ScoreService.getRoomScores(room.id);
   final now = DateTime.now();
   final cutoff = period == LeaderboardPeriod.week
       ? now.startOfWeek
@@ -76,6 +95,8 @@ final leaderboardProvider =
       userId: score.userId,
       username: score.username ?? 'Unknown',
       score: periodPoints,
+      totalScore: score.totalScore,
+      officialRank: officialRankByUser[score.userId] ?? 0,
       dailyPoints: score.displayDailyPoints,
       streak: score.streakCurrent,
     ));

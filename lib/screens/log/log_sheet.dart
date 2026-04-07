@@ -20,6 +20,7 @@ import '../../providers/active_room_provider.dart';
 import '../../providers/exercise_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../providers/score_provider.dart';
+import '../../services/ai_events_service.dart';
 import '../../services/event_service.dart';
 import '../../services/log_service.dart';
 import '../../services/notification_service.dart';
@@ -570,6 +571,8 @@ class _LogSheetState extends ConsumerState<LogSheet>
         weight: _weight,
         pointsEarned: totalEarned,
       );
+
+      unawaited(AiEventsService.processAfterLog(log.id));
 
       unawaited(
         LogService.ensureIdleWakeCards(room.id, actorUserId: userId),

@@ -47,7 +47,9 @@ class LeaderboardRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMe = entry.userId == SupabaseService.currentUserId;
-    final level = getLevelForScore(entry.score);
+    // Always show the user's *official* level based on all-time total score,
+    // even when the list is sorted by Today/Week/Month points.
+    final level = getLevelForScore(entry.totalScore);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

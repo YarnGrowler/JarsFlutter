@@ -210,7 +210,7 @@ class _LeaderboardTab extends ConsumerWidget {
                           child: MemberProfileSheet(
                             userId: entry.userId,
                             username: entry.username,
-                            totalScore: entry.score,
+                      totalScore: entry.totalScore,
                             streak: entry.streak,
                             roomId: roomId,
                           ),
@@ -218,7 +218,8 @@ class _LeaderboardTab extends ConsumerWidget {
                       );
                     },
                     child: LeaderboardRow(
-                      rank: index + 1,
+                      // Always display the official (all-time) room rank number.
+                      rank: entry.officialRank > 0 ? entry.officialRank : (index + 1),
                       entry: entry,
                       maxScore: maxScore,
                       period: period,

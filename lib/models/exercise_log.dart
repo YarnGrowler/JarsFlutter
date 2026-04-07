@@ -38,6 +38,8 @@ class ExerciseLog {
   static const kWakePrefix = '__WAKE__|';
   static const kMemberJoinPrefix = '__JOIN__|';
   static const kMemberKickPrefix = '__KICK__|';
+  /// AI narrator card (JSON payload after prefix).
+  static const kAiPrefix = '__AI__|';
 
   bool get isRankUpBroadcast    => exerciseName.startsWith(kRankUpPrefix);
   bool get isOvertake           => exerciseName.startsWith(kOvertakePrefix);
@@ -49,6 +51,7 @@ class ExerciseLog {
   bool get isWakeCard           => exerciseName.startsWith(kWakePrefix);
   bool get isMemberJoin        => exerciseName.startsWith(kMemberJoinPrefix);
   bool get isMemberKick        => exerciseName.startsWith(kMemberKickPrefix);
+  bool get isAiBroadcast       => exerciseName.startsWith(kAiPrefix);
 
   bool get isAnyBroadcast =>
       isRankUpBroadcast ||
@@ -60,11 +63,34 @@ class ExerciseLog {
       isCloseGap ||
       isWakeCard ||
       isMemberJoin ||
-      isMemberKick;
+      isMemberKick ||
+      isAiBroadcast;
 
   String? get rankUpTitle {
     if (!isRankUpBroadcast) return null;
     return exerciseName.substring(kRankUpPrefix.length);
+  }
+
+  /// Parsed JSON for [isAiBroadcast] rows.
+  Map<String, dynamic>? get aiPayload {
+    if (!isAiBroadcast) return null;
+    try {
+      final raw = exerciseName.length > kAiPrefix.length
+          ? exerciseName.substring(kAiPrefix.length)
+          : '';
+      if (raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? get aiText {
+    final m = aiPayload;
+    final t = m?['text'];
+    return t is String ? t : null;
   }
 
   String? get broadcastPayload {

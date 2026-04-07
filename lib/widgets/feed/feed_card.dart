@@ -58,6 +58,13 @@ class FeedCard extends StatelessWidget {
     if (log.isMemberKick) {
       return _MemberKickCard(log: log);
     }
+    if (log.isAiBroadcast) {
+      return _AiFeedCard(
+        log: log,
+        reactions: reactions,
+        onReact: onReact,
+      );
+    }
     if (log.isRankUpBroadcast) {
       return _RankUpCard(
         log: log,
@@ -245,6 +252,83 @@ class _MemberKickCard extends StatelessWidget {
               color: JarsColors.textTertiary,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── AI narrator card ─────────────────────────────────────────────────────────
+
+class _AiFeedCard extends StatelessWidget {
+  final ExerciseLog log;
+  final List<Reaction> reactions;
+  final ValueChanged<String>? onReact;
+
+  const _AiFeedCard({
+    required this.log,
+    this.reactions = const [],
+    this.onReact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = log.aiText ?? '…';
+    final ev = log.aiPayload?['events'];
+    final tag = ev is List ? ev.join(' · ') : '';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: JarsColors.surface,
+        borderRadius: BorderRadius.circular(JarsRadius.card),
+        border: Border.all(color: JarsColors.primary.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome, size: 18, color: JarsColors.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Jars AI',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: JarsColors.primary,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                log.createdAt.timeAgo,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: JarsColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+          if (tag.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              tag,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: JarsColors.textTertiary,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            text,
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: JarsColors.textPrimary,
+              height: 1.4,
+            ),
+          ),
+          _feedReactionBar(context, reactions: reactions, onReact: onReact),
         ],
       ),
     );
