@@ -128,6 +128,21 @@ class ExerciseLog {
     return v is num ? v.toInt() : null;
   }
 
+  /// Emoji the AI decided to react with (may be set with or without text).
+  String? get aiEmoji {
+    final m = aiPayload;
+    final v = m?['aiEmoji'];
+    return v is String && v.isNotEmpty ? v : null;
+  }
+
+  /// True when the card is emoji-only (no text reply, just a reaction).
+  bool get isAiReactOnly {
+    if (!isAiBroadcast) return false;
+    final m = aiPayload;
+    final mode = m?['mode'];
+    return mode == 'react';
+  }
+
   String? get broadcastPayload {
     for (final prefix in [
       kOvertakePrefix,

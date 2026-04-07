@@ -187,6 +187,88 @@ function clampText(s: string, max: number): string {
   return s.slice(0, max - 1).trimEnd() + "…";
 }
 
+/** Deterministic emoji pick — no extra API call. */
+function pickContextualEmoji(eventKeys: string[], rankAfter: number, pointsEarned: number): string {
+  const pools: Record<string, string[]> = {
+    heist: ["💀", "🤑", "😤"],
+    carry: ["👑", "🏆", "💪"],
+    domination: ["😮", "📈", "😮‍💨"],
+    spam_surge: ["🔥", "💥", "⚡"],
+    ghost_return: ["👻", "😈", "🫡"],
+    near_tie: ["😬", "⚔️", "🤌"],
+    uno_reverse: ["🔄", "😲", "💀"],
+    rivalry: ["⚔️", "🔥", "😤"],
+    room_milestone: ["🎯", "🏆", "🔥"],
+    silence_break: ["👀", "😳", "🫢"],
+  };
+  for (const key of eventKeys) {
+    const pool = pools[key];
+    if (pool) return pool[Math.floor(Math.random() * pool.length)];
+  }
+  if (rankAfter === 1) return ["👑", "🔥", "💪"][Math.floor(Math.random() * 3)];
+  if (pointsEarned >= 200) return ["💥", "🔥", "😤"][Math.floor(Math.random() * 3)];
+  if (pointsEarned >= 50) return ["💪", "📈", "🎯"][Math.floor(Math.random() * 3)];
+  return ["🙄", "😐", "👀"][Math.floor(Math.random() * 3)];
+}
+
+/**
+ * Slim, focused context → forces model to pick ONE angle not summarize everything.
+ * Only emit what's needed for the detected events.
+ */
+function buildKeyStats(params: {
+  actor: string;
+  exercise: string;
+  reps: number;
+  pointsAdded: number;
+  actorRank: number;
+  actorTotal: number;
+  mainEvent: string | null;
+  top3: Array<{ rank: number; username: string; total: number; isActor: boolean }>;
+}): Record<string, unknown> {
+  const { actor, exercise, reps, pointsAdded, actorRank, actorTotal, mainEvent, top3 } = params;
+  const leader = top3.find((t) => t.rank === 1);
+  const rivals = top3.filter((t) => !t.isActor).slice(0, 2);
+  const gapToLeader = actorRank > 1 && leader && !leader.isActor
+    ? leader.total - actorTotal
+    : null;
+
+  const stats: Record<string, unknown> = {
+    actor,
+    exercise,
+    reps,
+    points_added: pointsAdded,
+    actor_total: actorTotal,
+    actor_rank: actorRank,
+  };
+  if (mainEvent) stats.main_event = mainEvent;
+  if (gapToLeader !== null) stats.gap_to_leader = gapToLeader;
+  rivals.forEach((r, i) => {
+    stats[`rival${i + 1}`] = r.username;
+    stats[`rival${i + 1}_total`] = r.total;
+  });
+  return stats;
+}
+
+/** Core system prompt — same DNA for all event types and personas. */
+function buildSystemPrompt(persona: Persona, instruction: string): string {
+  return [
+    `You are the Jars room mascot. One job: create tension between people.`,
+    ``,
+    `HARD RULES (break any = failure):`,
+    `- ONE sentence. MAX 120 characters. Ideal: 60–90.`,
+    `- Pick ONE angle only: domination / embarrassment / gap / challenge. Not all of them.`,
+    `- Name at least 2 real people from context. Create tension between them.`,
+    `- Use real numbers (points, ranks). Stats = credibility.`,
+    `- Third-person only. Never "you" or "your".`,
+    `- BANNED WORDS: report, update, currently, basically, officially, "in the room"`,
+    `- Do NOT summarize. Do NOT list facts. ONE thing. Hit hard. Leave.`,
+    ``,
+    instruction,
+    ``,
+    `PERSONA: ${persona.label} — ${persona.style}`,
+  ].join("\n");
+}
+
 function jsonLog(tag: string, data: Record<string, unknown> = {}) {
   console.log(JSON.stringify({ tag: "jars_ai_events", phase: tag, t: new Date().toISOString(), ...data }));
 }
@@ -705,21 +787,7 @@ Deno.serve(async (req) => {
     // Victim logged — clear pending overtake watches about them.
     await sb.from("overtake_response_watch").delete().eq("room_id", roomId).eq("victim_user_id", uid);
 
-    if (events.length === 0) {
-      jsonLog("no_events", { ms: Math.round(performance.now() - wall), log_id: logId });
-      return new Response(JSON.stringify({ ok: true, events: [] }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (!openaiKey) {
-      return new Response(JSON.stringify({ ok: false, error: "OPENAI_API_KEY not set" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
+    // ── Who logged and what did they do ──────────────────────────────────────
     const actorUsername = safeUsername(myRow?.profiles?.username);
 
     const top3 = sorted.slice(0, 3).map((s, i) => ({
@@ -729,67 +797,95 @@ Deno.serve(async (req) => {
       isActor: s.user_id === uid,
     }));
 
+    // ── Decide what fires ─────────────────────────────────────────────────────
+    const hasEvents = events.length > 0;
+    // 30 % chance of a casual reply even on a "normal" log with no detected events.
+    const shouldCasualReply = !hasEvents && Math.random() < 0.30;
+    // 30 % chance of an emoji reaction, independent of text reply.
+    const shouldEmojiReact = Math.random() < 0.30;
+
+    if (!hasEvents && !shouldCasualReply && !shouldEmojiReact) {
+      jsonLog("no_events_skip", { ms: Math.round(performance.now() - wall), log_id: logId });
+      return new Response(JSON.stringify({ ok: true, events: [] }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Pick emoji deterministically — no extra API call.
+    const aiEmoji = shouldEmojiReact
+      ? pickContextualEmoji(events.map((e) => e.key), rankAfter, pointsEarned)
+      : null;
+
+    // ── React-only (emoji, no text) ───────────────────────────────────────────
+    if (!hasEvents && !shouldCasualReply) {
+      const reactPayload = {
+        v: 1,
+        text: null,
+        aiEmoji,
+        persona: null,
+        mode: "react",
+        model: openaiModel,
+        events: [],
+        replyToUsername: actorUsername,
+        replyToExercise: actorExerciseName,
+        replyToReps: actorReps,
+      };
+      await sb.from("exercise_logs").insert({
+        room_id: roomId,
+        user_id: uid,
+        exercise_id: null,
+        exercise_name: `__AI__|${JSON.stringify(reactPayload)}`,
+        count: 0,
+        weight: 0,
+        points_earned: 0,
+        reply_to_log_id: logId,
+      });
+      jsonLog("react_only", { emoji: aiEmoji, log_id: logId });
+      return new Response(
+        JSON.stringify({ ok: true, mode: "react", emoji: aiEmoji }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (!openaiKey) {
+      return new Response(JSON.stringify({ ok: false, error: "OPENAI_API_KEY not set" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── Text reply ────────────────────────────────────────────────────────────
     const eventKeys = events.map((e) => e.key);
     const persona = pickPersonaForEvents(eventKeys);
 
-    // Classify: is this about one person's action, or a room-wide development?
-    const isReplyMode = events.some((e) => PER_LOG_EVENT_KEYS.has(e.key)) &&
-      !events.some((e) => ROOM_WIDE_EVENT_KEYS.has(e.key));
+    // Casual replies are always reply-mode (attached to the triggering log).
+    const isReplyMode = shouldCasualReply || (
+      events.some((e) => PER_LOG_EVENT_KEYS.has(e.key)) &&
+      !events.some((e) => ROOM_WIDE_EVENT_KEYS.has(e.key))
+    );
 
-    const eventsForAi = events.map((e) => ({
-      title: eventTitle(e.key),
-      payload: e.payload ?? {},
-    }));
-
-    const contextData = {
-      room: (room as { name?: string })?.name ?? "Room",
-      streakMinimum: streakMin,
-      actor: {
-        username: actorUsername,
-        rankBefore,
-        rankAfter,
-        pointsThisLog: pointsEarned,
-        totalPoints: totalAfter,
-        exercise: actorExerciseName,
-        reps: actorReps,
-        ...(actorWeight > 0 ? { weightKg: actorWeight } : {}),
-      },
+    // Focused key_stats — prevents the model from trying to summarise everything.
+    const keyStats = buildKeyStats({
+      actor: actorUsername,
+      exercise: actorExerciseName,
+      reps: actorReps,
+      pointsAdded: pointsEarned,
+      actorRank: rankAfter,
+      actorTotal: totalAfter,
+      mainEvent: events[0] ? eventTitle(events[0].key) : null,
       top3,
-      events: eventsForAi,
-    };
+    });
 
-    const userPrompt = JSON.stringify(contextData);
+    const userPrompt = JSON.stringify(keyStats);
 
-    const replyModeInstruction = isReplyMode
-      ? [
-          `MODE: REPLY — you are reacting directly to ${actorUsername}'s log (${actorReps} ${actorExerciseName}).`,
-          `React to what they just did. Be vivid and specific — name them, the exercise, the rank change.`,
-          `Write as if calling the play live, not narrating history.`,
-        ].join(" ")
-      : [
-          `MODE: POST — this is a room-wide development, not one person's single action.`,
-          `Announce the state of the room. Name the relevant players. Make it feel like a broadcast update.`,
-        ].join(" ");
+    const instruction = shouldCasualReply
+      ? `React to ${actorUsername}'s workout. ONE angle: hype the rank, call out the gap to a rival, or create pressure. Be specific. Raw.`
+      : isReplyMode
+        ? `React to ${actorUsername}'s log. Hit ONE thing: the rank jump, the gap to the leader, or the pressure on a rival. No summaries.`
+        : `Announce a room-wide development. Name the top players. Create tension between them. No summaries.`;
 
-    const system = [
-      `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
-      `You are NOT an AI assistant — you're the room's character voice.`,
-      ``,
-      `ABSOLUTE RULES (never break these):`,
-      `- Never say "I", "I am", or reference AI, prompts, or models.`,
-      `- Never use second-person ("you" / "your"). Always third-person.`,
-      `- Never output raw keys like spam_surge, uno_reverse etc — use natural language only.`,
-      `- No bullet points, hashtags, or lists.`,
-      `- ALWAYS reference real names, ranks, and numbers from the context. No generics.`,
-      `- 1–2 sentences max. Tight. No filler words.`,
-      `- Competitive, playful, never cruel.`,
-      ``,
-      replyModeInstruction,
-      ``,
-      `PERSONA: ${persona.label}`,
-      `STYLE GUIDE: ${persona.style}`,
-      `LENGTH: max 260 characters.`,
-    ].join("\n");
+    const system = buildSystemPrompt(persona, instruction);
 
     const { text, usage, responseId, modelReturned } = await openAiComplete(
       openaiKey,
@@ -799,10 +895,11 @@ Deno.serve(async (req) => {
       { logContext: { log_id: logId, room_id: roomId } },
     );
 
-    // Safety pass — strip any leaked internal keys or second-person slippage.
+    // Safety pass.
     const cleaned = clampText(
       text
-        .replaceAll(/\bspam[_\s]surge\b/gi, "rapid-fire session")
+        .replaceAll(/\b(room\s+report|room\s+update)\b/gi, "")
+        .replaceAll(/\bspam[_\s]surge\b/gi, "rapid-fire")
         .replaceAll(/\buno[_\s]reverse\b/gi, "flip")
         .replaceAll(/\bghost[_\s]return\b/gi, "return")
         .replaceAll(/\bnear[_\s]tie\b/gi, "photo finish")
@@ -811,12 +908,13 @@ Deno.serve(async (req) => {
         .replaceAll(/\byou\b/gi, "they")
         .replaceAll(/\byour\b/gi, "their")
         .trim(),
-      320,
+      160,
     );
 
     const payload: Record<string, unknown> = {
       v: 1,
       text: cleaned,
+      aiEmoji,
       persona: persona.label,
       mode: isReplyMode ? "reply" : "post",
       model: openaiModel,
@@ -824,15 +922,12 @@ Deno.serve(async (req) => {
       openai_response_id: responseId,
       usage,
       events: eventKeys,
-      eventPayloads: events,
     };
 
-    // Embed reply context so Flutter card doesn't need a second DB lookup.
     if (isReplyMode) {
       payload.replyToUsername = actorUsername;
       payload.replyToExercise = actorExerciseName;
       payload.replyToReps = actorReps;
-      payload.replyToPoints = pointsEarned;
     }
 
     await sb.from("exercise_logs").insert({

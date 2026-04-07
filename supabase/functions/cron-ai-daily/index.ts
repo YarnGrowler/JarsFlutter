@@ -285,16 +285,11 @@ Deno.serve(async (req) => {
           })),
         });
         const system = [
-          `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
-          `You are NOT an AI assistant — you are the room's character voice.`,
-          `ABSOLUTE RULES:`,
-          `- Never use second-person ("you/your"). Always third-person.`,
-          `- 1–2 sentences. No bullet points, no hashtags.`,
-          `- Reference the names naturally. Urgent but fun. Not cruel.`,
-          `PERSONA: ${persona.label}`,
-          `STYLE: ${persona.style}`,
-          `LENGTH: max 260 characters.`,
-          `NAMES BEHIND ON STREAK: ${names}`,
+          `You are the Jars room mascot. One job: create tension.`,
+          `ONE sentence. MAX 120 chars. Ideal 60–90.`,
+          `Name the people falling behind. Create urgency and embarrassment. Not cruel.`,
+          `Third-person only. No report words. Pick ONE angle.`,
+          `PERSONA: ${persona.label} — ${persona.style}`,
         ].join("\n");
         const { text } = await openAiComplete(openaiKey, openaiModel, system, prompt, {
           kind: "last_stand",
@@ -302,11 +297,12 @@ Deno.serve(async (req) => {
         });
         const cleaned = clampText(
           text
+            .replaceAll(/\b(room\s+report|room\s+update)\b/gi, "")
             .replaceAll(/\bAI\b/gi, "")
             .replaceAll(/\byou\b/gi, "they")
             .replaceAll(/\byour\b/gi, "their")
             .trim(),
-          320,
+          160,
         );
         const payload = {
           v: 1,
@@ -379,16 +375,11 @@ Deno.serve(async (req) => {
           });
           const persona = pickPersonaForEvent("response_gap");
           const system = [
-            `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
-            `You are NOT an AI assistant — you are the room's character voice.`,
-            `ABSOLUTE RULES:`,
-            `- Never use second-person ("you/your"). Always third-person.`,
-            `- 1–2 sentences. No bullet points, no hashtags.`,
-            `- Reference real names and stats. No generic filler.`,
-            `- Fun, not cruel.`,
-            `PERSONA: ${persona.label}`,
-            `STYLE: ${persona.style}`,
-            `LENGTH: max 240 characters.`,
+            `You are the Jars room mascot. One job: create tension.`,
+            `ONE sentence. MAX 120 chars. Ideal 60–90.`,
+            `Name the person who got overtaken and hasn't responded. Call out the gap. Playful paranoia.`,
+            `Third-person only. Pick ONE angle. No summaries.`,
+            `PERSONA: ${persona.label} — ${persona.style}`,
           ].join("\n");
           const { text } = await openAiComplete(
             openaiKey,
@@ -399,11 +390,12 @@ Deno.serve(async (req) => {
           );
           const cleaned = clampText(
             text
+              .replaceAll(/\b(room\s+report|room\s+update)\b/gi, "")
               .replaceAll(/\bAI\b/gi, "")
               .replaceAll(/\byou\b/gi, "they")
               .replaceAll(/\byour\b/gi, "their")
               .trim(),
-            320,
+            160,
           );
           await sb.from("exercise_logs").insert({
             room_id: roomId,
@@ -456,26 +448,23 @@ Deno.serve(async (req) => {
             openaiKey,
             openaiModel,
             [
-              `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
-              `You are NOT an AI assistant — you are the room's character voice.`,
-              `ABSOLUTE RULES:`,
-              `- Never use second-person ("you/your"). Always third-person.`,
-              `- 1–2 sentences. No bullet points, no hashtags.`,
-              `- Reference real names and stats. Funny/dramatic, not cruel.`,
-              `PERSONA: ${persona.label}`,
-              `STYLE: ${persona.style}`,
-              `LENGTH: max 220 characters.`,
+              `You are the Jars room mascot. One job: create tension.`,
+              `ONE sentence. MAX 120 chars. Ideal 60–90.`,
+              `Call out the ghosts. Dramatic, funny, not cruel. Name the room.`,
+              `Third-person only. Pick ONE angle.`,
+              `PERSONA: ${persona.label} — ${persona.style}`,
             ].join("\n"),
             prompt,
             { kind: "retirement", room_id: roomId },
           );
           const cleaned = clampText(
             text
+              .replaceAll(/\b(room\s+report|room\s+update)\b/gi, "")
               .replaceAll(/\bAI\b/gi, "")
               .replaceAll(/\byou\b/gi, "they")
               .replaceAll(/\byour\b/gi, "their")
               .trim(),
-            320,
+            160,
           );
           await sb.from("exercise_logs").insert({
             room_id: roomId,
@@ -526,26 +515,23 @@ Deno.serve(async (req) => {
             openaiKey,
             openaiModel,
             [
-              `You are "Jars", the competitive mascot commentator for a fitness tracking app room.`,
-              `You are NOT an AI assistant — you are the room's character voice.`,
-              `ABSOLUTE RULES:`,
-              `- Never use second-person ("you/your"). Always third-person.`,
-              `- 1–2 sentences. No bullet points, no hashtags.`,
-              `- Reference the leader by name and points. Funny, competitive, not cruel.`,
-              `PERSONA: ${persona.label}`,
-              `STYLE: ${persona.style}`,
-              `LENGTH: max 200 characters.`,
+              `You are the Jars room mascot. One job: create tension.`,
+              `ONE sentence. MAX 120 chars. Ideal 60–90.`,
+              `Name the leader and what they're doing to the rest of the room. Funny.`,
+              `Third-person only. Pick ONE angle: domination / embarrassment / imbalance.`,
+              `PERSONA: ${persona.label} — ${persona.style}`,
             ].join("\n"),
             prompt,
             { kind: "carry_lore", room_id: roomId },
           );
           const cleaned = clampText(
             text
+              .replaceAll(/\b(room\s+report|room\s+update)\b/gi, "")
               .replaceAll(/\bAI\b/gi, "")
               .replaceAll(/\byou\b/gi, "they")
               .replaceAll(/\byour\b/gi, "their")
               .trim(),
-            320,
+            160,
           );
           await sb.from("exercise_logs").insert({
             room_id: roomId,

@@ -259,9 +259,12 @@ class _MemberKickCard extends StatelessWidget {
 
 // ─── AI feed cards ────────────────────────────────────────────────────────────
 
-/// Shared header row: 🏺 Jars · PersonaLabel  ·  timeAgo
+/// Shared header row: 🏺 Jars · PersonaLabel  [emoji]  ·  timeAgo
 Widget _aiHeader(ExerciseLog log) {
-  final personaLabel = log.aiPersona ?? 'Analyst';
+  final personaLabel = log.aiPersona;
+  final emoji = log.aiEmoji;
+  final isReactOnly = log.isAiReactOnly;
+
   return Row(
     children: [
       const Text('🏺', style: TextStyle(fontSize: 15)),
@@ -275,22 +278,28 @@ Widget _aiHeader(ExerciseLog log) {
           letterSpacing: 0.2,
         ),
       ),
-      const SizedBox(width: 6),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: JarsColors.primary.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          personaLabel,
-          style: GoogleFonts.inter(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: JarsColors.primary,
+      if (!isReactOnly && personaLabel != null) ...[
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: JarsColors.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            personaLabel,
+            style: GoogleFonts.inter(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: JarsColors.primary,
+            ),
           ),
         ),
-      ),
+      ],
+      if (emoji != null) ...[
+        const SizedBox(width: 8),
+        Text(emoji, style: const TextStyle(fontSize: 16)),
+      ],
       const Spacer(),
       Text(
         log.createdAt.timeAgo,
@@ -314,7 +323,7 @@ class _AiPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = log.aiText ?? '…';
+    final text = log.aiText;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -326,15 +335,17 @@ class _AiPostCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _aiHeader(log),
-          const SizedBox(height: 10),
-          Text(
-            text,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: JarsColors.textPrimary,
-              height: 1.45,
+          if (text != null && text.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              text,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: JarsColors.textPrimary,
+                height: 1.45,
+              ),
             ),
-          ),
+          ],
           _feedReactionBar(context, reactions: reactions, onReact: onReact),
         ],
       ),
@@ -357,11 +368,11 @@ class _AiReplyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = log.aiText ?? '…';
+    final text = log.aiText;
+    final isReactOnly = log.isAiReactOnly;
     final replyUsername = log.aiReplyToUsername;
     final replyExercise = log.aiReplyToExercise;
     final replyReps = log.aiReplyToReps;
-
     final hasReplyContext = replyUsername != null;
 
     return Container(
@@ -395,8 +406,11 @@ class _AiReplyCard extends StatelessWidget {
                     if (hasReplyContext) ...[
                       Row(
                         children: [
-                          Icon(Icons.reply_rounded,
-                              size: 13, color: JarsColors.textTertiary),
+                          Icon(
+                            Icons.reply_rounded,
+                            size: 13,
+                            color: JarsColors.textTertiary,
+                          ),
                           const SizedBox(width: 5),
                           Flexible(
                             child: Text(
@@ -414,15 +428,18 @@ class _AiReplyCard extends StatelessWidget {
                       const SizedBox(height: 8),
                     ],
                     _aiHeader(log),
-                    const SizedBox(height: 10),
-                    Text(
-                      text,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        color: JarsColors.textPrimary,
-                        height: 1.45,
+                    // Text body (not present in react-only mode)
+                    if (!isReactOnly && text != null && text.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        text,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: JarsColors.textPrimary,
+                          height: 1.45,
+                        ),
                       ),
-                    ),
+                    ],
                     _feedReactionBar(context, reactions: reactions, onReact: onReact),
                   ],
                 ),
