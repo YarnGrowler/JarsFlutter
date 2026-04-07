@@ -352,8 +352,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final card = FeedCard(
       log: log,
       reactions: reactions,
-      onReact: (log.isRankUpBroadcast ||
-              log.isWakeCard ||
+      onReact: (log.isWakeCard ||
               log.isFirstLog ||
               log.isMemberJoin ||
               log.isMemberKick)

@@ -59,7 +59,11 @@ class FeedCard extends StatelessWidget {
       return _MemberKickCard(log: log);
     }
     if (log.isRankUpBroadcast) {
-      return _RankUpCard(log: log);
+      return _RankUpCard(
+        log: log,
+        reactions: reactions,
+        onReact: onReact,
+      );
     }
     if (log.isOvertake) {
       return _OvertakeCard(log: log, reactions: reactions, onReact: onReact);
@@ -251,7 +255,14 @@ class _MemberKickCard extends StatelessWidget {
 
 class _RankUpCard extends StatelessWidget {
   final ExerciseLog log;
-  const _RankUpCard({required this.log});
+  final List<Reaction> reactions;
+  final ValueChanged<String>? onReact;
+
+  const _RankUpCard({
+    required this.log,
+    this.reactions = const [],
+    this.onReact,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -293,6 +304,11 @@ class _RankUpCard extends StatelessWidget {
               color: JarsColors.textSecondary,
               height: 1.35,
             ),
+          ),
+          _feedReactionBar(
+            context,
+            reactions: reactions,
+            onReact: onReact,
           ),
         ],
       ),
