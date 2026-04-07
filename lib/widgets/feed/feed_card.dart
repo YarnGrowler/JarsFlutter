@@ -274,29 +274,38 @@ class _AiFeedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = log.aiText ?? '…';
-    final ev = log.aiPayload?['events'];
-    final tag = ev is List ? ev.join(' · ') : '';
+    final persona = log.aiPayload?['persona'];
+    final personaLabel = persona is String && persona.isNotEmpty ? persona : 'Announcer';
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: JarsColors.surface,
         borderRadius: BorderRadius.circular(JarsRadius.card),
-        border: Border.all(color: JarsColors.primary.withValues(alpha: 0.4)),
+        border: Border.all(color: JarsColors.primary.withValues(alpha: 0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.auto_awesome, size: 18, color: JarsColors.primary),
+              const Text('🏺', style: TextStyle(fontSize: 16)),
               const SizedBox(width: 8),
               Text(
-                'Jars AI',
+                'Jars',
                 style: GoogleFonts.spaceGrotesk(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: JarsColors.primary,
+                  color: JarsColors.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                personaLabel,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: JarsColors.textTertiary,
                 ),
               ),
               const Spacer(),
@@ -309,16 +318,6 @@ class _AiFeedCard extends StatelessWidget {
               ),
             ],
           ),
-          if (tag.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              tag,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                color: JarsColors.textTertiary,
-              ),
-            ),
-          ],
           const SizedBox(height: 10),
           Text(
             text,

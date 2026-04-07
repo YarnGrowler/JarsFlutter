@@ -16,6 +16,89 @@ interface DetectedEvent {
   payload: Record<string, unknown>;
 }
 
+type Persona = {
+  label: string;
+  style: string;
+  weight: number;
+};
+
+function pickWeighted<T extends { weight: number }>(items: T[]): T {
+  const total = items.reduce((a, b) => a + Math.max(0, b.weight), 0);
+  if (total <= 0) return items[0];
+  let r = Math.random() * total;
+  for (const it of items) {
+    r -= Math.max(0, it.weight);
+    if (r <= 0) return it;
+  }
+  return items[items.length - 1];
+}
+
+function getPersonas(): Persona[] {
+  // Tunable via env. Keep defaults sane.
+  const common = Number(Deno.env.get("AI_PERSONA_COMMON_WEIGHT") ?? 82);
+  const rare = Number(Deno.env.get("AI_PERSONA_RARE_WEIGHT") ?? 15);
+  const legendary = Number(Deno.env.get("AI_PERSONA_LEGENDARY_WEIGHT") ?? 3);
+  return [
+    {
+      label: "Coach",
+      weight: common,
+      style:
+        "Warm competitor-coach. Short, punchy, no cringe, no emojis. Praise effort, nudge rivalry.",
+    },
+    {
+      label: "Announcer",
+      weight: rare,
+      style:
+        "Arena announcer vibe. Dramatic but not corny. One clever line max. No slang overload.",
+    },
+    {
+      label: "Gremlin Jar",
+      weight: legendary,
+      style:
+        "Chaotic mascot energy, but still tasteful. Teasing, never mean. No 'AI' references.",
+    },
+  ];
+}
+
+function eventTitle(key: string): string {
+  switch (key) {
+    case "spam_surge":
+      return "rapid-fire session";
+    case "silence_break":
+      return "silence snapped";
+    case "heist":
+      return "points heist";
+    case "ghost_return":
+      return "ghost return";
+    case "near_tie":
+      return "photo finish";
+    case "uno_reverse":
+      return "uno reverse";
+    case "room_milestone":
+      return "room milestone";
+    case "domination":
+      return "domination streak";
+    case "rivalry":
+      return "rivalry swing";
+    case "carry":
+      return "hard carry";
+    default:
+      return key.replaceAll("_", " ");
+  }
+}
+
+function safeUsername(s: unknown): string {
+  const v = typeof s === "string" ? s.trim() : "";
+  if (!v) return "?";
+  // Avoid weird prompt injection / giant names.
+  return v.slice(0, 24);
+}
+
+function clampText(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + "…";
+}
+
 function jsonLog(tag: string, data: Record<string, unknown> = {}) {
   console.log(JSON.stringify({ tag: "jars_ai_events", phase: tag, t: new Date().toISOString(), ...data }));
 }
@@ -24,38 +107,115 @@ function isBroadcastName(name: string): boolean {
   return name.startsWith("__");
 }
 
+/** Newer models (e.g. gpt-5.x) require max_completion_tokens, not max_tokens. */
+interface OpenAiUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  [k: string]: unknown;
+}
+
+interface OpenAiCompleteResult {
+  text: string;
+  usage: OpenAiUsage | null;
+  responseId: string | null;
+  modelReturned: string | null;
+}
+
 async function openAiComplete(
   apiKey: string,
   model: string,
   system: string,
   user: string,
-): Promise<string> {
+  opts: { maxCompletionTokens?: number; logContext?: Record<string, unknown> } = {},
+): Promise<OpenAiCompleteResult> {
+  const rawMax = Deno.env.get("OPENAI_MAX_COMPLETION_TOKENS")?.trim();
+  const maxCompletionTokens = opts.maxCompletionTokens ??
+    Math.max(16, Math.min(4096, Number.isFinite(Number(rawMax)) ? Number(rawMax) : 220));
+
+  const logFullIo = Deno.env.get("AI_LOG_FULL_IO") === "true";
+
+  const body: Record<string, unknown> = {
+    model,
+    temperature: 0.85,
+    max_completion_tokens: maxCompletionTokens,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  };
+
+  jsonLog("openai_request", {
+    ...opts.logContext,
+    model,
+    temperature: body.temperature,
+    max_completion_tokens: maxCompletionTokens,
+    system_chars: system.length,
+    user_chars: user.length,
+    messages_total_chars: system.length + user.length,
+    system_preview: system.slice(0, 800),
+    user_preview: user.slice(0, 4000),
+    ...(logFullIo ? { system_full: system, user_full: user } : {}),
+  });
+
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      temperature: 0.85,
-      max_tokens: 220,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
+    body: JSON.stringify(body),
   });
+
+  const rawText = await res.text();
+
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`OpenAI HTTP ${res.status}: ${t.slice(0, 500)}`);
+    jsonLog("openai_http_error", {
+      status: res.status,
+      body_preview: rawText.slice(0, 1200),
+    });
+    throw new Error(`OpenAI HTTP ${res.status}: ${rawText.slice(0, 500)}`);
   }
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+
+  const data = JSON.parse(rawText) as {
+    id?: string;
+    model?: string;
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+    usage?: OpenAiUsage;
   };
-  const text = data.choices?.[0]?.message?.content?.trim();
+
+  const usage = data.usage ?? null;
+  const text = data.choices?.[0]?.message?.content?.trim() ?? "";
+  const finishReason = data.choices?.[0]?.finish_reason;
+
+  jsonLog("openai_response", {
+    ...opts.logContext,
+    response_id: data.id ?? null,
+    model_requested: model,
+    model_returned: data.model ?? null,
+    usage,
+    finish_reason: finishReason ?? null,
+    completion_chars: text.length,
+    completion_preview: text.slice(0, 400),
+    completion_full: logFullIo ? text : undefined,
+    /** Use `usage` with https://openai.com/api/pricing/ for your model (USD per 1M tokens). */
+    cost_hint: usage
+      ? {
+          prompt_tokens: usage.prompt_tokens,
+          completion_tokens: usage.completion_tokens,
+          total_tokens: usage.total_tokens,
+        }
+      : null,
+  });
+
   if (!text) throw new Error("OpenAI empty response");
-  return text;
+
+  return {
+    text,
+    usage,
+    responseId: data.id ?? null,
+    modelReturned: data.model ?? null,
+  };
 }
 
 type ScoreRow = {
@@ -471,8 +631,14 @@ Deno.serve(async (req) => {
 
     const top3 = sorted.slice(0, 3).map((s, i) => ({
       rank: i + 1,
-      username: s.profiles?.username ?? "?",
+      username: safeUsername(s.profiles?.username),
       total: Number(s.total_score ?? 0),
+    }));
+
+    const persona = pickWeighted(getPersonas());
+    const eventsForAi = events.map((e) => ({
+      title: eventTitle(e.key),
+      payload: e.payload ?? {},
     }));
 
     const userPrompt = JSON.stringify({
@@ -481,19 +647,50 @@ Deno.serve(async (req) => {
       actorUserId: uid,
       log: { points: pointsEarned, rankBefore, rankAfter },
       top3,
-      events,
+      events: eventsForAi,
     });
 
-    const system =
-      `You are the Jars room narrator. JSON includes one or more detected events — weave them into ONE message ` +
-      `(max 320 characters). No hashtags. No bullet points. Playful, competitive, not cruel.`;
+    const system = [
+      `You are "Jars", the room's mascot commentator.`,
+      `Write as a fellow competitor/announcer, NOT as an AI.`,
+      `ABSOLUTE RULES:`,
+      `- Never say "I am an AI" or mention prompts/models.`,
+      `- Never use second-person ("you/your"). Speak to the room in third-person.`,
+      `- Never output internal codes/keys. Only natural language.`,
+      `- 1–2 sentences. No bullet points. No hashtags.`,
+      `- Keep it specific: usernames + ranks + points when relevant.`,
+      `- Competitive, playful, not cruel.`,
+      `STYLE: ${persona.style}`,
+      `LENGTH: max 260 characters.`,
+    ].join("\n");
 
-    const text = await openAiComplete(openaiKey, openaiModel, system, userPrompt);
+    const { text, usage, responseId, modelReturned } = await openAiComplete(
+      openaiKey,
+      openaiModel,
+      system,
+      userPrompt,
+      { logContext: { log_id: logId, room_id: roomId } },
+    );
+
+    // Extra safety in case the model slips.
+    const cleaned = clampText(
+      text
+        .replaceAll(/\bspam_surge\b/gi, "rapid-fire session")
+        .replaceAll(/\bAI\b/gi, "")
+        .replaceAll(/\byou\b/gi, "they")
+        .replaceAll(/\byour\b/gi, "their")
+        .trim(),
+      320,
+    );
 
     const payload = {
       v: 1,
-      text,
+      text: cleaned,
+      persona: persona.label,
       model: openaiModel,
+      model_returned: modelReturned,
+      openai_response_id: responseId,
+      usage,
       events: events.map((e) => e.key),
       eventPayloads: events,
     };
@@ -513,7 +710,7 @@ Deno.serve(async (req) => {
       for (const m of members ?? []) {
         const mid = (m as { user_id: string }).user_id;
         if (mid === uid) continue;
-        await sb.from("notifications").insert({ user_id: mid, body: text.slice(0, 500) });
+        await sb.from("notifications").insert({ user_id: mid, body: cleaned.slice(0, 500) });
       }
     }
 

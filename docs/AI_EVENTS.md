@@ -20,8 +20,14 @@ Daily cron function `cron-ai-daily` (Bearer `CRON_SECRET`): last stand batch, re
 
    - `OPENAI_API_KEY` — required for AI text.
    - `OPENAI_MODEL` — optional (default `gpt-4o-mini`; set to your preferred nano/small model when available).
+   - `OPENAI_MAX_COMPLETION_TOKENS` — optional cap (default `220` for `process-ai-events`, `240` for cron default in code).
    - `CRON_SECRET` — long random string; use as `Authorization: Bearer …` for `cron-ai-daily`.
    - `AI_EVENTS_SEND_PUSH` — optional `true` to mirror AI lines into `notifications` (same pipeline as existing pushes).
+   - `AI_LOG_FULL_IO` — optional `true` to log **full** system/user prompts and completion text in Edge logs (noisy; use when debugging).
+
+**API note:** Newer models require `max_completion_tokens` (not `max_tokens`). Functions use `max_completion_tokens` only.
+
+**Cost / usage:** Every successful call logs JSON lines `openai_request` and `openai_response` with `usage` (`prompt_tokens`, `completion_tokens`, `total_tokens`) and `cost_hint`. Multiply by your model’s **USD per 1M tokens** on [OpenAI pricing](https://openai.com/api/pricing/) (or your dashboard usage export).
 
 3. **Deploy functions**
 
