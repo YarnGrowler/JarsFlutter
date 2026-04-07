@@ -394,7 +394,16 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           : null,
     );
 
-    if (!isAdmin) return card;
+    // Nest AI reply cards under the thread (visual reply indentation).
+    final Widget paddedCard =
+        log.isAiReply
+            ? Padding(
+                padding: const EdgeInsets.only(left: 14),
+                child: card,
+              )
+            : card;
+
+    if (!isAdmin) return paddedCard;
 
     return Dismissible(
       key: ValueKey('admin-dismiss-${log.id}'),
@@ -441,7 +450,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           return false;
         }
       },
-      child: card,
+      child: paddedCard,
     );
   }
 

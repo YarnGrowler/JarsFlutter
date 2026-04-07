@@ -354,8 +354,9 @@ class _AiPostCard extends StatelessWidget {
 }
 
 /// AI card generated in direct reaction to a specific person's log.
-/// Renders with a reply-chip showing who/what triggered it.
-class _AiReplyCard extends StatelessWidget {
+/// Thread-style: indented in feed, rounded clip so the accent bar matches card corners,
+/// collapsible preview for long lines.
+class _AiReplyCard extends StatefulWidget {
   final ExerciseLog log;
   final List<Reaction> reactions;
   final ValueChanged<String>? onReact;
@@ -367,7 +368,34 @@ class _AiReplyCard extends StatelessWidget {
   });
 
   @override
+  State<_AiReplyCard> createState() => _AiReplyCardState();
+}
+
+class _AiReplyCardState extends State<_AiReplyCard> {
+  static const double _outerR = JarsRadius.card;
+  /// Inner clip: sits just inside the 1px border so corners align visually.
+  static const double _innerR = _outerR - 1;
+
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    final t = widget.log.aiText ?? '';
+    final collapsible =
+        t.length > 88 || t.contains('\n') || t.split(RegExp(r'\s+')).length > 14;
+    _expanded = !collapsible;
+  }
+
+  String _replyChipText(String username, String? exercise, int? reps) {
+    if (exercise == null) return username;
+    if (reps != null && reps > 0) return '$username · $exercise · ${reps}x';
+    return '$username · $exercise';
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final log = widget.log;
     final text = log.aiText;
     final isReactOnly = log.isAiReactOnly;
     final replyUsername = log.aiReplyToUsername;
@@ -375,86 +403,165 @@ class _AiReplyCard extends StatelessWidget {
     final replyReps = log.aiReplyToReps;
     final hasReplyContext = replyUsername != null;
 
+    final t = text ?? '';
+    final canCollapse = !isReactOnly &&
+        t.isNotEmpty &&
+        (t.length > 88 || t.contains('\n') || t.split(RegExp(r'\s+')).length > 14);
+
     return Container(
       decoration: BoxDecoration(
-        color: JarsColors.surface,
-        borderRadius: BorderRadius.circular(JarsRadius.card),
-        border: Border.all(color: JarsColors.primary.withValues(alpha: 0.20)),
+        borderRadius: BorderRadius.circular(_outerR),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Left accent strip (Discord-reply style)
-            Container(
-              width: 3,
-              decoration: BoxDecoration(
-                color: JarsColors.primary.withValues(alpha: 0.55),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(JarsRadius.card),
-                  bottomLeft: Radius.circular(JarsRadius.card),
-                ),
-              ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_outerR),
+        child: Container(
+          decoration: BoxDecoration(
+            color: JarsColors.surfaceRaised,
+            borderRadius: BorderRadius.circular(_outerR),
+            border: Border.all(
+              color: JarsColors.primary.withValues(alpha: 0.28),
+              width: 1,
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Reply-to chip
-                    if (hasReplyContext) ...[
-                      Row(
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(_innerR),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Accent: full height, clipped by parent → matches rounded corners
+                  Container(
+                    width: 4,
+                    color: JarsColors.primary.withValues(alpha: 0.75),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Icon(
-                            Icons.reply_rounded,
-                            size: 13,
-                            color: JarsColors.textTertiary,
-                          ),
-                          const SizedBox(width: 5),
-                          Flexible(
-                            child: Text(
-                              _replyChipText(replyUsername, replyExercise, replyReps),
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: JarsColors.textSecondary,
-                                fontWeight: FontWeight.w500,
-                              ),
+                          // Reply target — compact thread label
+                          if (hasReplyContext) ...[
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.subdirectory_arrow_right_rounded,
+                                  size: 15,
+                                  color: JarsColors.primary.withValues(alpha: 0.85),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _replyChipText(
+                                      replyUsername,
+                                      replyExercise,
+                                      replyReps,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      letterSpacing: 0.1,
+                                      color: JarsColors.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
+                            const SizedBox(height: 8),
+                          ],
+                          _aiHeader(log),
+                          if (!isReactOnly && t.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            if (canCollapse && !_expanded) ...[
+                              Text(
+                                t,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  color: JarsColors.textPrimary,
+                                ),
+                              ),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton(
+                                  onPressed: () =>
+                                      setState(() => _expanded = true),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: Text(
+                                    'Show more',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: JarsColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ] else ...[
+                              Text(
+                                t,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  height: 1.45,
+                                  color: JarsColors.textPrimary,
+                                ),
+                              ),
+                              if (canCollapse && _expanded)
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton(
+                                    onPressed: () =>
+                                        setState(() => _expanded = false),
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: Text(
+                                      'Show less',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: JarsColors.textTertiary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ],
+                          _feedReactionBar(
+                            context,
+                            reactions: widget.reactions,
+                            onReact: widget.onReact,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                    ],
-                    _aiHeader(log),
-                    // Text body (not present in react-only mode)
-                    if (!isReactOnly && text != null && text.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        text,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          color: JarsColors.textPrimary,
-                          height: 1.45,
-                        ),
-                      ),
-                    ],
-                    _feedReactionBar(context, reactions: reactions, onReact: onReact),
-                  ],
-                ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
-  }
-
-  String _replyChipText(String username, String? exercise, int? reps) {
-    if (exercise == null) return username;
-    if (reps != null && reps > 0) return '$username · $exercise · ${reps}x';
-    return '$username · $exercise';
   }
 }
 
