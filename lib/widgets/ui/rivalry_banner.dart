@@ -494,7 +494,7 @@ class _RivalryMessageGenerator {
       title: _pick([
         '#$rank of $totalRanks—$an is $gapUp pts up.',
         '$gapUp to pass $an. The meat of the ladder.',
-        'Middle war: chase $an, don’t gift ${_name(behind)} behind you.',
+        'Chase $an, don’t gift ${_name(behind)} behind you.',
       ], r),
       subtitle: _pick([
         'Two-front fight: up and down.',
