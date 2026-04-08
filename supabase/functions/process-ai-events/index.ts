@@ -900,10 +900,18 @@ Deno.serve(async (req) => {
 
     // ── Decide what fires ─────────────────────────────────────────────────────
     const hasEvents = events.length > 0;
-    // 30 % chance of a casual reply even on a "normal" log with no detected events.
-    const shouldCasualReply = !hasEvents && Math.random() < 0.30;
-    // 30 % chance of an emoji reaction, independent of text reply.
-    const shouldEmojiReact = Math.random() < 0.30;
+    /** Rare rolls on "boring" logs only — tune via secrets without deploy (0–1). */
+    const casualRate = Math.min(
+      1,
+      Math.max(0, Number(Deno.env.get("AI_CASUAL_REPLY_RATE") ?? "0.06")),
+    );
+    const emojiRate = Math.min(
+      1,
+      Math.max(0, Number(Deno.env.get("AI_EMOJI_REACT_RATE") ?? "0.06")),
+    );
+    // ~6% each by default → ~88% of normal logs get no AI reply/react at all.
+    const shouldCasualReply = !hasEvents && Math.random() < casualRate;
+    const shouldEmojiReact = Math.random() < emojiRate;
 
     if (!hasEvents && !shouldCasualReply && !shouldEmojiReact) {
       jsonLog("no_events_skip", { ms: Math.round(performance.now() - wall), log_id: logId });
