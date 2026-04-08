@@ -24,6 +24,7 @@ class EventService {
     required String username,
     required String exerciseName,
     required int repCount,
+    double logWeight = 0,
     required double pointsBefore,
     required double pointsAfter,
     required int streakBefore,
@@ -39,6 +40,7 @@ class EventService {
           username,
           exerciseName,
           repCount,
+          logWeight,
           currentLogId,
         ),
         _checkFirstLogOfDay(roomId, userId, username),
@@ -99,6 +101,7 @@ class EventService {
     String username,
     String exerciseName,
     int repCount,
+    double logWeight,
     String currentLogId,
   ) async {
     final logs = await LogService.getUserLogs(roomId, userId, limit: 500);
@@ -110,26 +113,58 @@ class EventService {
               l.id != currentLogId,
         )
         .toList();
-    if (prior.isEmpty) return;
 
-    var prevBest = 0;
+    var prevBestReps = 0;
+    var prevBestWeight = 0.0;
     for (final log in prior) {
-      if (log.count > prevBest) prevBest = log.count;
+      if (log.count > prevBestReps) prevBestReps = log.count;
+      if (log.weight > prevBestWeight) prevBestWeight = log.weight;
     }
-    if (repCount <= prevBest) return;
+
+    final w = logWeight > 0 ? logWeight : 0.0;
+    final repPr = prior.isNotEmpty && repCount > prevBestReps;
+    final weightPr = w > 0 && w > prevBestWeight;
+
+    if (!repPr && !weightPr) return;
+
+    String payload;
+    String notifyBody;
+    if (repPr && weightPr) {
+      final wStr = _formatWeight(w);
+      final pwStr = prevBestWeight > 0 ? _formatWeight(prevBestWeight) : 'none';
+      payload =
+          '💥 $username set a new record · $repCount $exerciseName @ $wStr '
+          '(was ${prevBestReps} reps, $pwStr max weight)';
+      notifyBody =
+          '$username PR · $repCount× $exerciseName @ $wStr (reps was $prevBestReps, weight was $pwStr)';
+    } else if (repPr) {
+      payload =
+          '💥 $username set a new record · $repCount $exerciseName (was $prevBestReps)';
+      notifyBody = '$username PR · $repCount× $exerciseName (prev $prevBestReps)';
+    } else {
+      final wStr = _formatWeight(w);
+      final pwStr = prevBestWeight > 0 ? _formatWeight(prevBestWeight) : 'none';
+      payload =
+          '💥 $username new weight PR · $exerciseName @ $wStr (was $pwStr)';
+      notifyBody = '$username weight PR · $exerciseName $wStr (was $pwStr)';
+    }
 
     await _insertBroadcast(
       roomId: roomId,
       userId: userId,
       prefix: ExerciseLog.kPrPrefix,
-      payload:
-          '💥 $username set a new record · $repCount $exerciseName (was $prevBest)',
+      payload: payload,
     );
     await NotificationService.notifyRoomMembersExcept(
       roomId: roomId,
       excludeUserId: userId,
-      body: '$username PR · $repCount× $exerciseName (prev $prevBest)',
+      body: notifyBody,
     );
+  }
+
+  static String _formatWeight(double lb) {
+    if (lb % 1 == 0) return '${lb.toInt()} lb';
+    return '${lb.toStringAsFixed(1)} lb';
   }
 
   // ── First Log of Day ───────────────────────────────────────────────────────

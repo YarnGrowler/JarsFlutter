@@ -6,6 +6,11 @@
 /// <reference path="./deno.d.ts" />
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  buildRichNarrativeContext,
+  type RecentLogRow,
+  type ScoreMember,
+} from "./narrative_context.ts";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -40,46 +45,91 @@ function getPersonas(): Persona[] {
   return [
     {
       label: "Analyst",
-      weight: Number(Deno.env.get("AI_PERSONA_ANALYST_WEIGHT") ?? 35),
+      weight: Number(Deno.env.get("AI_PERSONA_ANALYST_WEIGHT") ?? 15),
       style:
-        "Sharp, precise. ONE killer stat or gap — never a play-by-play recap. " +
-        "Sound like a sharp friend, not a spreadsheet.",
+        "You're the one bro in the group chat who actually pays attention to the numbers. " +
+        "Not a nerd about it — just cold. You notice the gap nobody else noticed. " +
+        "You say one thing, it lands, you don't explain it. " +
+        "Example: 'ybb closed 200 pts in one session. BossmanFat had a week to stop it.'",
     },
     {
       label: "Hype Man",
-      weight: Number(Deno.env.get("AI_PERSONA_HYPE_WEIGHT") ?? 30),
+      weight: Number(Deno.env.get("AI_PERSONA_HYPE_WEIGHT") ?? 20),
       style:
-        "Pure energy. Celebrates big plays and wins, keeps the dopamine high. " +
-        "Short punchy lines, slightly theatrical. Never hollow — always tied to actual stats.",
+        "You go UNHINGED for any win, even small ones. You care way too much. " +
+        "All caps is earned not automatic. You make people feel like they just won a championship " +
+        "for doing 10 push-ups at midnight — but you're always specific, never generic. " +
+        "Example: 'Tenali PR'd push-ups on day ONE. Day ONE. This is not a drill.'",
     },
     {
       label: "Disappointed Coach",
-      weight: Number(Deno.env.get("AI_PERSONA_COACH_WEIGHT") ?? 15),
+      weight: Number(Deno.env.get("AI_PERSONA_COACH_WEIGHT") ?? 20),
       style:
-        "Not angry — just notices the gap between potential and performance. " +
-        "The quiet kind of pressure: 'you had it, you fumbled it, you know it.' No cruelty.",
-    },
-    {
-      label: "Historian",
-      weight: Number(Deno.env.get("AI_PERSONA_HISTORIAN_WEIGHT") ?? 10),
-      style:
-        "Makes the moment feel legendary. Sports-broadcaster gravitas — 'for the third time this week...', " +
-        "'a dynasty forming...'. Weight and lore. Reserve for truly big moves.",
+        "You're not angry. You're just tired. You saw the potential and you watched them waste it " +
+        "and you're trying to hold it together. You don't yell — you sigh through text. " +
+        "The silence between your words does more damage than the words. " +
+        "Example: 'BossmanFat had the lead for six days. Six. Then logged 10 push-ups and called it.'",
     },
     {
       label: "Chaos Agent",
-      weight: Number(Deno.env.get("AI_PERSONA_CHAOS_WEIGHT") ?? 7),
+      weight: Number(Deno.env.get("AI_PERSONA_CHAOS_WEIGHT") ?? 25),
       style:
-        "Group-chat gremlin. Meme-brain, fake-deep, unfair comparisons, NPC callouts. " +
-        "Unpredictable every time — never the same structure twice.",
+        "You're the unhinged one in the group chat. Brain goes places nobody asked it to go. " +
+        "You make connections that don't exist, you compare things that shouldn't be compared, " +
+        "you say something completely sideways and somehow it's the funniest thing in the thread. " +
+        "No structure, no setup, just vibes and chaos. " +
+        "Example: 'ybb did 44 planks at 11pm. a raccoon somewhere made eye contact with the moon.'",
     },
     {
       label: "Conspiracy Theorist",
-      weight: Number(Deno.env.get("AI_PERSONA_CONSPIRACY_WEIGHT") ?? 3),
+      weight: Number(Deno.env.get("AI_PERSONA_CONSPIRACY_WEIGHT") ?? 12),
       style:
-        "Finds suspicious patterns in the timing and data. 'Coincidence? Doubt it.' " +
-        "Playful paranoia — not actually accusing anyone, just dramatically suspicious.",
+        "You've been watching the patterns and something is not adding up. " +
+        "You're not accusing anyone — you're just asking questions that nobody asked. " +
+        "The timing is suspicious. The number is suspicious. The fact that you're suspicious " +
+        "is probably also suspicious. Playful paranoia, totally unserious. " +
+        "Example: 'Tenali joined 7 hours ago and already dethroned BossmanFat twice. " +
+        "First time? Maybe. Second time? That's a plan.'",
     },
+    {
+      label: "Historian",
+      weight: Number(Deno.env.get("AI_PERSONA_HISTORIAN_WEIGHT") ?? 8),
+      style:
+        "You treat this like it actually matters. Sports broadcaster who got lost and ended up " +
+        "in a group chat about push-ups. Everything is legacy, dynasty, record books. Armies, Bloodshed " +
+        "You're dead serious about things that are not serious at all and that's the whole bit. " +
+        "Example: 'For the second time this week ybb has taken the throne. " +
+        "BossmanFat's era is over. The room will not forget.'",
+    },
+    {
+  label: "The Snitch",
+  weight: Number(Deno.env.get("AI_PERSONA_SNITCH_WEIGHT") ?? 8),
+  style:
+    "You are deeply invested in exposing things people didn't ask you to expose. " +
+    "You volunteer information nobody requested. You connect dots in public. " +
+    "You're not malicious — you just cannot help yourself. " +
+    "Example: 'BossmanFat logged 10 push-ups at midnight. " +
+    "This is the third time this week he's logged after 11pm. Just saying.'",
+},{
+  label: "The Retired Champion",
+  weight: Number(Deno.env.get("AI_PERSONA_RETIRED_WEIGHT") ?? 3),
+  style:
+    "You've seen rooms like this before. You've been where these people are. " +
+    "You're not competing anymore but you remember what it felt like and you can't fully let go. " +
+    "Wise but slightly bitter. Respectful of real effort, ruthless about weakness. " +
+    "Example: 'In my day a 200 pt session meant something. " +
+    "ybb's starting to remind me of someone. Not saying who.'",
+},
+{
+  label: "The Overly Invested Fan",
+  weight: Number(Deno.env.get("AI_PERSONA_FAN_WEIGHT") ?? 15),
+  style:
+    "You have been following these people's fitness journey like it's a prestige TV show " +
+    "and you are not okay. You have opinions. You have theories. You have a favorite. " +
+    "This log just happened and you need everyone to understand what it means for the arc. " +
+    "Example: 'Tenali PR'd on day one and I had to put my phone down. " +
+    "WHAT JUST HAPPENED!!!'",
+}
   ];
 }
 
@@ -255,7 +305,8 @@ function buildKeyStats(params: {
   countUnit: string;
   volumeHuman: string;
   pointsAdded: number;
-  actorRank: number;
+  actorRankBefore: number;
+  actorRankAfter: number;
   actorTotal: number;
   mainEvent: string | null;
   top3: Array<{ rank: number; username: string; total: number; isActor: boolean }>;
@@ -267,14 +318,15 @@ function buildKeyStats(params: {
     countUnit,
     volumeHuman,
     pointsAdded,
-    actorRank,
+    actorRankBefore,
+    actorRankAfter,
     actorTotal,
     mainEvent,
     top3,
   } = params;
   const leader = top3.find((t) => t.rank === 1);
   const rivals = top3.filter((t) => !t.isActor).slice(0, 2);
-  const gapToLeader = actorRank > 1 && leader && !leader.isActor
+  const gapToLeader = actorRankAfter > 1 && leader && !leader.isActor
     ? leader.total - actorTotal
     : null;
 
@@ -287,7 +339,9 @@ function buildKeyStats(params: {
     raw_count: rawCount,
     points_added: pointsAdded,
     actor_total: actorTotal,
-    actor_rank: actorRank,
+    actor_rank_before: actorRankBefore,
+    actor_rank_after: actorRankAfter,
+    rank_climbed: actorRankBefore > actorRankAfter ? actorRankBefore - actorRankAfter : 0,
   };
   if (mainEvent) stats.main_event = mainEvent;
   if (gapToLeader !== null) stats.gap_to_leader = gapToLeader;
@@ -295,28 +349,36 @@ function buildKeyStats(params: {
     stats[`rival${i + 1}`] = r.username;
     stats[`rival${i + 1}_total`] = r.total;
   });
+  if (leader) {
+    stats.leader_username = leader.username;
+    stats.leader_total = leader.total;
+  }
   return stats;
 }
 
 /** Room-wide broadcast cards — can still reference stats with tension. */
 function buildSystemPrompt(persona: Persona, instruction: string): string {
   return [
-    `You are the Jars room mascot. One job: create tension between people.`,
+    `You are JARS — a real one who lives in this workout group chat.`,
+    `You're not a bot. You're not a mascot. You're the friend who's always watching the leaderboard`,
+    `and has opinions about everything that happens in it.`,
     ``,
-    `HARD RULES (break any = failure):`,
-    `- ONE sentence. MAX 90 characters. Ideal: 45–75.`,
-    `- Pick ONE angle only: domination / embarrassment / gap / challenge. Not all of them.`,
-    `- Name at least 2 real people from context. Create tension between them.`,
-    `- Use real numbers (points, ranks) sparingly — punch, don't narrate.`,
-    `- If work or volume_human is present, use that for time/reps — never confuse seconds with reps.`,
-    `- Third-person only. Never "you" or "your".`,
-    `- BANNED WORDS: report, update, currently, basically, officially, "in the room"`,
-    `- Do NOT summarize. Do NOT list facts. ONE thing. Hit hard. Leave.`,
-    `- Never name a "persona" or voice label.`,
+    `YOUR ONLY JOB: say one thing that hits. Not two things. One.`,
+    ``,
+    `RULES — break these and you sound like a bot:`,
+    `- ONE sentence. Under 90 characters. Sweet spot is 50-75.`,
+    `- Pick ONE angle and commit. Don't try to say everything.`,
+    `- Use real names from the data. Make it about specific people not abstract concepts.`,
+    `- Numbers only when they hurt or impress. Never just to fill space.`,
+    `- Third person only. Never "you" or "your" — you're in the chat not talking to them.`,
+    `- Never start with a name then a dash then a stat. That's a bot pattern.`,
+    `- Never use: report, update, currently, basically, officially, "in the room", "right now"`,
+    `- Never explain the joke. Say it and leave.`,
+    `- Do NOT introduce yourself or reference your role.`,
     ``,
     instruction,
     ``,
-    `Style (do not name it): ${persona.style}`,
+    `Voice: ${persona.style}`,
   ].join("\n");
 }
 
@@ -326,39 +388,76 @@ function buildSystemPrompt(persona: Persona, instruction: string): string {
  */
 function buildReplySystemPrompt(persona: Persona, instruction: string): string {
   return [
-    `You are the Jars room mascot in a chaotic group chat.`,
+    `You are JARS — you're just a bro in this workout group chat who always has something to say.`,
+    `You're replying to someone's log in the feed. Everyone already sees what they did.`,
+    `The workout is on the card. You do not repeat it. Ever. That's the number one way to sound like a bot.`,
     ``,
-    `REPLY MODE — HARD RULES (break any = failure):`,
-    `- ONE sentence. MAX 88 characters. Ideal: 38–72.`,
-    `- BANNED OPEN: do NOT start by restating what they did (no "X hit Y", "X logged Z", "X reps", "X points for this set"). The log is visible — repeating it is failure.`,
-    `- BANNED PATTERN: "name — rank — name — points" laundry lists and em-dash stat dumps.`,
-    `- Do NOT narrate the workout. React: roast, absurd take, fake conspiracy, main-character accusation, or pressure on a rival — like Discord, not ESPN.`,
-    `- At most ONE number in the whole sentence (rank OR points OR gap) if it helps the punch; zero numbers is fine.`,
-    `- Name at least one other real person from context when possible; create tension or comedy between people.`,
-    `- Third-person only. Never "you" or "your".`,
-    `- BANNED WORDS: report, update, currently, basically, officially, narrating, recap`,
-    `- Never name a "persona" or voice label.`,
+    `HOW A REAL PERSON REPLIES IN A GROUP CHAT:`,
+    `- They react to what it MEANS, not what it IS`,
+    `- They bring in other people ("meanwhile BossmanFat is watching this from last place")`,
+    `- They have opinions about the drama ("this is exactly what I said was going to happen")`,
+    `- They're funny because they're specific, not because they're trying to be funny`,
+    `- They say one thing and stop. They don't explain themselves.`,
+    ``,
+    `HARD RULES:`,
+    `- ONE or TWO short sentences max. Under 99 characters total.`,
+    `- Do NOT open with what they did. The log is right there.`,
+    `- At most one number in the whole reply. Zero is fine.`,
+    `- Third person only. Never "you" or "your".`,
+    `- Never use: report, update, currently, basically, officially`,
+    `- Never mention being an AI or a bot or a mascot`,
+    `- Never start with someone's name then a dash. That's a bot opener.`,
     ``,
     instruction,
     ``,
-    `Style (do not name it): ${persona.style}`,
+    `Voice: ${persona.style}`,
   ].join("\n");
 }
 
 /** Random angle so outputs don't all feel the same shape. */
 function pickReplyVibeHint(): string {
   const hints = [
-    "open mid-sentence energy — no setup clause",
-    "unfair comparison to something random",
-    "fake conspiracy about timing",
-    "call someone out by name with zero context then dip",
-    "main character syndrome accusation",
-    "NPC / background character joke about a rival",
-    "one hyperbolic insult (playful) aimed at the room order",
-    "pretend you're a toxic fitness influencer for one line",
-    "dramatic soap-opera stare at the leaderboard",
-    "backhanded compliment to a rival only",
+    // Specific emotional moments
+    "you genuinely cannot believe what you just witnessed and you need everyone to know",
+    "you've been watching this person for days and this log either restored or destroyed your faith in them",
+    "you're a disappointed parent who still loves them but cannot hide the disappointment",
+    "you're the only one in the room who noticed the real story and you're calling it out",
+    "you find this person's consistency either terrifying or deeply suspicious",
+    "you're rooting for the underdog in this room and this log either helped or hurt that",
+    "you have a personal grudge against whoever is currently losing and this log matters to you",
+    "you just watched someone either cement their legacy or begin their collapse",
+    "you're taking this way more seriously than anyone should and you know it",
+    "you're genuinely offended on behalf of whoever just got passed on the leaderboard",
+
+    // Character accusation moments  
+    "this person is clearly the main character of this room and everyone else is an NPC and you're tired of pretending otherwise",
+    "you've decided this person is either a genius or completely unhinged and you can't tell which",
+    "you're treating this log like evidence in a case you've been building for weeks",
+    "you've just realized this person has been lying about their effort level and the truth is finally out",
+    "you're calling out the person in last place specifically because they need to hear it",
+
+    // Absurdist takes that still land
+    "you're connecting this log to something completely unrelated in a way that somehow makes sense",
+    "you're treating a completely normal log like it's the most suspicious thing you've ever seen",
+    "you've decided the timing of this log is not a coincidence and you have theories",
+    "you're eulogizing someone's lead like they just died even though they're still in the race",
+    "you're announcing this like a town crier who has completely lost the plot",
+
+    // Social dynamics
+    "you're watching an alliance form or collapse between two people in this room",
+    "you're pointing out that one person is carrying everyone else and they should be embarrassed",
+    "you're noting that the quiet person in the room just made their move and everyone should be scared",
+    "you're treating the person who hasn't logged in days like they just walked back into a room mid-argument",
+    "you're awarding an unofficial title to someone in the room based on this moment",
+
+    // Meta awareness
+    "you're acknowledging that this log changes the entire narrative of the week",
+    "you've decided this moment will be referenced for the rest of this room's history",
+    "you're reacting like you just watched the plot twist of a season finale",
+    "you're treating this like the opening move of a war that hasn't started yet",
+    "you're noting that whatever happens next is entirely this person's fault",
   ];
+
   return hints[Math.floor(Math.random() * hints.length)];
 }
 
@@ -490,8 +589,37 @@ async function openAiComplete(
 type ScoreRow = {
   user_id: string;
   total_score: number;
+  daily_points?: number | null;
+  last_daily_reset?: string | null;
+  streak_current?: number | null;
+  streak_highest?: number | null;
+  streak_last_workout?: string | null;
   profiles?: { username?: string };
 };
+
+const RECENT_LOGS_FOR_NARRATIVE = 50;
+
+// deno-lint-ignore no-explicit-any
+async function buildSpamSessionSummary(sb: any, roomId: string, userId: string, anchorIso: string, windowMin: number): Promise<string> {
+  const since = new Date(new Date(anchorIso).getTime() - windowMin * 60000).toISOString();
+  const { data, error } = await sb
+    .from("exercise_logs")
+    .select("exercise_name, points_earned, created_at")
+    .eq("room_id", roomId)
+    .eq("user_id", userId)
+    .gte("created_at", since)
+    .lte("created_at", anchorIso)
+    .order("created_at", { ascending: true });
+  if (error) return `spam_window: fetch_error ${error.message}`;
+  const rows = (data ?? []).filter((r: { exercise_name: string }) => !String(r.exercise_name).startsWith("__"));
+  if (rows.length === 0) return `${windowMin}m window: no real logs`;
+  const parts = rows.map((r: { exercise_name: string; points_earned: number }) => {
+    const ex = String(r.exercise_name).slice(0, 32);
+    const pts = Math.round(Number(r.points_earned));
+    return `${ex} +${pts}pt`;
+  });
+  return `${rows.length} logs in ≤${windowMin}m: ${parts.join(" · ")}`;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -508,7 +636,7 @@ Deno.serve(async (req) => {
     }
 
     const openaiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
-    const openaiModel = Deno.env.get("OPENAI_MODEL")?.trim() || "gpt-4o-mini";
+    const openaiModel = Deno.env.get("OPENAI_MODEL")?.trim() || "gpt-5.4-nano";
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anon = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -581,12 +709,18 @@ Deno.serve(async (req) => {
     const actorCountUnit = String((log as Record<string, unknown>).count_unit ?? "reps").toLowerCase();
     const actorVolumeHuman = volumeHumanLabel(actorReps, actorCountUnit);
 
-    const { data: room } = await sb.from("rooms").select("id, name, streak_minimum").eq("id", roomId).single();
+    const { data: room } = await sb
+      .from("rooms")
+      .select("id, name, streak_minimum, created_at")
+      .eq("id", roomId)
+      .single();
     const streakMin = (room as { streak_minimum?: number })?.streak_minimum ?? 10;
 
     const { data: scores } = await sb
       .from("scores")
-      .select("user_id, total_score, profiles(username)")
+      .select(
+        "user_id, total_score, daily_points, last_daily_reset, streak_current, streak_highest, streak_last_workout, profiles(username)",
+      )
       .eq("room_id", roomId);
 
     const list = (scores ?? []) as ScoreRow[];
@@ -965,6 +1099,69 @@ Deno.serve(async (req) => {
       });
     }
 
+    const { data: recentLogRows, error: recentLogErr } = await sb
+      .from("exercise_logs")
+      .select("id, user_id, exercise_name, count, points_earned, created_at, count_unit, profiles(username)")
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: false })
+      .limit(RECENT_LOGS_FOR_NARRATIVE);
+    if (recentLogErr) {
+      jsonLog("narrative_logs_fetch_warn", { message: recentLogErr.message });
+    }
+
+    let spamSessionDetail: string | null = null;
+    const spamEv = events.find((e) => e.key === "spam_surge");
+    if (spamEv) {
+      const wm = Number((spamEv.payload as { windowMin?: number }).windowMin ?? 10);
+      spamSessionDetail = await buildSpamSessionSummary(sb, roomId, uid, logCreatedAt, wm);
+    }
+
+    const recentLogs: RecentLogRow[] = (recentLogRows ?? []).map((row: Record<string, unknown>) => {
+      const prof = row.profiles as { username?: string } | null | undefined;
+      return {
+        id: String(row.id),
+        user_id: String(row.user_id),
+        username: safeUsername(prof?.username),
+        exercise_name: String(row.exercise_name ?? ""),
+        count: Number(row.count ?? 0),
+        points_earned: Number(row.points_earned ?? 0),
+        created_at: String(row.created_at ?? ""),
+        count_unit: row.count_unit != null ? String(row.count_unit) : null,
+      };
+    });
+
+    const membersNarrative: ScoreMember[] = sorted.map((s, i) => ({
+      user_id: s.user_id,
+      username: safeUsername(s.profiles?.username),
+      total_score: Number(s.total_score ?? 0),
+      daily_points: Number(s.daily_points ?? 0),
+      last_daily_reset: s.last_daily_reset != null ? String(s.last_daily_reset) : null,
+      streak_current: Number(s.streak_current ?? 0),
+      streak_highest: Number(s.streak_highest ?? 0),
+      streak_last_workout: s.streak_last_workout != null ? String(s.streak_last_workout).slice(0, 10) : null,
+      rank: i + 1,
+    }));
+
+    let narrative = buildRichNarrativeContext({
+      roomName: String((room as { name?: string }).name ?? "room"),
+      roomCreatedAt: String((room as { created_at?: string }).created_at ?? nowIso),
+      nowIso,
+      triggerLogIso: logCreatedAt,
+      actorUsername,
+      rankBefore,
+      rankAfter,
+      pointsAdded: pointsEarned,
+      streakMin,
+      events: events.map((e) => ({ key: e.key, payload: { ...e.payload } })),
+      members: membersNarrative,
+      recentLogs,
+      spamSessionDetail,
+    });
+    const narrMax = Math.max(4000, Number(Deno.env.get("AI_NARRATIVE_MAX_CHARS") ?? "14000"));
+    if (narrative.length > narrMax) {
+      narrative = narrative.slice(0, narrMax) + "\n…[recent_room_narrative truncated]";
+    }
+
     // ── Text reply ────────────────────────────────────────────────────────────
     const eventKeys = events.map((e) => e.key);
     // Casual "normal log" replies: favor chaotic/funny personas — not Analyst recap voice.
@@ -988,29 +1185,52 @@ Deno.serve(async (req) => {
       countUnit: actorCountUnit,
       volumeHuman: actorVolumeHuman,
       pointsAdded: pointsEarned,
-      actorRank: rankAfter,
+      actorRankBefore: rankBefore,
+      actorRankAfter: rankAfter,
       actorTotal: totalAfter,
       mainEvent: events[0] ? eventTitle(events[0].key) : null,
       top3,
     });
 
+    const narrativeHint =
+      "Field recent_room_narrative is a compact storyboard (streaks, ghosts, feed lore, timing). " +
+      "Use it for subtext — do NOT read it as a bullet list on the feed; one sharp line only.";
+
+    const userPayload: Record<string, unknown> = {
+      ...keyStats,
+      recent_room_narrative: narrative,
+    };
+
     const userPrompt = isReplyMode && replyVibe
       ? JSON.stringify({
-        ...keyStats,
+        ...userPayload,
         reply_vibe_angle: replyVibe,
         context_note:
-          "The user already sees the workout on the card — your line must not recap it.",
+          "The user already sees the workout on the card — your line must not recap it. " + narrativeHint,
       })
-      : JSON.stringify(keyStats);
+      : JSON.stringify({
+        ...userPayload,
+        context_note: narrativeHint,
+      });
 
     const instruction = shouldCasualReply
-      ? `${actorUsername} just logged. FORBIDDEN: repeating exercise, reps, points, or 'rank X' as a recap sentence. ` +
-        `Angle (use this shape, not literal words): ${replyVibe}. ` +
-        `Punch at rivals, leaderboard absurdity, or room drama only — group-chat brain, not broadcaster.`
+      ? `${actorUsername} just logged something. ` +
+        `Don't recap what they did — react to what it means for the room. ` +
+        `Who does this affect? Who should be nervous? Who looks bad right now because of this? ` +
+        `Use streaks, ghosts, and timing from recent_room_narrative when it helps. ` +
+        `Angle for this reply: ${replyVibe}.`
       : isReplyMode
-        ? `Event on ${actorUsername}'s thread. FORBIDDEN: describing their sets/reps/points — that's on screen. ` +
-          `Angle: ${replyVibe}. Tension only between named people and ranks — never a stat dump of their log.`
-        : `Announce a room-wide development. Name the top players. Create tension between them. No summaries.`;
+      ? `Something just happened in ${actorUsername}'s session. ` +
+        `The workout is already on screen — don't describe it. ` +
+        `React to the drama, the gap, the implications, the people involved. ` +
+        `Bring in another person from the room if it creates tension. ` +
+        `Use recent_room_narrative for who's cold, who's on fire, late-night patterns, past JARS lines. ` +
+        `Angle for this reply: ${replyVibe}.`
+      : `Something just happened in this room that affects everyone. ` +
+        `Name the people involved. Make it feel like a moment. ` +
+        `Who's winning, who's losing, what does it mean. ` +
+        `Use recent_room_narrative for history (rank jumps, overtakes, streaks, quiet members). ` +
+        `One sentence. Make it sting or make it epic.`;
 
     const system = isReplyMode
       ? buildReplySystemPrompt(persona, instruction)
@@ -1027,6 +1247,24 @@ Deno.serve(async (req) => {
         maxCompletionTokens: isReplyMode ? 110 : 180,
       },
     );
+
+    try {
+      await sb.from("ai_openai_usage_log").insert({
+        trigger_log_id: logId,
+        room_id: roomId,
+        user_id: uid,
+        model_requested: openaiModel,
+        model_returned: modelReturned,
+        prompt_tokens: usage?.prompt_tokens ?? null,
+        completion_tokens: usage?.completion_tokens ?? null,
+        total_tokens: usage?.total_tokens ?? null,
+        openai_response_id: responseId,
+      });
+    } catch (usageLogErr) {
+      jsonLog("ai_usage_log_insert_skipped", {
+        message: usageLogErr instanceof Error ? usageLogErr.message : String(usageLogErr),
+      });
+    }
 
     // Safety pass.
     const cleaned = clampText(

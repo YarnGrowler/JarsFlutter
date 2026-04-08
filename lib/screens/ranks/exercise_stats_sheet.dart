@@ -21,7 +21,8 @@ class _ExerciseStatsData {
   final String name;
   int totalReps = 0;
   double totalPoints = 0;
-  int personalBest = 0; // max reps in a single session
+  int personalBest = 0; // max count (reps / sec / min) in a single log
+  double personalBestWeight = 0; // heaviest weight logged for this exercise
   int sessions = 0;
 
   _ExerciseStatsData(this.name);
@@ -56,6 +57,9 @@ class _ExerciseStatsSheetState extends State<ExerciseStatsSheet> {
         stat.totalPoints += log.pointsEarned;
         stat.sessions++;
         if (log.count > stat.personalBest) stat.personalBest = log.count;
+        if (log.weight > stat.personalBestWeight) {
+          stat.personalBestWeight = log.weight;
+        }
       }
 
       final sorted = map.values.toList()
@@ -183,10 +187,9 @@ class _ExerciseStatRow extends StatelessWidget {
                 value: '${stat.totalReps}',
                 color: JarsColors.textPrimary,
               ),
-              _MiniStat(
-                label: 'Best Set',
-                value: '${stat.personalBest}',
-                color: JarsColors.gold,
+              _BestSetStat(
+                bestCount: stat.personalBest,
+                bestWeightLb: stat.personalBestWeight,
               ),
               _MiniStat(
                 label: 'Sessions',
@@ -199,6 +202,57 @@ class _ExerciseStatRow extends StatelessWidget {
                 color: JarsColors.green,
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Best volume (count) for one log, with heaviest weight underneath when logged.
+class _BestSetStat extends StatelessWidget {
+  final int bestCount;
+  final double bestWeightLb;
+
+  const _BestSetStat({
+    required this.bestCount,
+    required this.bestWeightLb,
+  });
+
+  static String _lb(double w) {
+    if (w % 1 == 0) return '${w.toInt()} lb';
+    return '${w.toStringAsFixed(1)} lb';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            '$bestCount',
+            style: GoogleFonts.spaceMono(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: JarsColors.gold,
+            ),
+          ),
+          if (bestWeightLb > 0)
+            Text(
+              _lb(bestWeightLb),
+              style: GoogleFonts.spaceMono(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: JarsColors.gold.withValues(alpha: 0.85),
+              ),
+            ),
+          Text(
+            'Best set',
+            style: GoogleFonts.inter(
+              fontSize: 10,
+              color: JarsColors.textSecondary,
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),

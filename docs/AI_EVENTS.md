@@ -14,7 +14,7 @@ Daily cron function `cron-ai-daily` (Bearer `CRON_SECRET`): last stand batch, re
 
 ## Supabase setup
 
-1. **SQL:** run `supabase_patches/31_room_ai_events.sql` in the SQL editor.
+1. **SQL:** run `supabase_patches/31_room_ai_events.sql` in the SQL editor. For **per-call token logging** (dashboard cost rollups), also run `supabase_patches/35_ai_openai_usage_log.sql` (table `ai_openai_usage_log`). Inserts are best-effort if the table is missing.
 
 2. **Secrets** (Dashboard → Edge Functions → Secrets):
 
@@ -24,6 +24,9 @@ Daily cron function `cron-ai-daily` (Bearer `CRON_SECRET`): last stand batch, re
    - `CRON_SECRET` — long random string; use as `Authorization: Bearer …` for `cron-ai-daily`.
    - `AI_EVENTS_SEND_PUSH` — optional `true` to mirror AI lines into `notifications` (same pipeline as existing pushes).
    - `AI_LOG_FULL_IO` — optional `true` to log **full** system/user prompts and completion text in Edge logs (noisy; use when debugging).
+   - `AI_NARRATIVE_MAX_CHARS` — optional cap on the `recent_room_narrative` block sent to the model (default **14000**). Raises prompt size; increase only if your model budget allows.
+
+**Model context:** `process-ai-events` builds a **compact narrative** from the latest **50** room logs (workouts + parsed broadcast lines + recent `__AI__` text), full **leaderboard with streaks and today-vs-minimum**, **rank before/after**, **Chicago time** of the trigger log, **room age**, and **spam_surge** session detail (exercises + points in the window). It is **not** 50 raw JSON rows — it is summarized sections so personas (Snitch, Historian, Conspiracy, etc.) can reference patterns without drowning in tokens.
 
 **API note:** Newer models require `max_completion_tokens` (not `max_tokens`). Functions use `max_completion_tokens` only.
 
