@@ -2,7 +2,9 @@
 // curl -X POST "$SUPABASE_URL/functions/v1/cron-ai-daily" -H "Authorization: Bearer $CRON_SECRET"
 //
 // Secrets: CRON_SECRET, OPENAI_API_KEY, OPENAI_MODEL (optional)
+// Optional: OPENAI_MAX_COMPLETION_TOKENS (same as process-ai-events; uses max_completion_tokens only)
 
+/// <reference path="./deno.d.ts" />
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -132,17 +134,29 @@ async function openAiComplete(
   model: string,
   system: string,
   user: string,
-  logContext: Record<string, unknown> = {},
+  opts: {
+    maxCompletionTokens?: number;
+    temperature?: number;
+    logContext?: Record<string, unknown>;
+  } = {},
 ): Promise<{ text: string; usage: OpenAiUsage | null }> {
   const rawMax = Deno.env.get("OPENAI_MAX_COMPLETION_TOKENS")?.trim();
-  const maxCompletionTokens = Math.max(
-    16,
-    Math.min(4096, Number.isFinite(Number(rawMax)) ? Number(rawMax) : 240),
-  );
+  const parsedEnv = rawMax && rawMax.length > 0 ? Number(rawMax) : NaN;
+  const maxCompletionTokens = opts.maxCompletionTokens ??
+    Math.max(
+      16,
+      Math.min(
+        4096,
+        Number.isFinite(parsedEnv) ? parsedEnv : 240,
+      ),
+    );
+
+  const logFullIo = Deno.env.get("AI_LOG_FULL_IO") === "true";
+  const temperature = opts.temperature ?? 0.85;
 
   const body: Record<string, unknown> = {
     model,
-    temperature: 0.85,
+    temperature,
     max_completion_tokens: maxCompletionTokens,
     messages: [
       { role: "system", content: system },
@@ -150,14 +164,14 @@ async function openAiComplete(
     ],
   };
 
-  const logFullIo = Deno.env.get("AI_LOG_FULL_IO") === "true";
-
   jsonLog("openai_request", {
-    ...logContext,
+    ...opts.logContext,
     model,
+    temperature,
     max_completion_tokens: maxCompletionTokens,
     system_chars: system.length,
     user_chars: user.length,
+    messages_total_chars: system.length + user.length,
     system_preview: system.slice(0, 800),
     user_preview: user.slice(0, 4000),
     ...(logFullIo ? { system_full: system, user_full: user } : {}),
@@ -174,7 +188,11 @@ async function openAiComplete(
 
   const rawText = await res.text();
   if (!res.ok) {
-    jsonLog("openai_http_error", { status: res.status, body_preview: rawText.slice(0, 1200), ...logContext });
+    jsonLog("openai_http_error", {
+      status: res.status,
+      body_preview: rawText.slice(0, 1200),
+      ...opts.logContext,
+    });
     throw new Error(`OpenAI ${res.status}: ${rawText.slice(0, 400)}`);
   }
 
@@ -189,7 +207,7 @@ async function openAiComplete(
   const text = data.choices?.[0]?.message?.content?.trim() ?? "";
 
   jsonLog("openai_response", {
-    ...logContext,
+    ...opts.logContext,
     response_id: data.id ?? null,
     model_returned: data.model ?? null,
     usage,
@@ -292,8 +310,7 @@ Deno.serve(async (req) => {
           `PERSONA: ${persona.label} — ${persona.style}`,
         ].join("\n");
         const { text } = await openAiComplete(openaiKey, openaiModel, system, prompt, {
-          kind: "last_stand",
-          room_id: roomId,
+          logContext: { kind: "last_stand", room_id: roomId },
         });
         const cleaned = clampText(
           text
@@ -381,13 +398,9 @@ Deno.serve(async (req) => {
             `Third-person only. Pick ONE angle. No summaries.`,
             `PERSONA: ${persona.label} — ${persona.style}`,
           ].join("\n");
-          const { text } = await openAiComplete(
-            openaiKey,
-            openaiModel,
-            system,
-            prompt,
-            { kind: "response_gap", room_id: roomId, watch_id: wid },
-          );
+          const { text } = await openAiComplete(openaiKey, openaiModel, system, prompt, {
+            logContext: { kind: "response_gap", room_id: roomId, watch_id: wid },
+          });
           const cleaned = clampText(
             text
               .replaceAll(/\b(room\s+report|room\s+update)\b/gi, "")
@@ -444,19 +457,15 @@ Deno.serve(async (req) => {
         if (inactive.length > 0) {
           const persona = pickPersonaForEvent("retirement");
           const prompt = JSON.stringify({ kind: "retirement", room: roomName, inactiveCount: inactive.length });
-          const { text } = await openAiComplete(
-            openaiKey,
-            openaiModel,
-            [
-              `You are the Jars room mascot. One job: create tension.`,
-              `ONE sentence. MAX 120 chars. Ideal 60–90.`,
-              `Call out the ghosts. Dramatic, funny, not cruel. Name the room.`,
-              `Third-person only. Pick ONE angle.`,
-              `PERSONA: ${persona.label} — ${persona.style}`,
-            ].join("\n"),
-            prompt,
-            { kind: "retirement", room_id: roomId },
-          );
+          const { text } = await openAiComplete(openaiKey, openaiModel, [
+            `You are the Jars room mascot. One job: create tension.`,
+            `ONE sentence. MAX 120 chars. Ideal 60–90.`,
+            `Call out the ghosts. Dramatic, funny, not cruel. Name the room.`,
+            `Third-person only. Pick ONE angle.`,
+            `PERSONA: ${persona.label} — ${persona.style}`,
+          ].join("\n"), prompt, {
+            logContext: { kind: "retirement", room_id: roomId },
+          });
           const cleaned = clampText(
             text
               .replaceAll(/\b(room\s+report|room\s+update)\b/gi, "")
@@ -511,19 +520,15 @@ Deno.serve(async (req) => {
             leader: safeUsername(top.profiles?.username),
             points: top.total_score,
           });
-          const { text } = await openAiComplete(
-            openaiKey,
-            openaiModel,
-            [
-              `You are the Jars room mascot. One job: create tension.`,
-              `ONE sentence. MAX 120 chars. Ideal 60–90.`,
-              `Name the leader and what they're doing to the rest of the room. Funny.`,
-              `Third-person only. Pick ONE angle: domination / embarrassment / imbalance.`,
-              `PERSONA: ${persona.label} — ${persona.style}`,
-            ].join("\n"),
-            prompt,
-            { kind: "carry_lore", room_id: roomId },
-          );
+          const { text } = await openAiComplete(openaiKey, openaiModel, [
+            `You are the Jars room mascot. One job: create tension.`,
+            `ONE sentence. MAX 120 chars. Ideal 60–90.`,
+            `Name the leader and what they're doing to the rest of the room. Funny.`,
+            `Third-person only. Pick ONE angle: domination / embarrassment / imbalance.`,
+            `PERSONA: ${persona.label} — ${persona.style}`,
+          ].join("\n"), prompt, {
+            logContext: { kind: "carry_lore", room_id: roomId },
+          });
           const cleaned = clampText(
             text
               .replaceAll(/\b(room\s+report|room\s+update)\b/gi, "")

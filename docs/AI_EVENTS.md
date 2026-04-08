@@ -20,7 +20,7 @@ Daily cron function `cron-ai-daily` (Bearer `CRON_SECRET`): last stand batch, re
 
    - `OPENAI_API_KEY` — required for AI text.
    - `OPENAI_MODEL` — optional (default `gpt-4o-mini`; set to your preferred nano/small model when available).
-   - `OPENAI_MAX_COMPLETION_TOKENS` — optional cap (default `220` for `process-ai-events`, `240` for cron default in code).
+   - `OPENAI_MAX_COMPLETION_TOKENS` — optional cap for **both** Edge functions (defaults: `220` in `process-ai-events`, `240` in `cron-ai-daily` when unset). Only `max_completion_tokens` is sent to OpenAI.
    - `CRON_SECRET` — long random string; use as `Authorization: Bearer …` for `cron-ai-daily`.
    - `AI_EVENTS_SEND_PUSH` — optional `true` to mirror AI lines into `notifications` (same pipeline as existing pushes).
    - `AI_LOG_FULL_IO` — optional `true` to log **full** system/user prompts and completion text in Edge logs (noisy; use when debugging).
