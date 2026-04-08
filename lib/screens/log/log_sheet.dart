@@ -149,6 +149,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
   }
 
   void _toggleTimer() {
+    if (_logging || _celebrationTotal != null) return;
     if (_timerSw?.isRunning ?? false) {
       _pauseTimerClock();
       return;
@@ -275,6 +276,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
   }
 
   void _incrementRep() {
+    if (_logging || _celebrationTotal != null) return;
     if (_selectedExercise == null) return;
     if (_selectedExercise!.effectiveTimerUi) {
       return;
@@ -298,7 +300,11 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
   // ── Hold-to-log ────────────────────────────────────────────────────────────
   void _startHold(Offset globalPos) {
-    if (_selectedExercise == null || _logging || _pickerOpen || _weightPanelOpen) {
+    if (_selectedExercise == null ||
+        _logging ||
+        _celebrationTotal != null ||
+        _pickerOpen ||
+        _weightPanelOpen) {
       return;
     }
     if (_timerUiActive) {
@@ -389,6 +395,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
   //
   void _onPointerDown(PointerDownEvent e) {
     if (_selectedExercise == null) return;
+    if (_logging || _celebrationTotal != null) return;
     _pointerStart = e.position;
     _pointerDownAt = DateTime.now();
     _movedEnoughForSwipe = false;
@@ -454,6 +461,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
   }
 
   void _openRepPicker() {
+    if (_logging || _celebrationTotal != null) return;
     if (_pickerOpen) return;
     if (_timerUiActive) _pauseTimerClock();
     _pickerOpen = true;

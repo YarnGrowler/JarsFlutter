@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/super_reaction_meta.dart';
 import '../../services/auth_service.dart';
 import '../../services/reaction_service.dart';
 
@@ -68,12 +69,15 @@ class _ReactionRainHostState extends ConsumerState<ReactionRainHost>
     final rng = math.Random();
     final w = MediaQuery.sizeOf(context).width;
     _particles = emojis
-        .map((e) => _RainParticle(
-              emoji: e,
-              left: rng.nextDouble() * (w - 40),
-              delay: rng.nextDouble() * 0.35,
-              duration: 0.55 + rng.nextDouble() * 0.45,
-            ))
+        .map(
+          (e) => _RainParticle(
+            displayText: displayEmojiForStoredReaction(e),
+            isSuper: storedReactionIsSuper(e),
+            left: rng.nextDouble() * (w - 48),
+            delay: rng.nextDouble() * 0.35,
+            duration: 0.55 + rng.nextDouble() * 0.45,
+          ),
+        )
         .toList();
 
     setState(() {});
@@ -109,13 +113,16 @@ class _ReactionRainHostState extends ConsumerState<ReactionRainHost>
 }
 
 class _RainParticle {
-  final String emoji;
+  /// Single grapheme to paint (never raw `sr:*`).
+  final String displayText;
+  final bool isSuper;
   final double left;
   final double delay;
   final double duration;
 
   _RainParticle({
-    required this.emoji,
+    required this.displayText,
+    required this.isSuper,
     required this.left,
     required this.delay,
     required this.duration,
@@ -135,12 +142,37 @@ class _RainPainter extends CustomPainter {
       if (localT <= 0) continue;
       final y = size.height - localT * (size.height * 0.92);
       final opacity = (1 - localT) * 0.95;
+      final superBoost = p.isSuper ? 1.35 : 1.0;
+      final baseSize = (22 + (1 - localT) * 18) * superBoost;
+      if (p.isSuper) {
+        final glow = TextPainter(
+          text: TextSpan(
+            text: p.displayText,
+            style: TextStyle(
+              fontSize: baseSize + 6,
+              color: const Color(0xFFB070FF).withValues(alpha: opacity * 0.35),
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        glow.paint(canvas, Offset(p.left - 2, y - 1));
+      }
       final tp = TextPainter(
         text: TextSpan(
-          text: p.emoji,
+          text: p.displayText,
           style: TextStyle(
-            fontSize: 22 + (1 - localT) * 18,
-            color: Colors.white.withValues(alpha: opacity),
+            fontSize: baseSize,
+            color: p.isSuper
+                ? const Color(0xFFE8C8FF).withValues(alpha: opacity)
+                : Colors.white.withValues(alpha: opacity),
+            shadows: p.isSuper
+                ? [
+                    Shadow(
+                      color: const Color(0xFF9D4EDD).withValues(alpha: 0.9),
+                      blurRadius: 14,
+                    ),
+                  ]
+                : null,
           ),
         ),
         textDirection: TextDirection.ltr,

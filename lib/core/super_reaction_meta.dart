@@ -21,76 +21,78 @@ class SuperReactionDef {
 const List<SuperReactionDef> kSuperReactions = [
   SuperReactionDef(
     id: 'nova',
-    label: 'Nova',
+    label: 'Feral',
     displayEmoji: '🔥',
     cost: 12,
   ),
+ 
   SuperReactionDef(
-    id: 'galaxy',
-    label: 'Galaxy',
-    displayEmoji: '🌌',
-    cost: 14,
+    id: 'meteor',
+    label: 'Skill issue',
+    displayEmoji: '💀',
+    cost: 18,
+  ),
+  SuperReactionDef(
+    id: 'bubble',
+    label: 'Gremlin',
+    displayEmoji: '🧌',
+    cost: 10,
+  ),
+  SuperReactionDef(
+    id: 'crown',
+    label: 'Rent free',
+    displayEmoji: '🧠',
+    cost: 20,
   ),
   SuperReactionDef(
     id: 'thunder',
-    label: 'Thunder',
-    displayEmoji: '⚡',
+    label: 'Main character',
+    displayEmoji: '🎬',
     cost: 10,
   ),
   SuperReactionDef(
     id: 'heartbeat',
-    label: 'Heartbeat',
-    displayEmoji: '💗',
+    label: 'Unhinged',
+    displayEmoji: '😵‍💫',
     cost: 11,
   ),
   SuperReactionDef(
     id: 'rainbow',
-    label: 'Rainbow',
+    label: 'Chaos',
     displayEmoji: '🌈',
     cost: 13,
   ),
   SuperReactionDef(
     id: 'confetti',
-    label: 'Confetti',
-    displayEmoji: '🎊',
+    label: 'Touch grass',
+    displayEmoji: '🌿',
     cost: 15,
   ),
   SuperReactionDef(
     id: 'laser',
-    label: 'Laser',
-    displayEmoji: '✴️',
+    label: 'Doom scroll',
+    displayEmoji: '📱',
     cost: 16,
   ),
   SuperReactionDef(
     id: 'orbit',
-    label: 'Orbit',
+    label: 'UFO',
     displayEmoji: '🛸',
     cost: 14,
   ),
   SuperReactionDef(
     id: 'bloom',
-    label: 'Bloom',
-    displayEmoji: '🌸',
+    label: 'Delulu',
+    displayEmoji: '🫧',
     cost: 12,
   ),
-  SuperReactionDef(
-    id: 'meteor',
-    label: 'Meteor',
-    displayEmoji: '☄️',
-    cost: 18,
+   SuperReactionDef(
+    id: 'galaxy',
+    label: 'Void spiral',
+    displayEmoji: '🌀',
+    cost: 14,
   ),
-  SuperReactionDef(
-    id: 'bubble',
-    label: 'Bubble',
-    displayEmoji: '🫧',
-    cost: 10,
-  ),
-  SuperReactionDef(
-    id: 'crown',
-    label: 'Crown',
-    displayEmoji: '👑',
-    cost: 20,
-  ),
+  
 ];
 
 bool isSuperReactionKey(String emoji) =>
@@ -110,3 +112,13 @@ String superReactionNotificationLabel(String storageKey) {
   if (d == null) return storageKey;
   return '${d.displayEmoji} ${d.label}';
 }
+
+/// Emoji (or fallback) for UI / celebration rain — never show raw `sr:*` strings.
+String displayEmojiForStoredReaction(String stored) {
+  final d = tryParseSuperReaction(stored);
+  if (d != null) return d.displayEmoji;
+  if (isSuperReactionKey(stored)) return '✨';
+  return stored;
+}
+
+bool storedReactionIsSuper(String stored) => isSuperReactionKey(stored);

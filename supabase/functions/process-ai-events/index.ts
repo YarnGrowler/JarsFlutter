@@ -3,6 +3,7 @@
 //
 // Deploy: supabase functions deploy process-ai-events --no-verify-jwt
 
+/// <reference path="./deno.d.ts" />
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -41,8 +42,8 @@ function getPersonas(): Persona[] {
       label: "Analyst",
       weight: Number(Deno.env.get("AI_PERSONA_ANALYST_WEIGHT") ?? 35),
       style:
-        "Sharp, precise, grounded. Reference exact stats: ranks, points, gaps. " +
-        "No hype — just the cold hard truth laid out with confidence. Make it feel smart and real.",
+        "Sharp, precise. ONE killer stat or gap — never a play-by-play recap. " +
+        "Sound like a sharp friend, not a spreadsheet.",
     },
     {
       label: "Hype Man",
@@ -69,8 +70,8 @@ function getPersonas(): Persona[] {
       label: "Chaos Agent",
       weight: Number(Deno.env.get("AI_PERSONA_CHAOS_WEIGHT") ?? 7),
       style:
-        "Wildcard energy. Unpredictable, genuinely funny. Keeps the feed surprising. " +
-        "Tasteful chaos — teasing, never mean, never edgy for its own sake.",
+        "Group-chat gremlin. Meme-brain, fake-deep, unfair comparisons, NPC callouts. " +
+        "Unpredictable every time — never the same structure twice.",
     },
     {
       label: "Conspiracy Theorist",
@@ -136,6 +137,24 @@ function pickPersonaForEvents(eventKeys: string[]): Persona {
   const weighted = personas.map((p) => ({
     ...p,
     weight: Math.max(0.1, p.weight * (mult.get(p.label) ?? 1)),
+  }));
+  return pickWeighted(weighted);
+}
+
+/** Casual / reply lines: avoid Analyst-heavy "recap" voice — favor chaos & jokes. */
+function pickPersonaCasualReply(): Persona {
+  const personas = getPersonas();
+  const boost = new Map<string, number>([
+    ["Chaos Agent", 5.5],
+    ["Hype Man", 2.8],
+    ["Conspiracy Theorist", 2.2],
+    ["Disappointed Coach", 1.8],
+    ["Historian", 0.35],
+    ["Analyst", 0.25],
+  ]);
+  const weighted = personas.map((p) => ({
+    ...p,
+    weight: Math.max(0.1, p.weight * (boost.get(p.label) ?? 1)),
   }));
   return pickWeighted(weighted);
 }
@@ -279,16 +298,16 @@ function buildKeyStats(params: {
   return stats;
 }
 
-/** Core system prompt — same DNA for all event types and personas. */
+/** Room-wide broadcast cards — can still reference stats with tension. */
 function buildSystemPrompt(persona: Persona, instruction: string): string {
   return [
     `You are the Jars room mascot. One job: create tension between people.`,
     ``,
     `HARD RULES (break any = failure):`,
-    `- ONE sentence. MAX 120 characters. Ideal: 60–90.`,
+    `- ONE sentence. MAX 90 characters. Ideal: 45–75.`,
     `- Pick ONE angle only: domination / embarrassment / gap / challenge. Not all of them.`,
     `- Name at least 2 real people from context. Create tension between them.`,
-    `- Use real numbers (points, ranks). Stats = credibility.`,
+    `- Use real numbers (points, ranks) sparingly — punch, don't narrate.`,
     `- If work or volume_human is present, use that for time/reps — never confuse seconds with reps.`,
     `- Third-person only. Never "you" or "your".`,
     `- BANNED WORDS: report, update, currently, basically, officially, "in the room"`,
@@ -299,6 +318,48 @@ function buildSystemPrompt(persona: Persona, instruction: string): string {
     ``,
     `Style (do not name it): ${persona.style}`,
   ].join("\n");
+}
+
+/**
+ * Thread replies under someone's log — NEVER sound like a recap or sports ticker.
+ * Everyone already sees the workout; do not restate it.
+ */
+function buildReplySystemPrompt(persona: Persona, instruction: string): string {
+  return [
+    `You are the Jars room mascot in a chaotic group chat.`,
+    ``,
+    `REPLY MODE — HARD RULES (break any = failure):`,
+    `- ONE sentence. MAX 88 characters. Ideal: 38–72.`,
+    `- BANNED OPEN: do NOT start by restating what they did (no "X hit Y", "X logged Z", "X reps", "X points for this set"). The log is visible — repeating it is failure.`,
+    `- BANNED PATTERN: "name — rank — name — points" laundry lists and em-dash stat dumps.`,
+    `- Do NOT narrate the workout. React: roast, absurd take, fake conspiracy, main-character accusation, or pressure on a rival — like Discord, not ESPN.`,
+    `- At most ONE number in the whole sentence (rank OR points OR gap) if it helps the punch; zero numbers is fine.`,
+    `- Name at least one other real person from context when possible; create tension or comedy between people.`,
+    `- Third-person only. Never "you" or "your".`,
+    `- BANNED WORDS: report, update, currently, basically, officially, narrating, recap`,
+    `- Never name a "persona" or voice label.`,
+    ``,
+    instruction,
+    ``,
+    `Style (do not name it): ${persona.style}`,
+  ].join("\n");
+}
+
+/** Random angle so outputs don't all feel the same shape. */
+function pickReplyVibeHint(): string {
+  const hints = [
+    "open mid-sentence energy — no setup clause",
+    "unfair comparison to something random",
+    "fake conspiracy about timing",
+    "call someone out by name with zero context then dip",
+    "main character syndrome accusation",
+    "NPC / background character joke about a rival",
+    "one hyperbolic insult (playful) aimed at the room order",
+    "pretend you're a toxic fitness influencer for one line",
+    "dramatic soap-opera stare at the leaderboard",
+    "backhanded compliment to a rival only",
+  ];
+  return hints[Math.floor(Math.random() * hints.length)];
 }
 
 function jsonLog(tag: string, data: Record<string, unknown> = {}) {
@@ -329,17 +390,23 @@ async function openAiComplete(
   model: string,
   system: string,
   user: string,
-  opts: { maxCompletionTokens?: number; logContext?: Record<string, unknown> } = {},
+  opts: {
+    maxCompletionTokens?: number;
+    logContext?: Record<string, unknown>;
+    /** Slightly higher for thread replies — more variety, less template. */
+    temperature?: number;
+  } = {},
 ): Promise<OpenAiCompleteResult> {
   const rawMax = Deno.env.get("OPENAI_MAX_COMPLETION_TOKENS")?.trim();
   const maxCompletionTokens = opts.maxCompletionTokens ??
     Math.max(16, Math.min(4096, Number.isFinite(Number(rawMax)) ? Number(rawMax) : 220));
 
   const logFullIo = Deno.env.get("AI_LOG_FULL_IO") === "true";
+  const temperature = opts.temperature ?? 0.85;
 
   const body: Record<string, unknown> = {
     model,
-    temperature: 0.85,
+    temperature,
     max_completion_tokens: maxCompletionTokens,
     messages: [
       { role: "system", content: system },
@@ -350,7 +417,7 @@ async function openAiComplete(
   jsonLog("openai_request", {
     ...opts.logContext,
     model,
-    temperature: body.temperature,
+    temperature,
     max_completion_tokens: maxCompletionTokens,
     system_chars: system.length,
     user_chars: user.length,
@@ -892,13 +959,18 @@ Deno.serve(async (req) => {
 
     // ── Text reply ────────────────────────────────────────────────────────────
     const eventKeys = events.map((e) => e.key);
-    const persona = pickPersonaForEvents(eventKeys);
+    // Casual "normal log" replies: favor chaotic/funny personas — not Analyst recap voice.
+    const persona = shouldCasualReply
+      ? pickPersonaCasualReply()
+      : pickPersonaForEvents(eventKeys);
 
     // Casual replies are always reply-mode (attached to the triggering log).
     const isReplyMode = shouldCasualReply || (
       events.some((e) => PER_LOG_EVENT_KEYS.has(e.key)) &&
       !events.some((e) => ROOM_WIDE_EVENT_KEYS.has(e.key))
     );
+
+    const replyVibe = isReplyMode ? pickReplyVibeHint() : null;
 
     // Focused key_stats — prevents the model from trying to summarise everything.
     const keyStats = buildKeyStats({
@@ -914,22 +986,38 @@ Deno.serve(async (req) => {
       top3,
     });
 
-    const userPrompt = JSON.stringify(keyStats);
+    const userPrompt = isReplyMode && replyVibe
+      ? JSON.stringify({
+        ...keyStats,
+        reply_vibe_angle: replyVibe,
+        context_note:
+          "The user already sees the workout on the card — your line must not recap it.",
+      })
+      : JSON.stringify(keyStats);
 
     const instruction = shouldCasualReply
-      ? `React to ${actorUsername}'s workout (${actorVolumeHuman} ${actorExerciseName}). ONE angle: hype the rank, call out the gap to a rival, or create pressure. Be specific. Raw.`
+      ? `${actorUsername} just logged. FORBIDDEN: repeating exercise, reps, points, or 'rank X' as a recap sentence. ` +
+        `Angle (use this shape, not literal words): ${replyVibe}. ` +
+        `Punch at rivals, leaderboard absurdity, or room drama only — group-chat brain, not broadcaster.`
       : isReplyMode
-        ? `React to ${actorUsername}'s log (${actorVolumeHuman} ${actorExerciseName}). Hit ONE thing: the rank jump, the gap to the leader, or the pressure on a rival. No summaries.`
+        ? `Event on ${actorUsername}'s thread. FORBIDDEN: describing their sets/reps/points — that's on screen. ` +
+          `Angle: ${replyVibe}. Tension only between named people and ranks — never a stat dump of their log.`
         : `Announce a room-wide development. Name the top players. Create tension between them. No summaries.`;
 
-    const system = buildSystemPrompt(persona, instruction);
+    const system = isReplyMode
+      ? buildReplySystemPrompt(persona, instruction)
+      : buildSystemPrompt(persona, instruction);
 
     const { text, usage, responseId, modelReturned } = await openAiComplete(
       openaiKey,
       openaiModel,
       system,
       userPrompt,
-      { logContext: { log_id: logId, room_id: roomId } },
+      {
+        logContext: { log_id: logId, room_id: roomId },
+        temperature: isReplyMode ? 0.93 : 0.85,
+        maxCompletionTokens: isReplyMode ? 110 : 180,
+      },
     );
 
     // Safety pass.
@@ -945,7 +1033,7 @@ Deno.serve(async (req) => {
         .replaceAll(/\byou\b/gi, "they")
         .replaceAll(/\byour\b/gi, "their")
         .trim(),
-      160,
+      isReplyMode ? 88 : 96,
     );
 
     const payload: Record<string, unknown> = {

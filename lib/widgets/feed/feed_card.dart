@@ -365,7 +365,7 @@ class _AiReplyCardState extends State<_AiReplyCard> {
     }
   }
 
-  /// True only when [text] would not fit in two lines at [maxWidth] (same style as collapsed body).
+  /// True only when [text] needs more than two lines at [maxWidth] (same style as body).
   bool _exceedsTwoLines(String text, double maxWidth, TextStyle style) {
     if (text.isEmpty || !maxWidth.isFinite || maxWidth <= 0) return false;
     final tp = TextPainter(
@@ -398,172 +398,149 @@ class _AiReplyCardState extends State<_AiReplyCard> {
 
     final t = text ?? '';
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(_outerR),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(_outerR),
+    final bodyStyle = GoogleFonts.inter(
+      fontSize: 13,
+      height: 1.45,
+      color: JarsColors.textSecondary,
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_outerR),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: JarsColors.surface,
+          borderRadius: BorderRadius.circular(_outerR),
+          border: Border.all(color: JarsColors.border, width: 1),
+        ),
         child: Container(
           decoration: BoxDecoration(
-            color: JarsColors.surface,
-            borderRadius: BorderRadius.circular(_outerR),
-            border: Border.all(
-              color: JarsColors.border,
-              width: 1,
-            ),
-          ),
-          child: ClipRRect(
             borderRadius: BorderRadius.circular(_innerR),
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    width: 3,
-                    color: JarsColors.primary.withValues(alpha: 0.14),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Reply target — compact thread label
-                          if (hasReplyContext) ...[
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.subdirectory_arrow_right_rounded,
-                                  size: 14,
-                                  color: JarsColors.textTertiary,
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    _replyChipText(log),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10,
-                                      letterSpacing: 0.1,
-                                      color: JarsColors.textTertiary,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                          ],
-                          _aiHeader(log),
-                          if (!isReactOnly && t.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                final collapsedStyle = GoogleFonts.inter(
-                                  fontSize: 12,
-                                  height: 1.4,
-                                  color: JarsColors.textSecondary,
-                                );
-                                final fullStyle = GoogleFonts.inter(
-                                  fontSize: 13,
-                                  height: 1.4,
-                                  color: JarsColors.textSecondary,
-                                );
-                                final needsTruncation = _exceedsTwoLines(
-                                  t,
-                                  constraints.maxWidth,
-                                  collapsedStyle,
-                                );
-
-                                if (!needsTruncation) {
-                                  return Text(t, style: fullStyle);
-                                }
-
-                                if (!_expanded) {
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        t,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: collapsedStyle,
-                                      ),
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: TextButton(
-                                          onPressed: () => setState(
-                                              () => _expanded = true),
-                                          style: TextButton.styleFrom(
-                                            padding:
-                                                const EdgeInsets.only(top: 2),
-                                            minimumSize: Size.zero,
-                                            tapTargetSize: MaterialTapTargetSize
-                                                .shrinkWrap,
-                                          ),
-                                          child: Text(
-                                            'Show more',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w500,
-                                              color: JarsColors.textTertiary,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                }
-
-                                return Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(t, style: fullStyle),
-                                    Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: TextButton(
-                                        onPressed: () => setState(
-                                            () => _expanded = false),
-                                        style: TextButton.styleFrom(
-                                          padding:
-                                              const EdgeInsets.only(top: 4),
-                                          minimumSize: Size.zero,
-                                          tapTargetSize: MaterialTapTargetSize
-                                              .shrinkWrap,
-                                        ),
-                                        child: Text(
-                                          'Show less',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                            color: JarsColors.textTertiary,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ],
-                          _feedReactionBar(
-                            context,
-                            reactions: widget.reactions,
-                            onReact: widget.onReact,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+            border: Border(
+              left: BorderSide(
+                color: JarsColors.primary.withValues(alpha: 0.22),
+                width: 3,
               ),
             ),
+          ),
+          padding: const EdgeInsets.fromLTRB(13, 10, 12, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (hasReplyContext) ...[
+                Row(
+                  children: [
+                    Icon(
+                      Icons.subdirectory_arrow_right_rounded,
+                      size: 14,
+                      color: JarsColors.textTertiary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _replyChipText(log),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          letterSpacing: 0.1,
+                          color: JarsColors.textTertiary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+              ],
+              _aiHeader(log),
+              if (!isReactOnly && t.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final needsTruncation = _exceedsTwoLines(
+                      t,
+                      constraints.maxWidth,
+                      bodyStyle,
+                    );
+
+                    if (!needsTruncation) {
+                      return Text(t, style: bodyStyle);
+                    }
+
+                    if (!_expanded) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            t,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: bodyStyle,
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: () =>
+                                  setState(() => _expanded = true),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.only(top: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Text(
+                                'Show more',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: JarsColors.textTertiary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(t, style: bodyStyle),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () =>
+                                setState(() => _expanded = false),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.only(top: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              'Show less',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: JarsColors.textTertiary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+              _feedReactionBar(
+                context,
+                reactions: widget.reactions,
+                onReact: widget.onReact,
+              ),
+            ],
           ),
         ),
       ),
