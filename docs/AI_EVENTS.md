@@ -39,6 +39,10 @@ Daily cron function `cron-ai-daily` (Bearer `CRON_SECRET`): last stand batch, re
 
 4. **Schedule** `cron-ai-daily` (e.g. Supabase Scheduled Functions or external cron) once per day near end of Chicago day for “last stand” feel, or your preferred time.
 
+**Important:** Nothing runs until this schedule exists. If you have not configured a daily trigger in the Supabase dashboard (or an external cron hitting the function with `Authorization: Bearer CRON_SECRET`), the cron **never** fires—there is no built-in “every hour” or automatic midnight job.
+
+**Streak reminders:** `cron-ai-daily` handles AI narrative batches (last stand, response gap, retirement/carry lore). It does **not** notify users that a streak is about to expire. That would be a separate feature; see `docs/NOTIFICATIONS.md` (“Streak minimum at risk” — not implemented as push).
+
 ## Per-room toggles
 
 Table `room_ai_config` (`room_id`, `event_key`, `enabled`, `settings`). If a row is missing, the event defaults to **enabled**. Keys match detector names: `heist`, `ghost_return`, `rivalry`, `uno_reverse`, `domination`, `room_milestone`, `silence_break`, `spam_surge`, `carry`, `near_tie`, `response_gap` (cron), etc.

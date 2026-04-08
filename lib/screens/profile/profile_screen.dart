@@ -14,13 +14,13 @@ import '../../services/badge_service.dart';
 import '../../providers/feed_provider.dart';
 import '../../services/log_service.dart';
 import '../../services/room_service.dart';
-import '../../services/exercise_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/supabase_service.dart';
 import '../../models/badge.dart';
 import '../../providers/exercise_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../providers/profile_provider.dart';
+import '../../widgets/sheets/create_custom_exercise_sheet.dart';
 import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../providers/ui_text_scale_provider.dart';
 import '../../core/user_display_name.dart';
@@ -463,11 +463,6 @@ class ProfileScreen extends ConsumerWidget {
 
   void _showCreateExercise(
       BuildContext context, WidgetRef ref, String roomId) {
-    final nameController = TextEditingController();
-    final pointsController = TextEditingController();
-    final iconController = TextEditingController(text: '💪');
-    String category = 'Custom';
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -475,88 +470,7 @@ class ProfileScreen extends ConsumerWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              24,
-              24,
-              24,
-              MediaQuery.of(context).viewInsets.bottom + 24,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: JarsColors.border,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Custom Exercise',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: JarsColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _SettingsField(
-                  label: 'Name',
-                  controller: nameController,
-                  keyboardType: TextInputType.text,
-                ),
-                const SizedBox(height: 16),
-                _SettingsField(
-                  label: 'Points per rep',
-                  controller: pointsController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                ),
-                const SizedBox(height: 16),
-                _SettingsField(
-                  label: 'Icon (emoji)',
-                  controller: iconController,
-                  keyboardType: TextInputType.text,
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final name = nameController.text.trim();
-                      final points =
-                          double.tryParse(pointsController.text);
-                      if (name.isEmpty || points == null) return;
-
-                      await ExerciseService.createCustomExercise(
-                        roomId: roomId,
-                        name: name,
-                        points: points,
-                        icon: iconController.text.trim().isEmpty
-                            ? '💪'
-                            : iconController.text.trim(),
-                        category: category,
-                      );
-                      ref.invalidate(roomExercisesProvider);
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: const Text('Create'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (ctx) => CreateCustomExerciseSheet(roomId: roomId),
     );
   }
 

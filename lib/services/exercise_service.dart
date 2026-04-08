@@ -1,4 +1,5 @@
 import 'supabase_service.dart';
+import '../core/count_unit.dart';
 import '../models/exercise.dart';
 
 class ExerciseService {
@@ -23,25 +24,37 @@ class ExerciseService {
     required double points,
     required String icon,
     required String category,
+    CountUnit countUnit = CountUnit.reps,
+    TimePointsMode timePointsMode = TimePointsMode.perMinute,
+    bool timerUi = false,
     bool supportsWeight = false,
     double? weightThreshold,
     double? weightMultiplier,
   }) async {
     final userId = SupabaseService.currentUserId!;
-    final data = await _db.from('exercises').insert({
+    final usesTime =
+        countUnit == CountUnit.seconds || countUnit == CountUnit.minutes;
+    final tpm = countUnit == CountUnit.seconds ? timePointsMode : null;
+    final insert = <String, dynamic>{
       'room_id': roomId,
       'name': name,
       'points': points,
       'icon': icon,
       'category': category,
       'supports_weight': supportsWeight,
-      'weight_threshold': weightThreshold,
-      'weight_multiplier': weightMultiplier,
+      'weight_threshold': supportsWeight ? weightThreshold : null,
+      'weight_multiplier': supportsWeight ? weightMultiplier : null,
       'created_by': userId,
-      'count_unit': 'reps',
-      'uses_time': false,
-      'timer_ui': false,
-    }).select().single();
+      'count_unit': countUnit.name,
+      'uses_time': usesTime,
+      'timer_ui': countUnit == CountUnit.seconds && timerUi,
+    };
+    if (tpm != null) {
+      insert['time_points_mode'] = timePointsModeToJson(tpm);
+    } else {
+      insert['time_points_mode'] = null;
+    }
+    final data = await _db.from('exercises').insert(insert).select().single();
 
     return Exercise.fromJson(data);
   }

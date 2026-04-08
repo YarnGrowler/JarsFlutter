@@ -170,3 +170,4 @@ grant select, insert, update, delete on table public.user_fcm_tokens to service_
 -- === 27 idle wake: fresh snapshot before insert (fixes cross-user race): run supabase_patches/27_idle_wake_fresh_snapshot_before_insert.sql ===
 -- === 28 block spurious __WAKE__ at INSERT time (no ghost push): run supabase_patches/28_block_spurious_wake_before_insert.sql ===
 -- === 29 fix notify trigger: | was regex alternation → idle spam on every log: run supabase_patches/29_fix_wake_regex_pipe_alternation.sql ===
+-- === 34 streak at-risk nudge log + RPC (cron-streak-nudge Edge): run supabase_patches/34_streak_nudge.sql ===

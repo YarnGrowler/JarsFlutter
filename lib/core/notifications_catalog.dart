@@ -30,7 +30,7 @@ enum JarsNotificationKind {
   /// [EventService] — close the gap taunt.
   closeGapRoom,
 
-  // ── Planned (not wired end-to-end yet) ─────────────────────────────
+  // ── Cron / Edge (scheduled) ────────────────────────────────────────
   /// Push when `daily_points < streak_minimum` near end of Chicago day.
   streakMinimumAtRisk,
 
@@ -96,9 +96,9 @@ const List<JarsNotificationStatus> kJarsNotificationInventory = [
   ),
   JarsNotificationStatus(
     kind: JarsNotificationKind.streakMinimumAtRisk,
-    implemented: false,
+    implemented: true,
     detail:
-        'In-app: leaderboard "pts to go" line. Push: needs scheduled job (e.g. Supabase cron + Edge) to insert notifications rows.',
+        'Edge `cron-streak-nudge` + SQL `cron_streak_nudge_execute`; schedule POST with CRON_SECRET; see docs/NOTIFICATIONS.md.',
   ),
   JarsNotificationStatus(
     kind: JarsNotificationKind.sameTimeYesterdayReminder,

@@ -79,17 +79,40 @@ These also insert into `notifications` the same way; consider extending the cata
 
 ---
 
-## D. Planned / not fully wired (catalog)
+## D. Streak at-risk cron (before midnight Chicago)
+
+**Goal:** Push the user (not the room) if they still need points to hit the room’s `streak_minimum` today and they have an active streak to lose.
+
+1. **SQL:** Run `supabase_patches/34_streak_nudge.sql` in the Supabase SQL editor (creates `streak_nudge_log` + `cron_streak_nudge_execute`).
+2. **Deploy function:** From the repo root:
+
+   ```bash
+   npx supabase functions deploy cron-streak-nudge --no-verify-jwt
+   ```
+
+3. **Secrets:** Reuse `CRON_SECRET` (same Bearer as `cron-ai-daily`). `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are provided in hosted projects.
+4. **Schedule:** In Supabase **Scheduled Functions** (or any cron), `POST` your project URL every 30–60 minutes during the evening window, for example:
+
+   `https://<PROJECT_REF>.supabase.co/functions/v1/cron-streak-nudge`  
+   Header: `Authorization: Bearer <CRON_SECRET>`
+
+   The function only inserts rows when **America/Chicago** hour is between **18 and 23** (6 PM–11 PM) by default, so runs near midnight but not after the day rolls. Override with `STREAK_NUDGE_CHICAGO_START_HOUR` / `STREAK_NUDGE_CHICAGO_END_HOUR`. Set `STREAK_NUDGE_SKIP_HOUR_CHECK=true` only for manual testing.
+
+5. **Behavior:** `cron_streak_nudge_execute` selects users where `streak_current >= STREAK_NUDGE_MIN_STREAK` (default **2**), today’s effective `daily_points` is still below `rooms.streak_minimum`, and `streak_last_workout` is not already **today** (Chicago). One notification per user per room per Chicago day (`streak_nudge_log` dedupes). Rows go to `notifications` → your existing DB webhook → `push` Edge → FCM / Web Push.
+
+---
+
+## E. Planned / not fully wired (catalog)
 
 From `kJarsNotificationInventory`:
 
 | Kind | Status | Notes |
 |------|--------|--------|
-| **Streak minimum at risk** | Not implemented as push | Idea: daily points below room `streak_minimum` near end of day; would need scheduler (e.g. cron + Edge). |
+| **Same time yesterday reminder** | Not implemented | Would need stored first-log time + scheduler. |
 
 ---
 
-## E. Foreground & web behavior
+## F. Foreground & web behavior
 
 - **Native:** OS handles background pushes; foreground behavior depends on platform and FCM setup.
 - **Web:** When the tab is focused, FCM may not show a system banner; `foreground_push_display_web.dart` can show a **browser** `Notification` for visibility (see comments in that file).
@@ -97,13 +120,13 @@ From `kJarsNotificationInventory`:
 
 ---
 
-## F. Testing the pipeline
+## G. Testing the pipeline
 
 - **Profile → Test push notification** (`profile_screen.dart`): inserts a test row / triggers your webhook path so you can verify FCM/Web Push end-to-end.
 
 ---
 
-## G. Related files (quick index)
+## H. Related files (quick index)
 
 | Area | Files |
 |------|--------|
