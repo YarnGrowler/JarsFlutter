@@ -127,7 +127,15 @@ From `kJarsNotificationInventory`:
 
 ---
 
-## I. Related files (quick index)
+## I. Achievements (feed, not push)
+
+- **Trigger:** Edge `process-achievements` after each real log (`log_sheet.dart` invokes it with `log_id`).
+- **Feed:** Optional `__ACH__|` row (JSON) — one card per processing pass when something unlocked; not a push unless you add one later.
+- **Docs:** `docs/ACHIEVEMENTS.md`.
+
+---
+
+## J. Related files (quick index)
 
 | Area | Files |
 |------|--------|

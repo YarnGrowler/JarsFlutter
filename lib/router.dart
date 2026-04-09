@@ -15,6 +15,7 @@ import 'screens/ranks/ranks_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'services/auth_service.dart';
 import 'core/theme.dart';
+import 'widgets/ui/achievement_toast_layer.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -193,7 +194,13 @@ class _ScaffoldWithNav extends StatelessWidget {
     final currentIndex = _indexFromLocation(location);
 
     return Scaffold(
-      body: child,
+      body: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          child,
+          const AchievementToastLayer(),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: JarsColors.background,
@@ -207,7 +214,18 @@ class _ScaffoldWithNav extends StatelessWidget {
             padding: const EdgeInsets.only(top: 8, bottom: 4),
             child: BottomNavigationBar(
               currentIndex: currentIndex,
-              onTap: (index) => context.go(_routes[index]),
+              onTap: (index) {
+                // Modal bottom sheets are on the shell navigator; `context` here may not
+                // be the same Navigator that hosted the sheet, so pop via shell key.
+                final shellCtx = _shellNavigatorKey.currentContext;
+                if (shellCtx != null) {
+                  final nav = Navigator.of(shellCtx);
+                  for (var i = 0; i < 16 && nav.canPop(); i++) {
+                    nav.pop();
+                  }
+                }
+                context.go(_routes[index]);
+              },
               iconSize: 24,
               selectedFontSize: 11,
               unselectedFontSize: 11,

@@ -172,3 +172,4 @@ grant select, insert, update, delete on table public.user_fcm_tokens to service_
 -- === 29 fix notify trigger: | was regex alternation → idle spam on every log: run supabase_patches/29_fix_wake_regex_pipe_alternation.sql ===
 -- === 34 streak at-risk nudge log + RPC (cron-streak-nudge Edge): run supabase_patches/34_streak_nudge.sql ===
 -- === 35 AI OpenAI usage log (token counts): run supabase_patches/35_ai_openai_usage_log.sql ===
+-- === 36 room achievements + Edge process-achievements: run supabase_patches/36_room_achievements.sql ===

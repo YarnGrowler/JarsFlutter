@@ -10,6 +10,7 @@ import '../../models/exercise_log.dart';
 import '../../models/reaction.dart';
 import '../../models/room.dart';
 import '../../providers/active_room_provider.dart';
+import '../../providers/achievement_post_log_provider.dart';
 import '../../providers/feed_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../providers/score_provider.dart';
@@ -22,6 +23,7 @@ import '../../services/wake_nudge_service.dart';
 import '../../widgets/feed/feed_card.dart';
 import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../widgets/sheets/room_sheets.dart';
+import '../../widgets/ui/member_avatar_ring.dart';
 import '../../widgets/ui/confirm_delete_dialog.dart';
 import '../../widgets/ui/rivalry_banner.dart';
 import '../../widgets/ui/status_bar.dart';
@@ -40,6 +42,23 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final scoresAsync = ref.watch(roomScoresProvider);
     final myScoreAsync = ref.watch(myScoreProvider);
     final feedAsync = ref.watch(roomFeedWithReactionsProvider);
+
+    ref.listen<List<String>?>(achievementPostLogHintsProvider, (prev, next) {
+      if (next == null || next.isEmpty) return;
+      final text = next.length == 1
+          ? next.first
+          : '${next.take(3).join(' · ')}${next.length > 3 ? '…' : ''}';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(text),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        ref.read(achievementPostLogHintsProvider.notifier).state = null;
+      });
+    });
 
     if (room == null) {
       return _buildNoRoom(context);
@@ -272,6 +291,13 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
     return membersAsync.when(
       data: (members) {
+        const maxFaces = 15;
+        const overlap = 9.0;
+        const size = 26.0;
+        final n = members.length;
+        final showOverflow = n > maxFaces;
+        final faceCount = showOverflow ? maxFaces - 1 : n;
+        final overflowCount = showOverflow ? n - (maxFaces - 1) : 0;
         final colors = [
           JarsColors.primary,
           JarsColors.gold,
@@ -287,53 +313,33 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               : null,
           behavior: HitTestBehavior.translucent,
           child: SizedBox(
-          height: 24,
-          child: Row(
-            children: [
-              ...List.generate(
-                members.length.clamp(0, 5),
-                (i) => Transform.translate(
-                  offset: Offset(-i * 8.0, 0),
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+            height: size,
+            child: Row(
+              children: [
+                for (var i = 0; i < faceCount; i++)
+                  Transform.translate(
+                    offset: Offset(-i * overlap, 0),
+                    child: MemberAvatarCircle(
+                      initial: _getInitial(members[i]),
                       color: colors[i % colors.length],
-                      border: Border.all(
-                          color: JarsColors.background, width: 2),
-                    ),
-                    child: Center(
-                      child: Text(
-                        _getInitial(members[i]),
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
+                      size: size,
                     ),
                   ),
-                ),
-              ),
-              if (members.length > 5)
-                Transform.translate(
-                  offset: Offset(-5 * 8.0, 0),
-                  child: Text(
-                    '+${members.length - 5}',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: JarsColors.textTertiary,
+                if (showOverflow)
+                  Transform.translate(
+                    offset: Offset(-faceCount * overlap, 0),
+                    child: MemberOverflowAvatar(
+                      overflowCount: overflowCount,
+                      size: size,
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
         );
       },
-      loading: () => const SizedBox(height: 24),
-      error: (_, __) => const SizedBox(height: 24),
+      loading: () => const SizedBox(height: 26),
+      error: (_, __) => const SizedBox(height: 26),
     );
   }
 

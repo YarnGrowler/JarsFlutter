@@ -293,6 +293,14 @@ class RoomService {
     );
   }
 
+  /// Room admin: clear all achievement progress for the room.
+  static Future<void> adminResetRoomAchievements(String roomId) async {
+    await _db.rpc(
+      'admin_reset_room_achievements',
+      params: {'p_room_id': roomId},
+    );
+  }
+
   static Future<List<Map<String, dynamic>>> getRoomMembers(String roomId) async {
     final rows = await _db
         .from('room_members')

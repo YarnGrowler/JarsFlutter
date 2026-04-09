@@ -774,6 +774,61 @@ class _AdminRoomSettingsSheetState
                               builder: (ctx) => AlertDialog(
                                 backgroundColor: JarsColors.surfaceRaised,
                                 title: Text(
+                                  'Reset achievements?',
+                                  style: GoogleFonts.spaceGrotesk(
+                                    color: JarsColors.textPrimary,
+                                  ),
+                                ),
+                                content: Text(
+                                  'Clears all achievement progress for this room. '
+                                  'Scores and logs are unchanged.',
+                                  style: GoogleFonts.inter(
+                                    color: JarsColors.textSecondary,
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: Text(
+                                      'Reset',
+                                      style: GoogleFonts.inter(
+                                        color: JarsColors.red,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (!mounted) return;
+                            if (confirmed == true) {
+                              await RoomService.adminResetRoomAchievements(
+                                  room.id);
+                              if (mounted) Navigator.pop(context);
+                            }
+                          },
+                          child: Text(
+                            'Reset achievements',
+                            style: GoogleFonts.inter(
+                              color: JarsColors.textSecondary,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Center(
+                        child: TextButton(
+                          onPressed: () async {
+                            final parent = widget.dialogContext;
+                            final confirmed = await showDialog<bool>(
+                              context: parent,
+                              builder: (ctx) => AlertDialog(
+                                backgroundColor: JarsColors.surfaceRaised,
+                                title: Text(
                                   'Reset Room Scores?',
                                   style: GoogleFonts.spaceGrotesk(
                                     color: JarsColors.textPrimary,

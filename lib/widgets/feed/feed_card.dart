@@ -59,6 +59,13 @@ class FeedCard extends StatelessWidget {
     if (log.isMemberKick) {
       return _MemberKickCard(log: log);
     }
+    if (log.isAchievementBroadcast) {
+      return _AchievementBatchCard(
+        log: log,
+        reactions: reactions,
+        onReact: onReact,
+      );
+    }
     if (log.isAiBroadcast) {
       if (log.isAiReply) {
         return _AiReplyCard(log: log, reactions: reactions, onReact: onReact);
@@ -286,6 +293,181 @@ Widget _aiHeader(ExerciseLog log) {
       ),
     ],
   );
+}
+
+/// One feed row for multiple achievement unlocks from a single log (expand for list).
+class _AchievementBatchCard extends StatefulWidget {
+  final ExerciseLog log;
+  final List<Reaction> reactions;
+  final ValueChanged<String>? onReact;
+
+  const _AchievementBatchCard({
+    required this.log,
+    this.reactions = const [],
+    this.onReact,
+  });
+
+  @override
+  State<_AchievementBatchCard> createState() => _AchievementBatchCardState();
+}
+
+class _AchievementBatchCardState extends State<_AchievementBatchCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final log = widget.log;
+    final title = log.achTitle ?? 'Achievements';
+    final lines = log.achUnlockLines;
+    final singleLine = lines.length == 1 ? (lines.first['line'] as String? ?? '') : '';
+    final singleMeta = lines.length == 1 ? (lines.first['meta'] as String?) : null;
+    final subtitle = lines.isEmpty
+        ? ''
+        : lines.length == 1
+            ? singleLine
+            : '${lines.length} unlocks · tap to expand';
+
+    // Rounded rect + non-uniform border colors: use ClipRRect + uniform outline +
+    // left accent strip (BoxDecoration forbids borderRadius with mixed border colors).
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(JarsRadius.card),
+      child: Container(
+        decoration: BoxDecoration(
+          color: JarsColors.surface,
+          border: Border.all(color: JarsColors.border),
+        ),
+        // Stack (not Row+stretch): ListView gives unbounded height; stretch cannot resolve.
+        child: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 4,
+              child: ColoredBox(
+                color: JarsColors.primary.withValues(alpha: 0.9),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: lines.length <= 1
+                        ? null
+                        : () => setState(() => _expanded = !_expanded),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('🏅 ', style: TextStyle(fontSize: 18)),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  style: GoogleFonts.spaceMono(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.1,
+                                    color: JarsColors.primary,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                if (subtitle.isNotEmpty)
+                                  Text(
+                                    subtitle,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: JarsColors.textPrimary,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                if (lines.length == 1 &&
+                                    singleMeta != null &&
+                                    singleMeta.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    singleMeta,
+                                    style: GoogleFonts.spaceMono(
+                                      fontSize: 11,
+                                      color: JarsColors.textTertiary,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          if (lines.length > 1)
+                            Icon(
+                              _expanded
+                                  ? Icons.expand_less_rounded
+                                  : Icons.expand_more_rounded,
+                              color: JarsColors.textTertiary,
+                              size: 22,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_expanded && lines.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 22, top: 4, bottom: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: lines.map((m) {
+                          final line = m['line'] as String? ?? '';
+                          final meta = m['meta'] as String?;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  line,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    height: 1.35,
+                                    color: JarsColors.textPrimary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (meta != null && meta.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    meta,
+                                    style: GoogleFonts.spaceMono(
+                                      fontSize: 10,
+                                      color: JarsColors.textTertiary,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  _feedReactionBar(
+                    context,
+                    reactions: widget.reactions,
+                    onReact: widget.onReact,
+                    top: 8,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Standalone room-wide AI announcement (milestone, domination, rivalry, cron events).

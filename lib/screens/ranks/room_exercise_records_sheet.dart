@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
 import '../../models/room_exercise_records.dart';
+import '../../services/exercise_service.dart';
 import '../../services/log_service.dart';
 
 /// Room hall-of-fame: exercises by total points, top 3 people each.
@@ -18,6 +20,7 @@ class RoomExerciseRecordsSheet extends StatefulWidget {
 
 class _RoomExerciseRecordsSheetState extends State<RoomExerciseRecordsSheet> {
   List<ExerciseRoomStats>? _data;
+  Map<String, String> _iconByExerciseName = {};
   bool _loading = true;
   String? _error;
 
@@ -29,9 +32,14 @@ class _RoomExerciseRecordsSheetState extends State<RoomExerciseRecordsSheet> {
 
   Future<void> _load() async {
     try {
+      final exercises = await ExerciseService.getRoomExercises(widget.roomId);
+      final iconMap = <String, String>{
+        for (final e in exercises) e.name: e.icon,
+      };
       final rows = await LogService.getRoomExerciseRecords(roomId: widget.roomId);
       if (mounted) {
         setState(() {
+          _iconByExerciseName = iconMap;
           _data = rows;
           _loading = false;
           _error = null;
@@ -151,12 +159,21 @@ class _RoomExerciseRecordsSheetState extends State<RoomExerciseRecordsSheet> {
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (_, i) {
                     final s = _data![i];
+                    final icon =
+                        _iconByExerciseName[s.exerciseName] ?? '🏋️';
                     return Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
                         color: JarsColors.surface,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: JarsColors.border),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,6 +181,8 @@ class _RoomExerciseRecordsSheetState extends State<RoomExerciseRecordsSheet> {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Text(icon, style: const TextStyle(fontSize: 26)),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
                                   s.exerciseName,
@@ -175,7 +194,7 @@ class _RoomExerciseRecordsSheetState extends State<RoomExerciseRecordsSheet> {
                                 ),
                               ),
                               Text(
-                                '${s.totalRoomPoints.round()} pts room',
+                                '${s.totalRoomPoints.round()} pts',
                                 style: GoogleFonts.spaceMono(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -183,6 +202,13 @@ class _RoomExerciseRecordsSheetState extends State<RoomExerciseRecordsSheet> {
                                 ),
                               ),
                             ],
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 36, top: 10),
+                            child: Container(
+                              height: 1,
+                              color: JarsColors.border.withValues(alpha: 0.6),
+                            ),
                           ),
                           const SizedBox(height: 10),
                           ...List.generate(s.topUsers.length, (j) {
@@ -196,6 +222,28 @@ class _RoomExerciseRecordsSheetState extends State<RoomExerciseRecordsSheet> {
                               padding: const EdgeInsets.only(bottom: 6),
                               child: Row(
                                 children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: JarsColors.surfaceRaised,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: JarsColors.border,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '#${j + 1}',
+                                      style: GoogleFonts.spaceMono(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: JarsColors.textTertiary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
                                   Text(
                                     medal,
                                     style: const TextStyle(fontSize: 14),
@@ -225,7 +273,13 @@ class _RoomExerciseRecordsSheetState extends State<RoomExerciseRecordsSheet> {
                           }),
                         ],
                       ),
-                    );
+                    )
+                        .animate()
+                        .fadeIn(duration: 280.ms, delay: (40 * i).ms)
+                        .slideY(
+                          begin: 0.05,
+                          curve: Curves.easeOutCubic,
+                        );
                   },
                 ),
               ),

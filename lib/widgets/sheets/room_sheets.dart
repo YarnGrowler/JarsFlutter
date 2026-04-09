@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
+import '../ui/member_avatar_ring.dart';
 import '../../models/room.dart';
 import '../../providers/active_room_provider.dart';
 import '../../providers/feed_provider.dart';
@@ -646,6 +647,14 @@ Future<void> showRoomMembersAdminSheet(
 
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
+                              leading: MemberAvatarCircle(
+                                initial: username.isNotEmpty
+                                    ? username.substring(0, 1)
+                                    : '?',
+                                color: memberColorForIndex(i),
+                                size: 40,
+                                showBorder: false,
+                              ),
                               title: Text(
                                 username,
                                 style: GoogleFonts.spaceGrotesk(

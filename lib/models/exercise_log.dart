@@ -57,6 +57,8 @@ class ExerciseLog {
   static const kMemberKickPrefix = '__KICK__|';
   /// AI narrator card (JSON payload after prefix).
   static const kAiPrefix = '__AI__|';
+  /// Achievement batch card (JSON payload after prefix).
+  static const kAchPrefix = '__ACH__|';
 
   bool get isRankUpBroadcast    => exerciseName.startsWith(kRankUpPrefix);
   bool get isOvertake           => exerciseName.startsWith(kOvertakePrefix);
@@ -69,6 +71,7 @@ class ExerciseLog {
   bool get isMemberJoin        => exerciseName.startsWith(kMemberJoinPrefix);
   bool get isMemberKick        => exerciseName.startsWith(kMemberKickPrefix);
   bool get isAiBroadcast       => exerciseName.startsWith(kAiPrefix);
+  bool get isAchievementBroadcast => exerciseName.startsWith(kAchPrefix);
 
   bool get isAnyBroadcast =>
       isRankUpBroadcast ||
@@ -81,7 +84,8 @@ class ExerciseLog {
       isWakeCard ||
       isMemberJoin ||
       isMemberKick ||
-      isAiBroadcast;
+      isAiBroadcast ||
+      isAchievementBroadcast;
 
   String? get rankUpTitle {
     if (!isRankUpBroadcast) return null;
@@ -161,6 +165,37 @@ class ExerciseLog {
     final m = aiPayload;
     final mode = m?['mode'];
     return mode == 'react';
+  }
+
+  Map<String, dynamic>? get achPayload {
+    if (!isAchievementBroadcast) return null;
+    try {
+      final raw = exerciseName.length > kAchPrefix.length
+          ? exerciseName.substring(kAchPrefix.length)
+          : '';
+      if (raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? get achTitle {
+    final m = achPayload;
+    final t = m?['title'];
+    return t is String && t.isNotEmpty ? t : null;
+  }
+
+  List<Map<String, dynamic>> get achUnlockLines {
+    final m = achPayload;
+    final u = m?['unlocks'];
+    if (u is! List) return const [];
+    return u
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
   }
 
   String? get broadcastPayload {

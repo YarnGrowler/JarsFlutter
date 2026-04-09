@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
 import '../../providers/active_room_provider.dart';
+import '../../providers/achievement_unread_version_provider.dart';
 import '../../providers/leaderboard_provider.dart';
 import '../../providers/score_provider.dart';
+import '../../services/achievement_service.dart';
 import '../../services/log_service.dart';
 import '../../services/score_service.dart';
 import '../../services/supabase_service.dart';
@@ -14,6 +16,7 @@ import '../../widgets/ranks/rank_progress_arc.dart';
 import '../../widgets/ranks/consistency_calendar.dart';
 import 'member_profile_sheet.dart';
 import 'exercise_stats_sheet.dart';
+import 'achievements_sheet.dart';
 import 'room_exercise_records_sheet.dart';
 
 final consistencyProvider =
@@ -34,6 +37,36 @@ class RanksScreen extends ConsumerStatefulWidget {
 class _RanksScreenState extends ConsumerState<RanksScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  String? _achDotRoomId;
+  Future<bool>? _achDotFuture;
+
+  void _ensureAchDotFuture(String roomId) {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) {
+      _achDotFuture = Future.value(false);
+      return;
+    }
+    if (_achDotRoomId == roomId && _achDotFuture != null) return;
+    _achDotRoomId = roomId;
+    _achDotFuture =
+        AchievementService.hasUnreadAchievements(roomId: roomId, userId: uid);
+  }
+
+  Future<void> _openAchievementsSheet(String roomId) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => AchievementsSheet(roomId: roomId),
+    );
+    if (!mounted) return;
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return;
+    setState(() {
+      _achDotFuture =
+          AchievementService.hasUnreadAchievements(roomId: roomId, userId: uid);
+    });
+  }
 
   @override
   void initState() {
@@ -61,6 +94,21 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
 
   @override
   Widget build(BuildContext context) {
+    final room = ref.watch(activeRoomProvider);
+    ref.listen<int>(achievementUnreadVersionProvider, (prev, next) {
+      final r = ref.read(activeRoomProvider);
+      final uid = SupabaseService.currentUserId;
+      if (r == null || uid == null) return;
+      setState(() {
+        _achDotRoomId = r.id;
+        _achDotFuture =
+            AchievementService.hasUnreadAchievements(roomId: r.id, userId: uid);
+      });
+    });
+    if (room != null) {
+      _ensureAchDotFuture(room.id);
+    }
+
     return Scaffold(
       backgroundColor: JarsColors.background,
       body: SafeArea(
@@ -84,20 +132,54 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
                     ),
                   ),
                   IconButton(
+                    tooltip: 'Achievements',
+                    onPressed: room == null
+                        ? null
+                        : () => _openAchievementsSheet(room.id),
+                    icon: FutureBuilder<bool>(
+                      future: _achDotFuture,
+                      builder: (context, snap) {
+                        final unread = snap.data == true;
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Icon(
+                              Icons.workspace_premium_outlined,
+                              color: JarsColors.primary,
+                            ),
+                            if (unread)
+                              Positioned(
+                                right: -2,
+                                top: -2,
+                                child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFE53935),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  IconButton(
                     tooltip: 'Exercise records',
                     icon: Icon(
                       Icons.emoji_events_outlined,
                       color: JarsColors.gold,
                     ),
                     onPressed: () {
-                      final room = ref.read(activeRoomProvider);
-                      if (room == null) return;
+                      final r = ref.read(activeRoomProvider);
+                      if (r == null) return;
                       showModalBottomSheet<void>(
                         context: context,
                         isScrollControlled: true,
                         backgroundColor: Colors.transparent,
                         builder: (ctx) => RoomExerciseRecordsSheet(
-                          roomId: room.id,
+                          roomId: r.id,
                         ),
                       );
                     },

@@ -4,6 +4,7 @@ import 'core/theme.dart';
 import 'providers/ui_text_scale_provider.dart';
 import 'router.dart';
 import 'widgets/celebration/reaction_rain_host.dart';
+import 'widgets/splash/launch_splash_host.dart';
 
 class JarsApp extends ConsumerWidget {
   const JarsApp({super.key});
@@ -19,10 +20,12 @@ class JarsApp extends ConsumerWidget {
       color: JarsColors.background,
       builder: (context, child) {
         final mq = MediaQuery.of(context);
-        return ReactionRainHost(
-          child: MediaQuery(
-            data: mq.copyWith(textScaler: TextScaler.linear(textScale)),
-            child: child ?? const SizedBox.shrink(),
+        return LaunchSplashHost(
+          child: ReactionRainHost(
+            child: MediaQuery(
+              data: mq.copyWith(textScaler: TextScaler.linear(textScale)),
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },

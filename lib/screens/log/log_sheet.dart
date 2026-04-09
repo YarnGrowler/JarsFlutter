@@ -19,7 +19,12 @@ import '../../models/score.dart';
 import '../../providers/active_room_provider.dart';
 import '../../providers/exercise_provider.dart';
 import '../../providers/goal_provider.dart';
+import '../../providers/achievement_post_log_provider.dart';
+import '../../providers/achievement_unlock_toast_provider.dart';
+import '../../providers/achievement_unread_version_provider.dart';
+import '../../providers/feed_provider.dart';
 import '../../providers/score_provider.dart';
+import '../../services/achievement_events_service.dart';
 import '../../services/ai_events_service.dart';
 import '../../services/event_service.dart';
 import '../../services/log_service.dart';
@@ -625,6 +630,22 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
       // Invoked AFTER addPoints so the Edge function reads fresh scores.
       unawaited(AiEventsService.processAfterLog(log.id));
+      unawaited(() async {
+        final r = await AchievementEventsService.processAfterLog(log.id);
+        if (!context.mounted) return;
+        ref.invalidate(roomFeedWithReactionsProvider);
+        if (r == null) return;
+        if (r.unlockToasts.isNotEmpty) {
+          ref.read(achievementUnlockToastProvider.notifier).state =
+              r.unlockToasts;
+        }
+        if (r.hints.isNotEmpty) {
+          ref.read(achievementPostLogHintsProvider.notifier).state = r.hints;
+        }
+        if (r.hadUnlocks) {
+          ref.read(achievementUnreadVersionProvider.notifier).state++;
+        }
+      }());
       ref.invalidate(myScoreProvider);
       ref.invalidate(roomScoresProvider);
       ref.invalidate(groupGoalProgressProvider);
