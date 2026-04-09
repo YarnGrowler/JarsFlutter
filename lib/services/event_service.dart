@@ -76,17 +76,11 @@ class EventService {
           payload:
               '⚔️ $username overtook $overtakenName · now $gap pts ahead',
         );
-        // Notify the person who got overtaken
+        // Victim gets a targeted push; everyone else gets the routine
+        // "workout logged" push from [log_sheet] (avoid duplicate room-wide lines).
         await NotificationService.sendNotification(
           targetUserId: score.userId,
           body: '$username just passed you. You\'re losing ground.',
-        );
-        // Everyone else in the room (rivalry feed on phone too)
-        await NotificationService.notifyRoomMembersExceptIds(
-          roomId: roomId,
-          excludeUserIds: {userId, score.userId},
-          body:
-              '$username overtook $overtakenName — $gap pts now separate them.',
         );
         break; // one card per log is enough
       }
@@ -127,26 +121,21 @@ class EventService {
 
     if (!repPr && !weightPr) return;
 
-    String payload;
-    String notifyBody;
+    final String payload;
     if (repPr && weightPr) {
       final wStr = _formatWeight(w);
       final pwStr = prevBestWeight > 0 ? _formatWeight(prevBestWeight) : 'none';
       payload =
           '💥 $username set a new record · $repCount $exerciseName @ $wStr '
           '(was ${prevBestReps} reps, $pwStr max weight)';
-      notifyBody =
-          '$username PR · $repCount× $exerciseName @ $wStr (reps was $prevBestReps, weight was $pwStr)';
     } else if (repPr) {
       payload =
           '💥 $username set a new record · $repCount $exerciseName (was $prevBestReps)';
-      notifyBody = '$username PR · $repCount× $exerciseName (prev $prevBestReps)';
     } else {
       final wStr = _formatWeight(w);
       final pwStr = prevBestWeight > 0 ? _formatWeight(prevBestWeight) : 'none';
       payload =
           '💥 $username new weight PR · $exerciseName @ $wStr (was $pwStr)';
-      notifyBody = '$username weight PR · $exerciseName $wStr (was $pwStr)';
     }
 
     await _insertBroadcast(
@@ -155,11 +144,7 @@ class EventService {
       prefix: ExerciseLog.kPrPrefix,
       payload: payload,
     );
-    await NotificationService.notifyRoomMembersExcept(
-      roomId: roomId,
-      excludeUserId: userId,
-      body: notifyBody,
-    );
+    // Push: roommates already get per-log activity from [log_sheet]; feed card is the PR highlight.
   }
 
   static String _formatWeight(double lb) {
@@ -187,7 +172,6 @@ class EventService {
 
     if (rows.length == 1) {
       // First real log of the Chicago calendar day (same window as [todayStart]).
-      // Push: [NotificationService.notifyRoomMembersExcept] → notifications table → Edge/FCM.
       JarsTimezone.ensureInitialized();
       final nowChi =
           tz.TZDateTime.now(tz.getLocation(JarsTimezone.locationName));
@@ -201,11 +185,7 @@ class EventService {
         prefix: ExerciseLog.kFirstLogPrefix,
         payload: '⚡ $username first log today · $timeStr',
       );
-      await NotificationService.notifyRoomMembersExcept(
-        roomId: roomId,
-        excludeUserId: userId,
-        body: '$username\'s first log today · $timeStr',
-      );
+      // Push: covered by per-log activity in [log_sheet].
     }
   }
 
@@ -227,11 +207,7 @@ class EventService {
           prefix: ExerciseLog.kStreakPrefix,
           payload: '🔥 $username is on a $m-day streak',
         );
-        await NotificationService.notifyRoomMembersExcept(
-          roomId: roomId,
-          excludeUserId: userId,
-          body: '$username hit a $m-day streak 🔥',
-        );
+        // Push: covered by per-log activity in [log_sheet].
         break;
       }
     }
@@ -254,11 +230,7 @@ class EventService {
         prefix: ExerciseLog.kDeadPrefix,
         payload: "💀 $username's $streakBefore-day streak just ended",
       );
-      await NotificationService.notifyRoomMembersExcept(
-        roomId: roomId,
-        excludeUserId: userId,
-        body: '$username\'s $streakBefore-day streak ended',
-      );
+      // Push: covered by per-log activity in [log_sheet].
     }
   }
 

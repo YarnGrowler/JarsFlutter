@@ -4,6 +4,7 @@ import '../core/jars_timezone.dart';
 import 'supabase_service.dart';
 import '../core/count_unit.dart';
 import '../models/exercise_log.dart';
+import '../models/room_exercise_records.dart';
 
 class LogService {
   static final _db = SupabaseService.client;
@@ -213,6 +214,76 @@ class LogService {
       map[day] = (map[day] ?? 0) + pts;
     }
     return map;
+  }
+
+  /// Aggregates non-broadcast logs in [roomId]: exercises sorted by total room points,
+  /// each with up to [topUsersPerExercise] users by points on that exercise.
+  /// Uses the most recent [maxLogs] rows (newest first) for performance.
+  static Future<List<ExerciseRoomStats>> getRoomExerciseRecords({
+    required String roomId,
+    int topUsersPerExercise = 3,
+    int maxLogs = 4000,
+  }) async {
+    final rows = await _db
+        .from('exercise_logs')
+        .select('user_id, exercise_name, points_earned, profiles(username)')
+        .eq('room_id', roomId)
+        .not('exercise_name', 'match', r'^__')
+        .order('created_at', ascending: false)
+        .limit(maxLogs);
+
+    // exerciseName -> userId -> sum points
+    final agg = <String, Map<String, double>>{};
+    final usernames = <String, String>{};
+
+    final list = rows is List ? rows as List<dynamic> : <dynamic>[];
+    for (final raw in list) {
+      if (raw is! Map) continue;
+      final m = Map<String, dynamic>.from(raw);
+      final name = m['exercise_name'] as String? ?? '';
+      if (name.isEmpty) continue;
+      final uid = m['user_id'] as String? ?? '';
+      if (uid.isEmpty) continue;
+      final pts = (m['points_earned'] as num?)?.toDouble() ?? 0;
+      final prof = m['profiles'];
+      String uname = '?';
+      if (prof is Map) {
+        final u = prof['username'];
+        if (u is String && u.isNotEmpty) uname = u;
+      }
+      usernames[uid] = uname;
+      agg.putIfAbsent(name, () => {});
+      final map = agg[name]!;
+      map[uid] = (map[uid] ?? 0) + pts;
+    }
+
+    final out = <ExerciseRoomStats>[];
+    for (final entry in agg.entries) {
+      final exerciseName = entry.key;
+      final byUser = entry.value;
+      var total = 0.0;
+      for (final v in byUser.values) {
+        total += v;
+      }
+      final users = byUser.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      final top = <ExerciseUserPoints>[];
+      for (var i = 0; i < users.length && i < topUsersPerExercise; i++) {
+        final e = users[i];
+        top.add(ExerciseUserPoints(
+          userId: e.key,
+          username: usernames[e.key] ?? '?',
+          points: e.value,
+        ));
+      }
+      out.add(ExerciseRoomStats(
+        exerciseName: exerciseName,
+        totalRoomPoints: total,
+        topUsers: top,
+      ));
+    }
+    out.sort((a, b) => b.totalRoomPoints.compareTo(a.totalRoomPoints));
+    return out;
   }
 
   /// Room feed row so others see a rank-up taunt (no points, no exercise).

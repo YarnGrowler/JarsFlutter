@@ -76,7 +76,7 @@ const kSystemExercises = <ExerciseDefinition>[
     icon: '🏋️',
     category: 'Upper Body',
     supportsWeight: true,
-    weightThreshold: 5,
+    weightThreshold: 3,
     weightMultiplier: 1.25,
   ),
   ExerciseDefinition(
@@ -92,7 +92,7 @@ const kSystemExercises = <ExerciseDefinition>[
   ExerciseDefinition(
     id: 'one_arm_pullups',
     name: 'One-Arm Pull-ups',
-    points: 10,
+    points: 12,
     icon: '💪💪',
     category: 'Upper Body',
     supportsWeight: true,

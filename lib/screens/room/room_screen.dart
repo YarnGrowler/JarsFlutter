@@ -22,6 +22,7 @@ import '../../services/wake_nudge_service.dart';
 import '../../widgets/feed/feed_card.dart';
 import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../widgets/sheets/room_sheets.dart';
+import '../../widgets/ui/confirm_delete_dialog.dart';
 import '../../widgets/ui/rivalry_banner.dart';
 import '../../widgets/ui/status_bar.dart';
 
@@ -458,6 +459,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         ),
       ),
       confirmDismiss: (direction) async {
+        final ok = await showConfirmDeleteFeedMessage(context);
+        if (!ok) return false;
         try {
           await LogService.deleteLog(log.id);
           ref.invalidate(roomFeedWithReactionsProvider);

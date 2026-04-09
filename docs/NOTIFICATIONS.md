@@ -33,27 +33,28 @@ Exact Edge/webhook configuration lives outside this repo; the app assumes insert
 
 ---
 
-## B. Client `EventService` (after a real exercise log)
+## B. Room activity push (every real log)
 
-`EventService.checkAndBroadcast` runs **after** `ScoreService.addPoints` from the log flow (`log_sheet.dart`). It evaluates several conditions in parallel and may:
+After a successful log, `log_sheet.dart` calls `NotificationService.notifyRoomMembersExcept` so **every other member** gets a short line: username, exercise, volume, optional weight, points. This is the main “someone worked out” push.
 
-- insert **broadcast** rows into `exercise_logs` (special `exercise_name` prefixes — see `ExerciseLog` / `EventService`), and  
-- enqueue **push** via `NotificationService`.
+## C. Client `EventService` (after a real exercise log)
+
+`EventService.checkAndBroadcast` runs in parallel (unawaited) from the same log flow. It may insert **broadcast** rows into `exercise_logs` (special `exercise_name` prefixes). **Room-wide pushes for PR / first log / streak / dead** are not duplicated here — mates already got the routine activity push above. **Overtake:** only the **passed** user gets an extra targeted push.
 
 | Kind (catalog) | Trigger | Feed broadcast | Push |
 |----------------|---------|----------------|------|
-| **Overtake** (`overtakeVictim` / `overtakeSpectators`) | After this log, your **total** crosses someone who was strictly ahead of you before | Overtake line for the room | **Victim:** DM — “X just passed you…” **Others:** room minus logger + victim — “X overtook Y…” |
-| **Personal record** (`personalRecordRoom`) | Same `exerciseName`, non-broadcast history exists; this log’s **count** beats previous best for that name | PR line | Everyone in room **except** logger |
-| **First log of day** (`firstLogOfDayRoom`) | First **non-broadcast** log for you today (**Chicago** calendar day) | First-log line with time | Room except you |
-| **Streak milestone** (`streakMilestoneRoom`) | Streak crosses **3, 7, 14, 30, 60, or 100** days | Streak line | Room except you |
-| **Dead streak** (`deadStreakRoom`) | Streak **dropped** from ≥3 to **1** (broken streak) | Dead streak line | Room except you |
+| **Overtake** (`overtakeVictim` / `overtakeSpectators`) | After this log, your **total** crosses someone who was strictly ahead of you before | Overtake line for the room | **Victim only:** “X just passed you…” (no separate “spectators” push; others rely on room activity line) |
+| **Personal record** (`personalRecordRoom`) | Rep and/or weight PR for that exercise name | PR line | *(covered by room activity push)* |
+| **First log of day** (`firstLogOfDayRoom`) | First **non-broadcast** log for you today (**Chicago** calendar day) | First-log line with time | *(covered by room activity push)* |
+| **Streak milestone** (`streakMilestoneRoom`) | Streak crosses **3, 7, 14, 30, 60, or 100** days | Streak line | *(covered by room activity push)* |
+| **Dead streak** (`deadStreakRoom`) | Streak **dropped** from ≥3 to **1** (broken streak) | Dead streak line | *(covered by room activity push)* |
 | **Close gap** (`closeGapRoom`) | Someone **ahead** of you exists; gap ≤ **50** pts | **Targeted** broadcast row visible to the person ahead (`kCloseGapPrefix`) | **Only** the person ahead — “Watch out — someone is only N pts behind you.” |
 
 **Timezone:** “Day” boundaries for first-log-of-day use `JarsTimezone` / Chicago.
 
 ---
 
-## C. Other Flutter-triggered pushes (not all in `notifications_catalog` enum)
+## D. Other Flutter-triggered pushes (not all in `notifications_catalog` enum)
 
 These also insert into `notifications` the same way; consider extending the catalog if you want one enum per kind.
 
@@ -79,7 +80,7 @@ These also insert into `notifications` the same way; consider extending the cata
 
 ---
 
-## D. Streak at-risk cron (before midnight Chicago)
+## E. Streak at-risk cron (before midnight Chicago)
 
 **Goal:** Push the user (not the room) if they still need points to hit the room’s `streak_minimum` today and they have an active streak to lose.
 
@@ -102,7 +103,7 @@ These also insert into `notifications` the same way; consider extending the cata
 
 ---
 
-## E. Planned / not fully wired (catalog)
+## F. Planned / not fully wired (catalog)
 
 From `kJarsNotificationInventory`:
 
@@ -112,7 +113,7 @@ From `kJarsNotificationInventory`:
 
 ---
 
-## F. Foreground & web behavior
+## G. Foreground & web behavior
 
 - **Native:** OS handles background pushes; foreground behavior depends on platform and FCM setup.
 - **Web:** When the tab is focused, FCM may not show a system banner; `foreground_push_display_web.dart` can show a **browser** `Notification` for visibility (see comments in that file).
@@ -120,13 +121,13 @@ From `kJarsNotificationInventory`:
 
 ---
 
-## G. Testing the pipeline
+## H. Testing the pipeline
 
 - **Profile → Test push notification** (`profile_screen.dart`): inserts a test row / triggers your webhook path so you can verify FCM/Web Push end-to-end.
 
 ---
 
-## H. Related files (quick index)
+## I. Related files (quick index)
 
 | Area | Files |
 |------|--------|

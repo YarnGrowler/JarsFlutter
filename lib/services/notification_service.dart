@@ -19,8 +19,9 @@ import 'web_push_js_stub.dart'
 // • Idle wake card (SQL `notify_room_on_wake_card` on __WAKE__| insert): “👻 {user} is idle…”
 //   to all room members except the absent user. (Fix spurious wakes: patch 18 + feed throttle.)
 // • Wake nudge (`send_wake_nudge` RPC): random body to the absent user only (max 2 taps/card).
-// • EventService (after a real exercise log): overtaken, PR, first log of day, streak milestone,
-//   dead streak, close gap — `sendNotification` / `notifyRoomMembersExcept*`.
+// • Every real workout log (log_sheet): `notifyRoomMembersExcept` — room activity one-liner for mates.
+// • EventService: overtaken victim DM, close-gap target, PR/streak/first-log feed cards (pushes merged into per-log).
+//   Rank-up push stays in log_sheet.
 // • “Same time yesterday” workout reminder: not implemented — see [kJarsNotificationInventory].
 //
 // Full matrix: lib/core/notifications_catalog.dart

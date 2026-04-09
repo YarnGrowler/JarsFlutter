@@ -14,6 +14,7 @@ import '../../widgets/ranks/rank_progress_arc.dart';
 import '../../widgets/ranks/consistency_calendar.dart';
 import 'member_profile_sheet.dart';
 import 'exercise_stats_sheet.dart';
+import 'room_exercise_records_sheet.dart';
 
 final consistencyProvider =
     FutureProvider.autoDispose<Map<DateTime, double>>((ref) async {
@@ -66,14 +67,42 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Text(
-                'Ranks',
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  color: JarsColors.textPrimary,
-                ),
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        'Ranks',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          color: JarsColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Exercise records',
+                    icon: Icon(
+                      Icons.emoji_events_outlined,
+                      color: JarsColors.gold,
+                    ),
+                    onPressed: () {
+                      final room = ref.read(activeRoomProvider);
+                      if (room == null) return;
+                      showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (ctx) => RoomExerciseRecordsSheet(
+                          roomId: room.id,
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),

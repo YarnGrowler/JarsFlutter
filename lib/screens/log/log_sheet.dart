@@ -54,6 +54,38 @@ const String _kDefaultCategory = 'Upper Body';
 const double _kLogSheetMin = 0.36;
 const double _kLogSheetMax = 0.75;
 
+/// Push text for roommates when someone logs (not every event had a push before).
+String _roomActivityPushBody({
+  required String username,
+  required String exerciseName,
+  required int count,
+  required CountUnit countUnit,
+  required double weightLb,
+  required int pointsEarned,
+}) {
+  final vol = _pushVolumeLabel(count, countUnit);
+  final w = weightLb > 0
+      ? ' @ ${weightLb % 1 == 0 ? weightLb.toInt() : weightLb.toStringAsFixed(1)} lb'
+      : '';
+  return '$username · $exerciseName · $vol$w · +$pointsEarned pts';
+}
+
+String _pushVolumeLabel(int count, CountUnit u) {
+  switch (u) {
+    case CountUnit.reps:
+      return '$count reps';
+    case CountUnit.seconds:
+      final s = count;
+      if (s < 60) return '${s}s';
+      final m = s ~/ 60;
+      final r = s % 60;
+      if (r == 0) return '${m} min';
+      return '${m}m ${r}s';
+    case CountUnit.minutes:
+      return '$count min';
+  }
+}
+
 class LogSheet extends ConsumerStatefulWidget {
   const LogSheet({super.key});
 
@@ -615,6 +647,21 @@ class _LogSheetState extends ConsumerState<LogSheet>
         streakAfter: after?.streakCurrent ?? 0,
         currentLogId: log.id,
       ));
+
+      unawaited(
+        NotificationService.notifyRoomMembersExcept(
+          roomId: room.id,
+          excludeUserId: userId,
+          body: _roomActivityPushBody(
+            username: username,
+            exerciseName: exercise.name,
+            count: count,
+            countUnit: exercise.countUnit,
+            weightLb: _weight,
+            pointsEarned: totalPts.round(),
+          ),
+        ),
+      );
 
       if (mounted) {
         setState(() {

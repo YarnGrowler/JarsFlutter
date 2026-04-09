@@ -14,6 +14,7 @@ import '../../providers/score_provider.dart';
 import '../../services/log_service.dart';
 import '../../services/score_service.dart';
 import '../../services/supabase_service.dart';
+import '../../widgets/ui/confirm_delete_dialog.dart';
 
 class LogHistoryScreen extends ConsumerStatefulWidget {
   const LogHistoryScreen({super.key});
@@ -312,8 +313,9 @@ class _LogRow extends StatelessWidget {
         child: const Icon(Icons.delete_outline, color: Colors.white),
       ),
       confirmDismiss: (_) async {
-        HapticFeedback.mediumImpact();
-        return true;
+        final ok = await showConfirmDeleteWorkoutLog(context);
+        if (ok) HapticFeedback.mediumImpact();
+        return ok;
       },
       onDismissed: (_) => onDelete(),
       child: GestureDetector(
