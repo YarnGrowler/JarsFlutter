@@ -781,7 +781,8 @@ Deno.serve(async (req) => {
       const ahead = sorted[rankAfter - 2];
       if (ahead) {
         const gap = Number(ahead.total_score ?? 0) - totalAfter;
-        if (gap >= 0 && gap < 10) {
+        const nearTieMaxGap = Math.max(5, Number(Deno.env.get("AI_NEAR_TIE_MAX_GAP") ?? "15"));
+        if (gap >= 0 && gap < nearTieMaxGap) {
           events.push({ key: "near_tie", payload: { gap, rank: rankAfter } });
         }
       }
@@ -806,7 +807,9 @@ Deno.serve(async (req) => {
         const days =
           (new Date(logCreatedAt).getTime() - new Date(prevReal.created_at).getTime()) /
           86400000;
-        if (days >= 5 && pointsEarned >= 30) {
+        const ghostMinDays = Math.max(1, Number(Deno.env.get("AI_GHOST_RETURN_MIN_DAYS") ?? "4"));
+        const ghostMinPts = Math.max(1, Number(Deno.env.get("AI_GHOST_RETURN_MIN_POINTS") ?? "25"));
+        if (days >= ghostMinDays && pointsEarned >= ghostMinPts) {
           events.push({
             key: "ghost_return",
             payload: { daysAway: Math.floor(days), points: pointsEarned },
@@ -862,7 +865,7 @@ Deno.serve(async (req) => {
     // --- Silence break ---
     if (enabled("silence_break")) {
       const lastRoom = raiRow.last_room_log_at as string | undefined;
-      const silenceHours = 8;
+      const silenceHours = Math.max(1, Number(Deno.env.get("AI_SILENCE_BREAK_MIN_HOURS") ?? "6"));
       if (lastRoom) {
         const gapMs = new Date(logCreatedAt).getTime() - new Date(lastRoom).getTime();
         if (gapMs > silenceHours * 3600000) {
@@ -875,8 +878,8 @@ Deno.serve(async (req) => {
     }
 
     // --- Spam surge: N logs in M minutes, once per burst ---
-    const N = 4;
-    const M = 10;
+    const N = Math.max(2, Math.floor(Number(Deno.env.get("AI_SPAM_SURGE_MIN_LOGS") ?? "3")));
+    const M = Math.max(3, Math.floor(Number(Deno.env.get("AI_SPAM_SURGE_WINDOW_MIN") ?? "12")));
     let spamStart = (ursRow.spam_window_start as string | null) ?? null;
     let spamCount = Number(ursRow.spam_logs_in_window ?? 0);
     const lastSpamFired = ursRow.spam_surge_fired_at as string | null;
@@ -1034,16 +1037,16 @@ Deno.serve(async (req) => {
 
     // ── Decide what fires ─────────────────────────────────────────────────────
     const hasEvents = events.length > 0;
-    /** Rare rolls on "boring" logs only — tune via secrets without deploy (0–1). */
+    /** Rolls on "boring" logs (no structured events). Override via Supabase secrets (0–1). */
     const casualRate = Math.min(
       1,
-      Math.max(0, Number(Deno.env.get("AI_CASUAL_REPLY_RATE") ?? "0.06")),
+      Math.max(0, Number(Deno.env.get("AI_CASUAL_REPLY_RATE") ?? "0.20")),
     );
     const emojiRate = Math.min(
       1,
-      Math.max(0, Number(Deno.env.get("AI_EMOJI_REACT_RATE") ?? "0.06")),
+      Math.max(0, Number(Deno.env.get("AI_EMOJI_REACT_RATE") ?? "0.14")),
     );
-    // ~6% each by default → ~88% of normal logs get no AI reply/react at all.
+    // Defaults ~20% casual OpenAI + ~14% emoji-only on non-event logs (~69% of those logs skip both).
     const shouldCasualReply = !hasEvents && Math.random() < casualRate;
     const shouldEmojiReact = Math.random() < emojiRate;
 
@@ -1309,7 +1312,9 @@ Deno.serve(async (req) => {
       count: 0,
       weight: 0,
       points_earned: 0,
-      ...(isReplyMode ? { reply_to_log_id: logId } : {}),
+      // Always thread under the triggering log so the client feed can nest the card;
+      // `mode` in the payload distinguishes reply vs room-wide post UI.
+      reply_to_log_id: logId,
     });
 
     if (Deno.env.get("AI_EVENTS_SEND_PUSH") === "true") {

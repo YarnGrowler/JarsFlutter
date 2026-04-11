@@ -436,7 +436,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
     // Nest AI reply cards under the thread (visual reply indentation).
     final Widget paddedCard =
-        log.isAiReply
+        log.isAiThreadedUnderLog
             ? Padding(
                 padding: const EdgeInsets.only(left: 14),
                 child: card,

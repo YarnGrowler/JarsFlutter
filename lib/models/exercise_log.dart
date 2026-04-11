@@ -114,8 +114,16 @@ class ExerciseLog {
     return t is String ? t : null;
   }
 
-  /// True when this is an AI card generated in direct response to a specific log.
-  bool get isAiReply => isAiBroadcast && replyToLogId != null;
+  /// True when this AI row is threaded under a parent log (grouping + indent), including `mode: post`.
+  bool get isAiThreadedUnderLog => isAiBroadcast && replyToLogId != null;
+
+  /// True for [_AiReplyCard] layout (`reply` / `react` / legacy rows). `mode: post` uses [_AiPostCard] but stays threaded.
+  bool get isAiReply =>
+      isAiThreadedUnderLog &&
+      (aiPayload == null ||
+          aiPayload!['mode'] == null ||
+          aiPayload!['mode'] == 'reply' ||
+          aiPayload!['mode'] == 'react');
 
   /// The persona label stored in the AI payload (e.g. "Analyst", "Hype Man").
   String? get aiPersona {

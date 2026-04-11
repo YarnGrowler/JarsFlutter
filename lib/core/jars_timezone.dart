@@ -32,4 +32,11 @@ class JarsTimezone {
     final start = tz.TZDateTime(_loc, n.year, n.month, n.day);
     return start.toUtc();
   }
+
+  /// Midnight of [dateOnly] (year/month/day, no TZ) in Chicago → UTC instant.
+  static DateTime startOfChicagoDayUtc(DateTime dateOnly) {
+    ensureInitialized();
+    final start = tz.TZDateTime(_loc, dateOnly.year, dateOnly.month, dateOnly.day);
+    return start.toUtc();
+  }
 }

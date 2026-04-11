@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../providers/active_room_provider.dart';
 import '../../providers/achievement_unread_version_provider.dart';
 import '../../providers/leaderboard_provider.dart';
+import '../../providers/room_analytics_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../services/achievement_service.dart';
 import '../../services/log_service.dart';
@@ -17,6 +18,7 @@ import '../../widgets/ranks/consistency_calendar.dart';
 import 'member_profile_sheet.dart';
 import 'exercise_stats_sheet.dart';
 import 'achievements_sheet.dart';
+import 'room_analytics_tab.dart';
 import 'room_exercise_records_sheet.dart';
 
 final consistencyProvider =
@@ -71,7 +73,7 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     // Refresh data when screen first mounts; zero stale daily_points in DB for this user.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final room = ref.read(activeRoomProvider);
@@ -83,6 +85,7 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
       ref.invalidate(myScoreProvider);
       ref.invalidate(roomScoresProvider);
       ref.invalidate(consistencyProvider);
+      ref.invalidate(roomAnalyticsProvider);
     });
   }
 
@@ -208,6 +211,7 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
                 tabs: const [
                   Tab(text: 'Leaderboard'),
                   Tab(text: 'Breakdown'),
+                  Tab(text: 'Analytics'),
                 ],
               ),
             ),
@@ -218,6 +222,7 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
                 children: [
                   _LeaderboardTab(),
                   _BreakdownTab(),
+                  RoomAnalyticsTab(),
                 ],
               ),
             ),

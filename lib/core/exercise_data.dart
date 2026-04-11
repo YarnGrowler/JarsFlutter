@@ -76,7 +76,7 @@ const kSystemExercises = <ExerciseDefinition>[
     icon: '🏋️',
     category: 'Upper Body',
     supportsWeight: true,
-    weightThreshold: 3,
+    weightThreshold: 5,
     weightMultiplier: 1.25,
   ),
   ExerciseDefinition(
@@ -176,6 +176,26 @@ const kSystemExercises = <ExerciseDefinition>[
     weightThreshold: 5,
     weightMultiplier: 1.2,
   ),
+  ExerciseDefinition(
+    id: 'assisted_pullups',
+    name: 'Assisted Pull-ups',
+    points: 2.5,
+    icon: '🤝',
+    category: 'Upper Body',
+    supportsWeight: true,
+    weightThreshold: 5,
+    weightMultiplier: 1.1,
+  ),
+  ExerciseDefinition(
+    id: 'assisted_dips',
+    name: 'Assisted Dips',
+    points: 2.2,
+    icon: '🤝',
+    category: 'Upper Body',
+    supportsWeight: true,
+    weightThreshold: 7.5,
+    weightMultiplier: 1,
+  ),
 
   // Core
   ExerciseDefinition(
@@ -257,6 +277,20 @@ const kSystemExercises = <ExerciseDefinition>[
     name: 'Leg Raises',
     points: 2,
     icon: '🍗',
+    category: 'Core',
+  ),
+  ExerciseDefinition(
+    id: 'hanging_leg_raises',
+    name: 'Hanging Leg Raises',
+    points: 3,
+    icon: '🦵',
+    category: 'Core',
+  ),
+  ExerciseDefinition(
+    id: 'toes_to_bar',
+    name: 'Toes to Bar',
+    points: 4.5,
+    icon: '🔼',
     category: 'Core',
   ),
 
@@ -521,6 +555,46 @@ const kSystemExercises = <ExerciseDefinition>[
     weightMultiplier: 1.5,
   ),
   ExerciseDefinition(
+    id: 'dumbbell_rows',
+    name: 'Dumbbell Rows',
+    points: 4,
+    icon: '🛶',
+    category: 'Strength',
+    supportsWeight: true,
+    weightThreshold: 10,
+    weightMultiplier: 1.05,
+  ),
+  ExerciseDefinition(
+    id: 'romanian_deadlift',
+    name: 'Romanian Deadlift',
+    points: 5,
+    icon: '📐',
+    category: 'Strength',
+    supportsWeight: true,
+    weightThreshold: 17.5,
+    weightMultiplier: 1.35,
+  ),
+  ExerciseDefinition(
+    id: 'chest_fly',
+    name: 'Chest Fly',
+    points: 2.5,
+    icon: '🦋',
+    category: 'Strength',
+    supportsWeight: true,
+    weightThreshold: 5,
+    weightMultiplier: 0.85,
+  ),
+  ExerciseDefinition(
+    id: 'lateral_raises',
+    name: 'Lateral Raises',
+    points: 2,
+    icon: '⬆️',
+    category: 'Strength',
+    supportsWeight: true,
+    weightThreshold: 5,
+    weightMultiplier: 0.7,
+  ),
+  ExerciseDefinition(
   id: 'pike_pushups',
   name: 'Pike Push-ups',
   points: 3.8,
@@ -544,6 +618,14 @@ ExerciseDefinition(
   name: 'Australian Pull-ups',
   points: 2.8,
   icon: '📏',
+  category: 'Upper Body',
+),
+
+ExerciseDefinition(
+  id: 'inverted_rows',
+  name: 'Inverted Rows',
+  points: 2.8,
+  icon: '↩️',
   category: 'Upper Body',
 ),
 
@@ -596,6 +678,17 @@ ExerciseDefinition(
   points: 4.8,
   icon: '🧎',
   category: 'Lower Body',
+),
+
+ExerciseDefinition(
+  id: 'leg_curls',
+  name: 'Leg Curls',
+  points: 2,
+  icon: '🦿',
+  category: 'Lower Body',
+  supportsWeight: true,
+  weightThreshold: 10,
+  weightMultiplier: 0.85,
 ),
 
 ExerciseDefinition(

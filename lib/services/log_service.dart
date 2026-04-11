@@ -87,7 +87,7 @@ class LogService {
     final base = <ExerciseLog>[];
 
     for (final log in flat) {
-      if (log.isAiReply && log.replyToLogId != null) {
+      if (log.isAiThreadedUnderLog) {
         replies.add(log);
       } else {
         base.add(log);

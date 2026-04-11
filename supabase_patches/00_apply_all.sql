@@ -173,3 +173,5 @@ grant select, insert, update, delete on table public.user_fcm_tokens to service_
 -- === 34 streak at-risk nudge log + RPC (cron-streak-nudge Edge): run supabase_patches/34_streak_nudge.sql ===
 -- === 35 AI OpenAI usage log (token counts): run supabase_patches/35_ai_openai_usage_log.sql ===
 -- === 36 room achievements + Edge process-achievements: run supabase_patches/36_room_achievements.sql ===
+-- === 37 achievement bonus counts toward daily_points (Today tab): run supabase_patches/37_achievement_bonus_daily_points.sql ===
+-- === 38 exercises: remove legacy (N min) + custom (keep one Reading UUID), full catalog sync, Reading per room: run supabase_patches/38_exercises_full_sync_cleanup_and_reading.sql ===
