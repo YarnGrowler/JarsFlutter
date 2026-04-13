@@ -53,6 +53,8 @@ class ExerciseLog {
   static const kFirstLogPrefix = '__FIRSTLOG__|';
   static const kCloseGapPrefix = '__CLOSEGAP__|';
   static const kWakePrefix = '__WAKE__|';
+  /// Server-only idle "welfare" points; counts toward score + daily, hidden from room feed.
+  static const kStimulusPrefix = '__STIMULUS__|';
   static const kMemberJoinPrefix = '__JOIN__|';
   static const kMemberKickPrefix = '__KICK__|';
   /// AI narrator card (JSON payload after prefix).
@@ -68,6 +70,8 @@ class ExerciseLog {
   bool get isFirstLog           => exerciseName.startsWith(kFirstLogPrefix);
   bool get isCloseGap           => exerciseName.startsWith(kCloseGapPrefix);
   bool get isWakeCard           => exerciseName.startsWith(kWakePrefix);
+  /// Room welfare / stimulus row (not a workout; shown in profile stats, not main feed).
+  bool get isRoomStimulus       => exerciseName.startsWith(kStimulusPrefix);
   bool get isMemberJoin        => exerciseName.startsWith(kMemberJoinPrefix);
   bool get isMemberKick        => exerciseName.startsWith(kMemberKickPrefix);
   bool get isAiBroadcast       => exerciseName.startsWith(kAiPrefix);
@@ -237,6 +241,7 @@ class ExerciseLog {
         rank: (m['rank'] as num?)?.toInt() ?? 0,
         lastSeenIso: m['lastSeen'] as String? ?? '',
         pick: (m['pick'] as num?)?.toInt() ?? 0,
+        welfare: (m['welfare'] as num?)?.toInt() ?? 0,
       );
     } catch (_) {
       return null;
@@ -281,12 +286,15 @@ class WakeFeedPayload {
   final int rank;
   final String lastSeenIso;
   final int pick;
+  /// Room welfare points granted with this idle card (same as log row if present).
+  final int welfare;
 
   const WakeFeedPayload({
     required this.days,
     required this.rank,
     required this.lastSeenIso,
     required this.pick,
+    this.welfare = 0,
   });
 
   DateTime? get lastSeenUtc {

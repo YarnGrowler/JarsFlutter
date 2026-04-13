@@ -1211,6 +1211,9 @@ class _WakeCard extends StatelessWidget {
     final name = log.username ?? 'Teammate';
     final days = w?.days ?? 1;
     final pick = w?.pick ?? 0;
+    final welfare = w?.welfare ?? 0;
+    final shortName =
+        name.trim().isEmpty ? name : name.trim().split(RegExp(r'\s+')).first;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1257,6 +1260,18 @@ class _WakeCard extends StatelessWidget {
                         height: 1.4,
                       ),
                     ),
+                    if (welfare > 0) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        '$shortName got +$welfare room welfare (random stimulus — not a workout log).',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                          color: JarsColors.primary.withValues(alpha: 0.9),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

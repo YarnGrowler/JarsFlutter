@@ -536,8 +536,13 @@ class _ExerciseBreakdownChartState extends State<_ExerciseBreakdownChart> {
       final map = <String, double>{};
       for (final log in logs) {
         if (log.isAnyBroadcast) continue;
-        map[log.exerciseName] =
-            (map[log.exerciseName] ?? 0) + log.pointsEarned;
+        if (log.isRoomStimulus) {
+          map['Room welfare'] =
+              (map['Room welfare'] ?? 0) + log.pointsEarned;
+        } else {
+          map[log.exerciseName] =
+              (map[log.exerciseName] ?? 0) + log.pointsEarned;
+        }
       }
 
       final sorted = map.entries.toList()

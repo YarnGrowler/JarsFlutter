@@ -175,3 +175,4 @@ grant select, insert, update, delete on table public.user_fcm_tokens to service_
 -- === 36 room achievements + Edge process-achievements: run supabase_patches/36_room_achievements.sql ===
 -- === 37 achievement bonus counts toward daily_points (Today tab): run supabase_patches/37_achievement_bonus_daily_points.sql ===
 -- === 38 exercises: remove legacy (N min) + custom (keep one Reading UUID), full catalog sync, Reading per room: run supabase_patches/38_exercises_full_sync_cleanup_and_reading.sql ===
+-- === 39 idle welfare stimulus on __WAKE__ + __STIMULUS__| log row: run supabase_patches/39_idle_welfare_stimulus.sql ===

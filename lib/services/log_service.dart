@@ -76,7 +76,10 @@ class LogService {
         .order('created_at', ascending: false)
         .limit(limit);
 
-    final flat = rows.map((r) => ExerciseLog.fromJson(r)).toList();
+    final flat = rows
+        .map((r) => ExerciseLog.fromJson(r))
+        .where((l) => !l.isRoomStimulus)
+        .toList();
     return _groupAiReplies(flat);
   }
 
@@ -123,7 +126,9 @@ class LogService {
         .select()
         .eq('room_id', roomId)
         .eq('user_id', userId)
-        .not('exercise_name', 'match', r'^__')
+        .or(
+          'exercise_name.not.match.^__,exercise_name.match.^__STIMULUS__\\|',
+        )
         .order('created_at', ascending: false)
         .limit(limit);
 
@@ -161,7 +166,9 @@ class LogService {
         .from('exercise_logs')
         .select('*, profiles(username)')
         .eq('user_id', userId)
-        .not('exercise_name', 'match', r'^__')
+        .or(
+          'exercise_name.not.match.^__,exercise_name.match.^__STIMULUS__\\|',
+        )
         .order('created_at', ascending: false)
         .range(page * pageSize, (page + 1) * pageSize - 1);
 
@@ -171,7 +178,9 @@ class LogService {
           .select('*, profiles(username)')
           .eq('user_id', userId)
           .eq('room_id', roomId)
-          .not('exercise_name', 'match', r'^__')
+          .or(
+            'exercise_name.not.match.^__,exercise_name.match.^__STIMULUS__\\|',
+          )
           .order('created_at', ascending: false)
           .range(page * pageSize, (page + 1) * pageSize - 1);
     }
@@ -204,7 +213,10 @@ class LogService {
     final chicago = tz.getLocation(JarsTimezone.locationName);
     for (final row in rows) {
       final name = row['exercise_name'] as String? ?? '';
-      if (name.startsWith('__')) continue;
+      if (name.startsWith('__') &&
+          !name.startsWith(ExerciseLog.kStimulusPrefix)) {
+        continue;
+      }
       final pts = (row['points_earned'] as num?)?.toDouble() ?? 0.0;
       final raw = row['created_at'] as String?;
       if (raw == null) continue;

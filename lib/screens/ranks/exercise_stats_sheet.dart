@@ -50,7 +50,7 @@ class _ExerciseStatsSheetState extends State<ExerciseStatsSheet> {
 
       final map = <String, _ExerciseStatsData>{};
       for (final log in logs) {
-        if (log.isAnyBroadcast) continue;
+        if (log.isAnyBroadcast || log.isRoomStimulus) continue;
         final stat = map.putIfAbsent(
             log.exerciseName, () => _ExerciseStatsData(log.exerciseName));
         stat.totalReps += log.count;

@@ -344,6 +344,45 @@ const List<AchievementCatalogEntry> kAchievementCatalog = [
       AchievementTierDef(at: 1, rewardPoints: 15, roman: 'I', goal: '3 tiny logs in 30m'),
     ],
   ),
+  AchievementCatalogEntry(
+    key: 'scraps',
+    displayName: 'Scraps',
+    family: 'grind',
+    emoji: '🧩',
+    description: 'Tiny real logs (1–12 pts) that still add up.',
+    wave: 2,
+    tiers: [
+      AchievementTierDef(at: 15, rewardPoints: 20, roman: 'I', goal: '15 micro-logs'),
+      AchievementTierDef(at: 40, rewardPoints: 45, roman: 'II', goal: '40 micro-logs'),
+      AchievementTierDef(at: 100, rewardPoints: 95, roman: 'III', goal: '100 micro-logs'),
+    ],
+  ),
+  AchievementCatalogEntry(
+    key: 'rear_guard',
+    displayName: 'Rear Guard',
+    family: 'comeback',
+    emoji: '🦥',
+    description: 'Logged while ranked in the bottom half of the room.',
+    wave: 2,
+    tiers: [
+      AchievementTierDef(at: 5, rewardPoints: 22, roman: 'I', goal: '5 logs from the back half'),
+      AchievementTierDef(at: 18, rewardPoints: 55, roman: 'II', goal: '18 logs'),
+      AchievementTierDef(at: 45, rewardPoints: 120, roman: 'III', goal: '45 logs'),
+    ],
+  ),
+  AchievementCatalogEntry(
+    key: 'penny_stack',
+    displayName: 'Penny Stack',
+    family: 'grind',
+    emoji: '💵',
+    description: 'Total points from small logs (≤15 pts each).',
+    wave: 2,
+    tiers: [
+      AchievementTierDef(at: 150, rewardPoints: 25, roman: 'I', goal: '150 pts from small logs'),
+      AchievementTierDef(at: 450, rewardPoints: 60, roman: 'II', goal: '450 pts'),
+      AchievementTierDef(at: 1200, rewardPoints: 140, roman: 'III', goal: '1200 pts'),
+    ],
+  ),
 
   // ── Wave 3 ────────────────────────────────────────────────────────
   AchievementCatalogEntry(

@@ -57,8 +57,13 @@ class _MemberProfileSheetState extends State<MemberProfileSheet> {
           log.createdAt.day,
         );
         dpMap[day] = (dpMap[day] ?? 0) + log.pointsEarned;
-        exMap[log.exerciseName] =
-            (exMap[log.exerciseName] ?? 0) + log.pointsEarned;
+        if (log.isRoomStimulus) {
+          exMap['Room welfare'] =
+              (exMap['Room welfare'] ?? 0) + log.pointsEarned;
+        } else {
+          exMap[log.exerciseName] =
+              (exMap[log.exerciseName] ?? 0) + log.pointsEarned;
+        }
       }
 
       final sorted = exMap.entries.toList()

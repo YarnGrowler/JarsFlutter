@@ -929,6 +929,77 @@ Deno.serve(async (req) => {
         }
       }
 
+      // --- Scraps (1–12 pt logs) ---
+      {
+        const def = ACHIEVEMENT_BY_KEY.get("scraps")!;
+        const row = getProg(uid, "scraps");
+        let n = Number(row.progress.scraps_count ?? 0);
+        if (pointsEarned >= 1 && pointsEarned <= 12) {
+          n += 1;
+          row.progress = { ...row.progress, scraps_count: n };
+          markDirty(uid, "scraps");
+        }
+        let targetTier = row.tier_reached;
+        for (let ti = 0; ti < def.tiers.length; ti++) {
+          if (n >= def.tiers[ti].at) targetTier = ti + 1;
+        }
+        if (targetTier > row.tier_reached) {
+          for (let t = row.tier_reached + 1; t <= targetTier; t++) {
+            tryUnlock(uid, def, t, def.tiers[t - 1].rewardPoints);
+          }
+        }
+        const next = nextTierThreshold(def, row.tier_reached);
+        if (next != null) pushHint(`Scraps ${Math.min(n, next)}/${next} micro-logs`);
+      }
+
+      // --- Rear Guard (bottom half of room when log landed) ---
+      {
+        const def = ACHIEVEMENT_BY_KEY.get("rear_guard")!;
+        const row = getProg(uid, "rear_guard");
+        let n = Number(row.progress.rear_guard_count ?? 0);
+        const bottomHalfOk =
+          rk.memberCount >= 2 && rk.rankBefore > Math.floor(rk.memberCount / 2);
+        if (bottomHalfOk) {
+          n += 1;
+          row.progress = { ...row.progress, rear_guard_count: n };
+          markDirty(uid, "rear_guard");
+        }
+        let targetTier = row.tier_reached;
+        for (let ti = 0; ti < def.tiers.length; ti++) {
+          if (n >= def.tiers[ti].at) targetTier = ti + 1;
+        }
+        if (targetTier > row.tier_reached) {
+          for (let t = row.tier_reached + 1; t <= targetTier; t++) {
+            tryUnlock(uid, def, t, def.tiers[t - 1].rewardPoints);
+          }
+        }
+        const next = nextTierThreshold(def, row.tier_reached);
+        if (next != null) pushHint(`Rear Guard ${Math.min(n, next)}/${next} from the back half`);
+      }
+
+      // --- Penny Stack (cumulative pts from ≤15 pt logs) ---
+      {
+        const def = ACHIEVEMENT_BY_KEY.get("penny_stack")!;
+        const row = getProg(uid, "penny_stack");
+        let sum = Number(row.progress.penny_sum ?? 0);
+        if (pointsEarned >= 1 && pointsEarned <= 15) {
+          sum += pointsEarned;
+          row.progress = { ...row.progress, penny_sum: sum };
+          markDirty(uid, "penny_stack");
+        }
+        let targetTier = row.tier_reached;
+        for (let ti = 0; ti < def.tiers.length; ti++) {
+          if (sum >= def.tiers[ti].at) targetTier = ti + 1;
+        }
+        if (targetTier > row.tier_reached) {
+          for (let t = row.tier_reached + 1; t <= targetTier; t++) {
+            tryUnlock(uid, def, t, def.tiers[t - 1].rewardPoints);
+          }
+        }
+        const next = nextTierThreshold(def, row.tier_reached);
+        if (next != null) pushHint(`Penny Stack ${Math.min(Math.round(sum), next)}/${next} pts from small logs`);
+      }
+
       // --- Perfect Storm ---
       {
         const def = ACHIEVEMENT_BY_KEY.get("perfect_storm")!;

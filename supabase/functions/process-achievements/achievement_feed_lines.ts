@@ -98,6 +98,18 @@ const FEED_QUIPS: Record<string, string[]> = {
     "${user} is trolling the feed with baby logs",
     "micro-logs, maximum chaos",
   ],
+  scraps: [
+    "${user} is stacking baby logs like it’s a strategy",
+    "small reps, still counting",
+  ],
+  rear_guard: [
+    "${user} keeps logging from the back of the pack",
+    "the leaderboard bottom is still active",
+  ],
+  penny_stack: [
+    "${user} is building points one small log at a time",
+    "pennies add up eventually",
+  ],
   perfect_storm: [
     "${user} just robbed the leaderboard",
     "everything just changed",

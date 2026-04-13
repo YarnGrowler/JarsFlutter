@@ -162,6 +162,13 @@ class RoomAnalyticsService {
         continue;
       }
 
+      if (exerciseName.startsWith(ExerciseLog.kStimulusPrefix)) {
+        final uid = m['user_id'] as String? ?? '';
+        final pts = (m['points_earned'] as num?)?.toDouble() ?? 0;
+        addPts(uid, dayIndex, pts);
+        continue;
+      }
+
       if (exerciseName.startsWith('__')) continue;
 
       final uid = m['user_id'] as String? ?? '';
