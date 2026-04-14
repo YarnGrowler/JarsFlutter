@@ -135,22 +135,32 @@ class Exercise {
 
   double calculatePoints(int count, double? weight) {
     double base = points;
-    if (weight != null && supportsWeight && weightThreshold != null) {
+    if (weight != null &&
+        supportsWeight &&
+        weightThreshold != null &&
+        weightThreshold! > 0) {
+      // Continuous weight credit (not floor-steps): every fraction of a
+      // [weightThreshold] block counts proportionally, then we round the total.
       final bonus =
-          (weight / weightThreshold!).floor() * (weightMultiplier ?? 1.0);
+          (weight / weightThreshold!) * (weightMultiplier ?? 1.0);
       base += bonus;
     }
+    final double raw;
     switch (countUnit) {
       case CountUnit.reps:
       case CountUnit.minutes:
-        return base * count;
+        raw = base * count;
+        break;
       case CountUnit.seconds:
         switch (_effectiveTimePointsMode) {
           case TimePointsMode.perSecond:
-            return base * count;
+            raw = base * count;
+            break;
           case TimePointsMode.perMinute:
-            return base * (count / 60.0);
+            raw = base * (count / 60.0);
+            break;
         }
     }
+    return raw.roundToDouble();
   }
 }
