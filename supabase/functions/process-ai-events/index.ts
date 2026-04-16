@@ -700,6 +700,8 @@ Deno.serve(async (req) => {
       });
     }
 
+    jsonLog("invoked", { log_id: logId, room_id: log.room_id, user_id: uid });
+
     const roomId = log.room_id as string;
     const pointsEarned = Number(log.points_earned ?? 0);
     const logCreatedAt = log.created_at as string;
@@ -1037,17 +1039,23 @@ Deno.serve(async (req) => {
 
     // ── Decide what fires ─────────────────────────────────────────────────────
     const hasEvents = events.length > 0;
-    /** Rolls on "boring" logs (no structured events). Override via Supabase secrets (0–1). */
+    /**
+     * "Boring" logs (no heist / ghost / milestone / etc.): two *independent* rolls.
+     * If BOTH miss, we skip OpenAI + emoji (cheap path). Secrets are 0–1 each.
+     *
+     * Old defaults (~20% + ~14%) meant ~69% of boring logs never got any AI — too quiet.
+     * New defaults (~55% + ~42%) → P(skip both) ≈ 0.45×0.58 ≈ 26% silent, ~74% get text or emoji.
+     */
     const casualRate = Math.min(
       1,
-      Math.max(0, Number(Deno.env.get("AI_CASUAL_REPLY_RATE") ?? "0.20")),
+      Math.max(0, Number(Deno.env.get("AI_CASUAL_REPLY_RATE") ?? "0.40")),
     );
     const emojiRate = Math.min(
       1,
-      Math.max(0, Number(Deno.env.get("AI_EMOJI_REACT_RATE") ?? "0.14")),
+      Math.max(0, Number(Deno.env.get("AI_EMOJI_REACT_RATE") ?? "0.42")),
     );
-    // Defaults ~20% casual OpenAI + ~14% emoji-only on non-event logs (~69% of those logs skip both).
     const shouldCasualReply = !hasEvents && Math.random() < casualRate;
+    /** Emoji-only branch is boring-log only (see below), but this roll also decorates eventful OpenAI rows. */
     const shouldEmojiReact = Math.random() < emojiRate;
 
     if (!hasEvents && !shouldCasualReply && !shouldEmojiReact) {

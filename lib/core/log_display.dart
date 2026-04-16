@@ -34,6 +34,21 @@ String formatSecondsAsHuman(int totalSeconds) {
   return '${m}m ${s}s';
 }
 
+/// Sum of seconds across many logs (totals on profile / stats).
+String formatTotalSecondsAsHuman(int totalSeconds) {
+  if (totalSeconds < 60) return '${totalSeconds}s';
+  final h = totalSeconds ~/ 3600;
+  final m = (totalSeconds % 3600) ~/ 60;
+  final s = totalSeconds % 60;
+  if (h > 0) {
+    if (m == 0 && s == 0) return '${h}h';
+    if (s == 0) return '${h}h ${m}m';
+    return '${h}h ${m}m ${s}s';
+  }
+  if (s == 0) return '$m min';
+  return '${m}m ${s}s';
+}
+
 /// Subline when the exercise name is shown separately (e.g. log history list).
 String formatExerciseLogDetailSubtitle(ExerciseLog log) {
   final unit = log.effectiveCountUnit;

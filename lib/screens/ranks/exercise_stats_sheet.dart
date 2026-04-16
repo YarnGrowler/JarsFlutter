@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/count_unit.dart';
+import '../../core/log_display.dart';
 import '../../core/theme.dart';
 import '../../services/log_service.dart';
 
@@ -19,13 +21,15 @@ class ExerciseStatsSheet extends StatefulWidget {
 
 class _ExerciseStatsData {
   final String name;
-  int totalReps = 0;
+  /// From the first log seen for this exercise name (reps vs time).
+  final CountUnit unit;
+  int totalCount = 0;
   double totalPoints = 0;
   int personalBest = 0; // max count (reps / sec / min) in a single log
   double personalBestWeight = 0; // heaviest weight logged for this exercise
   int sessions = 0;
 
-  _ExerciseStatsData(this.name);
+  _ExerciseStatsData(this.name, this.unit);
 }
 
 class _ExerciseStatsSheetState extends State<ExerciseStatsSheet> {
@@ -51,9 +55,13 @@ class _ExerciseStatsSheetState extends State<ExerciseStatsSheet> {
       final map = <String, _ExerciseStatsData>{};
       for (final log in logs) {
         if (log.isAnyBroadcast || log.isRoomStimulus) continue;
-        final stat = map.putIfAbsent(
-            log.exerciseName, () => _ExerciseStatsData(log.exerciseName));
-        stat.totalReps += log.count;
+        final name = log.exerciseName;
+        map.putIfAbsent(
+          name,
+          () => _ExerciseStatsData(name, log.effectiveCountUnit),
+        );
+        final stat = map[name]!;
+        stat.totalCount += log.count;
         stat.totalPoints += log.pointsEarned;
         stat.sessions++;
         if (log.count > stat.personalBest) stat.personalBest = log.count;
@@ -183,11 +191,12 @@ class _ExerciseStatRow extends StatelessWidget {
           Row(
             children: [
               _MiniStat(
-                label: 'Total Reps',
-                value: '${stat.totalReps}',
+                label: _totalVolumeLabel(stat.unit),
+                value: _formatTotalVolume(stat),
                 color: JarsColors.textPrimary,
               ),
               _BestSetStat(
+                unit: stat.unit,
                 bestCount: stat.personalBest,
                 bestWeightLb: stat.personalBestWeight,
               ),
@@ -209,12 +218,36 @@ class _ExerciseStatRow extends StatelessWidget {
   }
 }
 
+String _totalVolumeLabel(CountUnit u) {
+  switch (u) {
+    case CountUnit.reps:
+      return 'Total reps';
+    case CountUnit.seconds:
+      return 'Total time';
+    case CountUnit.minutes:
+      return 'Total minutes';
+  }
+}
+
+String _formatTotalVolume(_ExerciseStatsData stat) {
+  switch (stat.unit) {
+    case CountUnit.reps:
+      return '${stat.totalCount}';
+    case CountUnit.seconds:
+      return formatTotalSecondsAsHuman(stat.totalCount);
+    case CountUnit.minutes:
+      return '${stat.totalCount}';
+  }
+}
+
 /// Best volume (count) for one log, with heaviest weight underneath when logged.
 class _BestSetStat extends StatelessWidget {
+  final CountUnit unit;
   final int bestCount;
   final double bestWeightLb;
 
   const _BestSetStat({
+    required this.unit,
     required this.bestCount,
     required this.bestWeightLb,
   });
@@ -224,18 +257,30 @@ class _BestSetStat extends StatelessWidget {
     return '${w.toStringAsFixed(1)} lb';
   }
 
+  String get _bestLine {
+    switch (unit) {
+      case CountUnit.reps:
+        return '$bestCount';
+      case CountUnit.seconds:
+        return formatSecondsAsHuman(bestCount);
+      case CountUnit.minutes:
+        return '$bestCount min';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Column(
         children: [
           Text(
-            '$bestCount',
+            _bestLine,
             style: GoogleFonts.spaceMono(
               fontSize: 16,
               fontWeight: FontWeight.w700,
               color: JarsColors.gold,
             ),
+            textAlign: TextAlign.center,
           ),
           if (bestWeightLb > 0)
             Text(

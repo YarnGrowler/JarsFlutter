@@ -50,8 +50,8 @@ WHERE e.created_by = 'system'
   'Hanging Leg Raises',
   'Dragon Flags',
   'Toes to Bar',
-  'Tucked Knees Toes to Bar',
-  'Bent Knees to Bar',
+  'Tucked Front Lever Press',
+  'Reverse Tucked Knees to Bar',
   'Squats',
   'Jump Squats',
   'Bulgarian Split Squats',
@@ -521,7 +521,7 @@ FROM (
   false::boolean
 ),
 (
-  'Tucked Knees Toes to Bar',
+  'Tucked Front Lever Press',
   3.8::double precision,
   '📐',
   'Core',
@@ -534,7 +534,7 @@ FROM (
   false::boolean
 ),
 (
-  'Bent Knees to Bar',
+  'Reverse Tucked Knees to Bar',
   3::double precision,
   '📎',
   'Core',
@@ -1753,7 +1753,7 @@ CROSS JOIN (
   false::boolean
 ),
 (
-  'Tucked Knees Toes to Bar',
+  'Tucked Front Lever Press',
   3.8::double precision,
   '📐',
   'Core',
@@ -1766,7 +1766,7 @@ CROSS JOIN (
   false::boolean
 ),
 (
-  'Bent Knees to Bar',
+  'Reverse Tucked Knees to Bar',
   3::double precision,
   '📎',
   'Core',

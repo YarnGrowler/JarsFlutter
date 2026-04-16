@@ -662,6 +662,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
         exerciseName: exercise.name,
         repCount: count,
         logWeight: _weight,
+        countUnit: exercise.countUnit,
         pointsBefore: totalBefore,
         pointsAfter: totalAfter,
         streakBefore: before?.streakCurrent ?? 0,

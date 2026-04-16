@@ -23,6 +23,8 @@ Daily cron function `cron-ai-daily` (Bearer `CRON_SECRET`): last stand batch, re
    - `OPENAI_MAX_COMPLETION_TOKENS` — optional cap for **both** Edge functions (defaults: `220` in `process-ai-events`, `240` in `cron-ai-daily` when unset). Only `max_completion_tokens` is sent to OpenAI.
    - `CRON_SECRET` — long random string; use as `Authorization: Bearer …` for `cron-ai-daily`.
    - `AI_EVENTS_SEND_PUSH` — optional `true` to mirror AI lines into `notifications` (same pipeline as existing pushes).
+   - `AI_CASUAL_REPLY_RATE` — optional **0–1**. On logs with **no** structured event (no heist, ghost, milestone, …), chance to still call OpenAI for a short “casual” reply. Default **`0.55`** (was ~0.20; older low values made the room feel dead).
+   - `AI_EMOJI_REACT_RATE` — optional **0–1**. Chance to attach an emoji reaction path (emoji-only on boring logs when casual misses; can also decorate eventful rows). Default **`0.42`** (was ~0.14). With defaults, boring logs skip both roughly **26%** of the time: \((1-0.55)(1-0.42)\).
    - `AI_LOG_FULL_IO` — optional `true` to log **full** system/user prompts and completion text in Edge logs (noisy; use when debugging).
    - `AI_NARRATIVE_MAX_CHARS` — optional cap on the `recent_room_narrative` block sent to the model (default **14000**). Raises prompt size; increase only if your model budget allows.
 

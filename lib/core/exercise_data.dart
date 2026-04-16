@@ -322,14 +322,14 @@ const kSystemExercises = <ExerciseDefinition>[
   ),
   ExerciseDefinition(
     id: 'tucked_knees_toes_to_bar',
-    name: 'Tucked Knees Toes to Bar',
+    name: 'Tucked Front Lever Press',
     points: 3.8,
     icon: '📐',
     category: 'Core',
   ),
   ExerciseDefinition(
     id: 'bent_knees_to_bar',
-    name: 'Bent Knees to Bar',
+    name: 'Reverse Tucked Knees to Bar',
     points: 3,
     icon: '📎',
     category: 'Core',

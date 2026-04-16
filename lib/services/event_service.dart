@@ -7,6 +7,8 @@ import '../core/jars_timezone.dart';
 import 'log_service.dart';
 import 'notification_service.dart';
 import 'score_service.dart';
+import '../core/count_unit.dart';
+import '../core/log_display.dart';
 import '../core/member_feed_quips.dart';
 import '../models/exercise_log.dart';
 import '../models/score.dart';
@@ -25,6 +27,7 @@ class EventService {
     required String exerciseName,
     required int repCount,
     double logWeight = 0,
+    CountUnit countUnit = CountUnit.reps,
     required double pointsBefore,
     required double pointsAfter,
     required int streakBefore,
@@ -41,6 +44,7 @@ class EventService {
           exerciseName,
           repCount,
           logWeight,
+          countUnit,
           currentLogId,
         ),
         _checkFirstLogOfDay(roomId, userId, username),
@@ -89,6 +93,17 @@ class EventService {
 
   // ── Personal Record ────────────────────────────────────────────────────────
 
+  static String _prVolumePhrase(int value, CountUnit u) {
+    switch (u) {
+      case CountUnit.reps:
+        return '$value';
+      case CountUnit.seconds:
+        return formatSecondsAsHuman(value);
+      case CountUnit.minutes:
+        return '$value min';
+    }
+  }
+
   static Future<void> _checkPersonalRecord(
     String roomId,
     String userId,
@@ -96,6 +111,7 @@ class EventService {
     String exerciseName,
     int repCount,
     double logWeight,
+    CountUnit countUnit,
     String currentLogId,
   ) async {
     final logs = await LogService.getUserLogs(roomId, userId, limit: 500);
@@ -121,16 +137,24 @@ class EventService {
 
     if (!repPr && !weightPr) return;
 
+    final vol = _prVolumePhrase(repCount, countUnit);
+    final prevVol = _prVolumePhrase(prevBestReps, countUnit);
+
     final String payload;
     if (repPr && weightPr) {
       final wStr = _formatWeight(w);
       final pwStr = prevBestWeight > 0 ? _formatWeight(prevBestWeight) : 'none';
       payload =
-          '💥 $username set a new record · $repCount $exerciseName @ $wStr '
-          '(was ${prevBestReps} reps, $pwStr max weight)';
+          '💥 $username set a new record · $vol $exerciseName @ $wStr '
+          '(previous best $prevVol · $pwStr max weight)';
     } else if (repPr) {
+      final wasLabel = switch (countUnit) {
+        CountUnit.reps => 'was $prevBestReps reps',
+        CountUnit.seconds => 'was $prevVol',
+        CountUnit.minutes => 'was $prevBestReps min',
+      };
       payload =
-          '💥 $username set a new record · $repCount $exerciseName (was $prevBestReps)';
+          '💥 $username set a new record · $vol $exerciseName ($wasLabel)';
     } else {
       final wStr = _formatWeight(w);
       final pwStr = prevBestWeight > 0 ? _formatWeight(prevBestWeight) : 'none';
