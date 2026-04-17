@@ -23,6 +23,7 @@ import '../../services/wake_nudge_service.dart';
 import '../../widgets/feed/feed_card.dart';
 import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../widgets/sheets/room_sheets.dart';
+import '../../widgets/onboarding/first_run_coach_mark.dart';
 import '../../widgets/ui/member_avatar_ring.dart';
 import '../../widgets/ui/confirm_delete_dialog.dart';
 import '../../widgets/ui/rivalry_banner.dart';
@@ -64,7 +65,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       return _buildNoRoom(context);
     }
 
-    return Scaffold(
+    return FirstRunCoachMark(
+      child: Scaffold(
       backgroundColor: JarsColors.background,
       body: SafeArea(
         bottom: false,
@@ -280,6 +282,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 

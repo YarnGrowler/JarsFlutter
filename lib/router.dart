@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,12 +9,22 @@ import 'screens/auth/login_screen.dart';
 import 'screens/auth/password_screen.dart';
 import 'screens/auth/room_entry_screen.dart';
 import 'screens/auth/verify_email_screen.dart';
+import 'screens/onboarding/welcome_screen.dart';
+import 'screens/onboarding/value_slides_screen.dart';
+import 'screens/onboarding/goal_question_screen.dart';
+import 'screens/onboarding/frequency_question_screen.dart';
+import 'screens/onboarding/crew_question_screen.dart';
+import 'screens/onboarding/exercises_question_screen.dart';
+import 'screens/onboarding/processing_screen.dart';
+import 'screens/onboarding/notif_priming_screen.dart';
 import 'screens/room/room_screen.dart';
 import 'screens/log/log_sheet.dart';
 import 'screens/log/log_history_screen.dart';
 import 'screens/ranks/ranks_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'services/auth_service.dart';
+import 'core/onboarding_campaign.dart';
+import 'core/onboarding_redo.dart';
 import 'core/theme.dart';
 import 'widgets/ui/achievement_toast_layer.dart';
 
@@ -49,6 +60,46 @@ CustomTransitionPage<void> _fadeSlidePage(
   );
 }
 
+/// Horizontal spring-style slide for onboarding steps (trailing edge → centre).
+CustomTransitionPage<void> _onboardingSlide(
+  GoRouterState state,
+  Widget child,
+) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 320),
+    reverseTransitionDuration: const Duration(milliseconds: 240),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final forward = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      final back = CurvedAnimation(
+        parent: secondaryAnimation,
+        curve: Curves.easeInCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(1.0, 0),
+          end: Offset.zero,
+        ).animate(forward),
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: Offset.zero,
+            end: const Offset(-0.25, 0),
+          ).animate(back),
+          child: FadeTransition(
+            opacity: forward,
+            child: child,
+          ),
+        ),
+      );
+    },
+  );
+}
+
 final authRefreshNotifierProvider = Provider<AuthRefreshNotifier>((ref) {
   final n = AuthRefreshNotifier();
   ref.onDispose(n.dispose);
@@ -60,28 +111,128 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
-    refreshListenable: authRefresh,
+    refreshListenable: Listenable.merge([
+      authRefresh,
+      OnboardingCampaign.gate,
+    ]),
     redirect: (context, state) {
       final session = AuthService.currentSession;
-      final loc = state.matchedLocation;
-      final isAuthRoute = loc.startsWith('/auth');
+      // Use the real path — matchedLocation for nested /auth/* routes can be `/auth`,
+      // which breaks auth detection and triggers the wrong redirects.
+      final path = state.uri.path;
+      final isAuthRoute = path.startsWith('/auth');
+      final isOnboardingRoute = path.startsWith('/onboarding');
       // Logged-in users may open /auth/room-entry to join/create (not signup-only routes).
-      final isRoomEntry = loc == '/auth/room-entry';
+      final isRoomEntry = path == '/auth/room-entry';
+      final isVerifyEmail = path == '/auth/verify-email';
 
-      final isVerifyEmail = loc == '/auth/verify-email';
+      final campaign = OnboardingCampaign.isCampaignActive;
+      final slidesDone = OnboardingCampaign.slidesCompleted;
+      final mustSeeIntroSlides = campaign && !slidesDone;
+
+      // Signed-in users: until slides are done (campaign), always open onboarding first.
+      if (session != null && mustSeeIntroSlides) {
+        if (path == '/onboarding/notifications') return null;
+        if (!isOnboardingRoute) return '/onboarding';
+        return null;
+      }
 
       if (session == null) {
-        if (isRoomEntry) return '/auth';
+        if (isRoomEntry) return '/onboarding';
         if (isVerifyEmail) return null;
-        if (!isAuthRoute) return '/auth';
+        if (isOnboardingRoute) {
+          if (path == '/onboarding' && campaign && slidesDone) {
+            return '/onboarding/q1';
+          }
+          return null;
+        }
+        if (!isAuthRoute) {
+          if (campaign && slidesDone) return '/onboarding/q1';
+          return '/onboarding';
+        }
         return null;
+      }
+      // Logged-in users: onboarding is blocked except post-signup notif priming,
+      // intro campaign (handled above), or replay from settings.
+      if (isOnboardingRoute &&
+          path != '/onboarding/notifications' &&
+          !OnboardingRedoSession.active) {
+        return '/';
       }
       if (isAuthRoute && !isRoomEntry) return '/';
       return null;
     },
     routes: [
+      // ── Onboarding flow (logged-out only) ──────────────────────────────
+      GoRoute(
+        path: '/onboarding',
+        pageBuilder: (context, state) => _onboardingSlide(
+          state,
+          const WelcomeScreen(),
+        ),
+        routes: [
+          GoRoute(
+            path: 'value',
+            pageBuilder: (context, state) => _onboardingSlide(
+              state,
+              const ValueSlidesScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'q1',
+            pageBuilder: (context, state) => _onboardingSlide(
+              state,
+              const GoalQuestionScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'q2',
+            pageBuilder: (context, state) => _onboardingSlide(
+              state,
+              const FrequencyQuestionScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'q3',
+            pageBuilder: (context, state) => _onboardingSlide(
+              state,
+              const ExercisesQuestionScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'q4',
+            pageBuilder: (context, state) => _onboardingSlide(
+              state,
+              const CrewQuestionScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'processing',
+            pageBuilder: (context, state) => _onboardingSlide(
+              state,
+              const ProcessingScreen(),
+            ),
+          ),
+          GoRoute(
+            path: 'notifications',
+            pageBuilder: (context, state) => _onboardingSlide(
+              state,
+              const NotifPrimingScreen(),
+            ),
+          ),
+        ],
+      ),
+
+      // ── Legacy /auth entry (redirect → new onboarding welcome) ─────────
       GoRoute(
         path: '/auth',
+        redirect: (context, state) {
+          // Only the bare /auth URL (legacy entry). Do NOT use matchedLocation:
+          // for /auth/login, /auth/account, etc. it can still be `/auth`, which
+          // incorrectly sent every auth screen to /onboarding.
+          if (state.uri.path == '/auth') return '/onboarding';
+          return null;
+        },
         pageBuilder: (context, state) => _fadeSlidePage(
           state,
           const OnboardingScreen(),

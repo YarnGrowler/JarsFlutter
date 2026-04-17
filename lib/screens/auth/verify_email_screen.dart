@@ -80,9 +80,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       );
       await ProfileService.ensureProfileRow();
       if (!mounted) return;
-      context.go(
-        '/auth/room-entry?email=${Uri.encodeComponent(widget.email)}&username=${Uri.encodeComponent(widget.username)}',
-      );
+      context.go('/onboarding/notifications');
     } catch (e) {
       if (mounted) setState(() => _error = _friendly(e));
     } finally {

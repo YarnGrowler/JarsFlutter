@@ -10,6 +10,7 @@ import 'core/theme.dart';
 import 'bootstrap/config_error_app.dart';
 import 'bootstrap/local_env.dart' show readLocalEnvPairs;
 import 'bootstrap/supabase_public_config.dart';
+import 'core/onboarding_campaign.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,6 +44,8 @@ Future<void> main() async {
   }
 
   await Supabase.initialize(url: url, anonKey: anonKey);
+
+  await OnboardingCampaign.init();
 
   runApp(
     const ColoredBox(

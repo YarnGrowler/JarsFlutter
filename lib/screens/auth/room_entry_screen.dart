@@ -3,7 +3,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/onboarding_data.dart';
 import '../../core/theme.dart';
+import '../../providers/onboarding_provider.dart';
 import '../../widgets/sheets/room_sheets.dart';
 import '../../widgets/ui/auth_shell.dart';
 
@@ -25,6 +27,25 @@ class RoomEntryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final answers = ref.watch(onboardingProvider);
+    final crewStatus = answers.crewStatus;
+
+    // Personalized headline and sub based on Q3 answer.
+    final headline = crewStatus == CrewStatus.hasCode
+        ? 'Connect with\nyour crew'
+        : crewStatus == CrewStatus.startingFresh
+            ? 'Start your room'
+            : 'Pick your battlefield';
+
+    final sub = crewStatus == CrewStatus.hasCode
+        ? "You said you have a code - paste it below."
+        : crewStatus == CrewStatus.startingFresh
+            ? "You're the founder - create and invite."
+            : "Join with a code or start a new room.";
+
+    final joinFirst = crewStatus == CrewStatus.hasCode;
+    final createFirst = crewStatus == CrewStatus.startingFresh;
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -52,60 +73,90 @@ class RoomEntryScreen extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                Text(
-                  'Pick your battlefield',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: JarsColors.textPrimary,
-                  ),
-                  textAlign: TextAlign.center,
-                )
-                    .animate()
-                    .fadeIn(duration: 400.ms)
-                    .slideY(begin: 0.06, curve: Curves.easeOutCubic),
-                const SizedBox(height: 8),
-                Text(
-                  'Join with a code or start a new room',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: JarsColors.textSecondary,
-                  ),
-                  textAlign: TextAlign.center,
-                )
-                    .animate()
-                    .fadeIn(delay: 80.ms, duration: 400.ms),
-                const SizedBox(height: 32),
-                _RoomActionTile(
-                  icon: Icons.vpn_key_rounded,
-                  title: 'Join with code',
-                  subtitle: 'Enter your crew’s 6-character invite',
-                  onTap: () => showJoinRoomSheet(context),
-                )
-                    .animate()
-                    .fadeIn(delay: 120.ms, duration: 400.ms)
-                    .slideX(begin: 0.04),
-                const SizedBox(height: 14),
-                _RoomActionTile(
-                  icon: Icons.add_circle_outline_rounded,
-                  title: 'Create a room',
-                  subtitle: 'You’re the host — set size and name',
-                  onTap: () => showCreateRoomSheet(context),
-                )
-                    .animate()
-                    .fadeIn(delay: 180.ms, duration: 400.ms)
-                    .slideX(begin: 0.04),
-                const SizedBox(height: 28),
-                TextButton(
-                  onPressed: () => context.go('/'),
-                  child: Text(
-                    'Skip for now',
-                    style: GoogleFonts.inter(
-                      color: JarsColors.textTertiary,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
+                        Text(
+                          headline,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            color: JarsColors.textPrimary,
+                            height: 1.15,
+                            letterSpacing: -0.4,
+                          ),
+                          textAlign: TextAlign.center,
+                        )
+                            .animate()
+                            .fadeIn(duration: 400.ms)
+                            .slideY(begin: 0.06, curve: Curves.easeOutCubic),
+                        const SizedBox(height: 8),
+                        Text(
+                          sub,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            color: JarsColors.textSecondary,
+                          ),
+                          textAlign: TextAlign.center,
+                        )
+                            .animate()
+                            .fadeIn(delay: 80.ms, duration: 400.ms),
+                        const SizedBox(height: 32),
+
+                        // Reorder tiles based on Q3 answer.
+                        if (joinFirst || !createFirst) ...[
+                          _RoomActionTile(
+                            icon: Icons.vpn_key_rounded,
+                            title: 'Join with code',
+                            subtitle: 'Enter your crew\'s 6-character invite',
+                            onTap: () => showJoinRoomSheet(context),
+                            highlighted: joinFirst,
+                          )
+                              .animate()
+                              .fadeIn(delay: 120.ms, duration: 400.ms)
+                              .slideX(begin: 0.04),
+                          const SizedBox(height: 14),
+                          _RoomActionTile(
+                            icon: Icons.add_circle_outline_rounded,
+                            title: 'Create a room',
+                            subtitle: 'You\'re the host — set size and name',
+                            onTap: () => showCreateRoomSheet(context),
+                            highlighted: createFirst,
+                          )
+                              .animate()
+                              .fadeIn(delay: 180.ms, duration: 400.ms)
+                              .slideX(begin: 0.04),
+                        ] else ...[
+                          _RoomActionTile(
+                            icon: Icons.add_circle_outline_rounded,
+                            title: 'Create a room',
+                            subtitle: 'You\'re the host — set size and name',
+                            onTap: () => showCreateRoomSheet(context),
+                            highlighted: true,
+                          )
+                              .animate()
+                              .fadeIn(delay: 120.ms, duration: 400.ms)
+                              .slideX(begin: 0.04),
+                          const SizedBox(height: 14),
+                          _RoomActionTile(
+                            icon: Icons.vpn_key_rounded,
+                            title: 'Join with code',
+                            subtitle: 'Enter your crew\'s 6-character invite',
+                            onTap: () => showJoinRoomSheet(context),
+                          )
+                              .animate()
+                              .fadeIn(delay: 180.ms, duration: 400.ms)
+                              .slideX(begin: 0.04),
+                        ],
+
+                        const SizedBox(height: 28),
+                        TextButton(
+                          onPressed: () => context.go('/'),
+                          child: Text(
+                            'Skip for now',
+                            style: GoogleFonts.inter(
+                              color: JarsColors.textTertiary,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -124,12 +175,14 @@ class _RoomActionTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool highlighted;
 
   const _RoomActionTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.highlighted = false,
   });
 
   @override
@@ -141,9 +194,16 @@ class _RoomActionTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         child: Ink(
           decoration: BoxDecoration(
-            color: JarsColors.surface,
+            color: highlighted
+                ? JarsColors.primary.withValues(alpha: 0.1)
+                : JarsColors.surface,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: JarsColors.border),
+            border: Border.all(
+              color: highlighted
+                  ? JarsColors.primary.withValues(alpha: 0.55)
+                  : JarsColors.border,
+              width: highlighted ? 1.5 : 1.0,
+            ),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
@@ -153,7 +213,9 @@ class _RoomActionTile extends StatelessWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: JarsColors.primary.withValues(alpha: 0.14),
+                    color: highlighted
+                        ? JarsColors.primary.withValues(alpha: 0.2)
+                        : JarsColors.primary.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(icon, color: JarsColors.primary, size: 26),
@@ -185,7 +247,9 @@ class _RoomActionTile extends StatelessWidget {
                 ),
                 Icon(
                   Icons.chevron_right_rounded,
-                  color: JarsColors.textTertiary,
+                  color: highlighted
+                      ? JarsColors.primary
+                      : JarsColors.textTertiary,
                   size: 28,
                 ),
               ],

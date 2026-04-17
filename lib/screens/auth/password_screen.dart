@@ -89,9 +89,12 @@ class _PasswordScreenState extends State<PasswordScreen> {
       }
       await ProfileService.ensureProfileRow();
       if (mounted) {
-        context.go(
-          '/auth/room-entry?email=${Uri.encodeComponent(widget.email)}&username=${Uri.encodeComponent(widget.username)}',
-        );
+        // New sign-ups go through notif priming; returning logins skip straight to app.
+        if (_isLogin) {
+          context.go('/');
+        } else {
+          context.go('/onboarding/notifications');
+        }
       }
     } catch (e) {
       if (mounted) {

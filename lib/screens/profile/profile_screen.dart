@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/onboarding_redo.dart';
 import '../../core/theme.dart';
 import '../../core/level_data.dart';
 import '../../models/room.dart';
@@ -19,11 +20,13 @@ import '../../services/supabase_service.dart';
 import '../../models/badge.dart';
 import '../../providers/exercise_provider.dart';
 import '../../providers/goal_provider.dart';
+import '../../providers/onboarding_provider.dart';
 import '../../providers/profile_provider.dart';
 import '../../widgets/sheets/create_custom_exercise_sheet.dart';
 import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../providers/ui_text_scale_provider.dart';
 import '../../core/user_display_name.dart';
+import '../../widgets/onboarding/first_run_coach_mark.dart';
 import '../../widgets/ui/rank_badge.dart';
 import 'notification_settings_screen.dart';
 
@@ -77,7 +80,11 @@ class ProfileScreen extends ConsumerWidget {
                             if (score == null) return const SizedBox.shrink();
                             final level =
                                 getLevelForScore(score.totalScore);
-                            return RankBadge(level: level, size: 32);
+                            return RankBadge(
+                              level: level,
+                              size: 32,
+                              totalScore: score.totalScore,
+                            );
                           },
                           loading: () => const SizedBox.shrink(),
                           error: (_, __) => const SizedBox.shrink(),
@@ -237,6 +244,7 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   void _showSettings(BuildContext context, WidgetRef ref) {
+    final profileCtx = context;
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final nav = Navigator.of(context);
 
@@ -291,6 +299,36 @@ class ProfileScreen extends ConsumerWidget {
                         builder: (_) => const NotificationSettingsScreen(),
                       ),
                     );
+                  },
+                ),
+                const Divider(height: 24),
+                ListTile(
+                  leading: Icon(
+                    Icons.replay_rounded,
+                    color: JarsColors.primary.withValues(alpha: 0.9),
+                  ),
+                  title: Text(
+                    'Replay onboarding',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: JarsColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Walk through the intro and questions again. Stays signed in; '
+                    'resets saved onboarding answers.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: JarsColors.textSecondary,
+                      height: 1.35,
+                    ),
+                  ),
+                  onTap: () async {
+                    nav.pop();
+                    await ref.read(onboardingProvider.notifier).reset();
+                    await clearFirstRunLogHintPrefs();
+                    OnboardingRedoSession.start();
+                    if (profileCtx.mounted) profileCtx.go('/onboarding');
                   },
                 ),
                 const Divider(height: 24),

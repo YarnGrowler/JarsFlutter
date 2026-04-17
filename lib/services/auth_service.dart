@@ -1,4 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../core/onboarding_redo.dart';
 import 'supabase_service.dart';
 
 class AuthService {
@@ -49,6 +51,7 @@ class AuthService {
   }
 
   static Future<void> signOut() async {
+    OnboardingRedoSession.end();
     await _auth.signOut();
   }
 

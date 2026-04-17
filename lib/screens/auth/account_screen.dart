@@ -73,7 +73,7 @@ class _AccountScreenState extends State<AccountScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           color: JarsColors.textSecondary,
-          onPressed: () => context.go('/auth'),
+          onPressed: () => context.go('/onboarding/processing'),
         ),
       ),
       body: AuthShell(
@@ -91,7 +91,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'YOUR ACCOUNT',
+                        'ALMOST THERE',
                         style: GoogleFonts.spaceMono(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -106,7 +106,7 @@ class _AccountScreenState extends State<AccountScreen> {
                           .slideY(begin: 0.06, curve: Curves.easeOutCubic),
                       const SizedBox(height: 8),
                       Text(
-                        'Email is for sign-in. Display name is your username in rooms and on the board.',
+                        'Lock in your identity. Email signs you in; your username is what the room sees.',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           color: JarsColors.textSecondary,
@@ -240,7 +240,7 @@ class _AccountScreenState extends State<AccountScreen> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Text(
-                                'Continue',
+                                'Lock it in',
                                 style: GoogleFonts.spaceGrotesk(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
