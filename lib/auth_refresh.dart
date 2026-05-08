@@ -53,6 +53,7 @@ class AuthRefreshNotifier extends ChangeNotifier {
       case AuthChangeEvent.signedIn:
       case AuthChangeEvent.signedOut:
       case AuthChangeEvent.initialSession:
+      case AuthChangeEvent.userDeleted:
         return true;
       case AuthChangeEvent.userUpdated:
       case AuthChangeEvent.passwordRecovery:
