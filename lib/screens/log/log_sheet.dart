@@ -104,6 +104,8 @@ class _LogSheetState extends ConsumerState<LogSheet>
   Exercise? _selectedExercise;
   int _reps = 0;
   double _weight = 0;
+  ExerciseLog? _lastForSelected;
+  final Map<String, ExerciseLog?> _lastByExerciseId = {};
 
   /// Plank-style stopwatch (ms accumulated + optional running [Stopwatch]).
   int _timerAccumMs = 0;
@@ -280,12 +282,75 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
   Future<double> _loadWeight(String exerciseId) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble('$_kWeightKeyPrefix$exerciseId') ?? 0.0;
+    final roomId = ref.read(activeRoomProvider)?.id;
+    // Room-scoped key prevents "wrong previous weight" when switching rooms.
+    if (roomId != null && roomId.isNotEmpty) {
+      final roomKey = '$_kWeightKeyPrefix${roomId}_$exerciseId';
+      final roomValue = prefs.getDouble(roomKey);
+      if (roomValue != null) return roomValue;
+    }
+    // Back-compat: pre-room key (migrate forward on read).
+    final legacyKey = '$_kWeightKeyPrefix$exerciseId';
+    final legacy = prefs.getDouble(legacyKey);
+    if (legacy != null && roomId != null && roomId.isNotEmpty) {
+      await prefs.setDouble('$_kWeightKeyPrefix${roomId}_$exerciseId', legacy);
+    }
+    return legacy ?? 0.0;
   }
 
   Future<void> _saveWeight(String exerciseId, double weight) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('$_kWeightKeyPrefix$exerciseId', weight);
+    final roomId = ref.read(activeRoomProvider)?.id;
+    if (roomId != null && roomId.isNotEmpty) {
+      await prefs.setDouble('$_kWeightKeyPrefix${roomId}_$exerciseId', weight);
+    } else {
+      await prefs.setDouble('$_kWeightKeyPrefix$exerciseId', weight);
+    }
+  }
+
+  Future<void> _loadLastForSelected(Exercise ex) async {
+    final room = ref.read(activeRoomProvider);
+    final userId = SupabaseService.currentUserId;
+    if (room == null || userId == null) return;
+
+    final cached = _lastByExerciseId[ex.id];
+    if (cached != null || _lastByExerciseId.containsKey(ex.id)) {
+      if (mounted && _selectedExercise?.id == ex.id) {
+        setState(() => _lastForSelected = cached);
+      }
+      return;
+    }
+
+    try {
+      final last = await LogService.getLastUserLogForExercise(
+        roomId: room.id,
+        userId: userId,
+        exerciseId: ex.id,
+      );
+      _lastByExerciseId[ex.id] = last;
+      if (mounted && _selectedExercise?.id == ex.id) {
+        setState(() => _lastForSelected = last);
+      }
+    } catch (_) {
+      _lastByExerciseId[ex.id] = null;
+    }
+  }
+
+  String _lastLine(ExerciseLog log) {
+    final vol = formatExerciseLogDetailSubtitle(log);
+    final when = _relativeWhen(log.createdAt.toLocal());
+    return 'Last: $vol · $when';
+  }
+
+  String _relativeWhen(DateTime t) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(t.year, t.month, t.day);
+    final d = today.difference(day).inDays;
+    if (d == 0) return 'today';
+    if (d == 1) return 'yesterday';
+    if (d < 7) return '${d}d ago';
+    return '${t.month}/${t.day}/${t.year.toString().padLeft(4, '0')}';
   }
 
   // ── Rep bump (~80% original shake, ~20% bigger scale/tilt + longer) ────────
@@ -735,6 +800,9 @@ class _LogSheetState extends ConsumerState<LogSheet>
           _undoPoints = totalEarned;
           _reps = 0;
           _weight = 0;
+          // Update cache so "Last" reflects what you just did.
+          _lastByExerciseId[exercise.id] = log;
+          _lastForSelected = log;
           _logging = false;
           _celebrationBase = null;
           _celebrationStreakBonus = null;
@@ -979,6 +1047,28 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                                     color: Colors.white
                                                         .withValues(
                                                             alpha: 0.22),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        if (_selectedExercise != null &&
+                                            _lastForSelected != null &&
+                                            !_holding &&
+                                            !_sustainingFlood)
+                                          Positioned(
+                                            bottom: 40,
+                                            left: 0,
+                                            right: 0,
+                                            child: IgnorePointer(
+                                              child: Center(
+                                                child: Text(
+                                                  _lastLine(_lastForSelected!),
+                                                  textAlign: TextAlign.center,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 12,
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.28),
                                                   ),
                                                 ),
                                               ),
@@ -1263,12 +1353,15 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                                   _selectedExercise = ex;
                                                   _reps = 0;
                                                   _weight = saved;
+                                                  _lastForSelected =
+                                                      _lastByExerciseId[ex.id];
                                                   if (_searchQuery.isNotEmpty) {
                                                     _searchController.clear();
                                                     _searchQuery = '';
                                                   }
                                                 });
                                                 await _saveRecent(ex);
+                                                unawaited(_loadLastForSelected(ex));
                                               },
                                             );
                                           },

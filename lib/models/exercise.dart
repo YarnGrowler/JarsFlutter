@@ -133,7 +133,28 @@ class Exercise {
     }
   }
 
+  bool get _isAccessoryAntiSpamRepsExercise {
+    if (countUnit != CountUnit.reps) return false;
+    final n = name.toLowerCase();
+    return n.contains('rear delt') ||
+        n.contains('rear-delt') ||
+        n.contains('face pull') ||
+        n.contains('pull-apart') ||
+        n.contains('pull apart') ||
+        n.contains('external rotation') ||
+        n.contains('cuban press');
+  }
+
+  int _scoringCount(int count, double? weight) {
+    if (!_isAccessoryAntiSpamRepsExercise) return count;
+    final hasWeight = (weight ?? 0) > 0;
+    // Still let you log any rep count, but cap points so tiny movements
+    // can't be spammed for absurd totals.
+    return hasWeight ? count.clamp(0, 200) : count.clamp(0, 50);
+  }
+
   double calculatePoints(int count, double? weight) {
+    final scoringCount = _scoringCount(count, weight);
     double base = points;
     if (weight != null &&
         supportsWeight &&
@@ -149,15 +170,15 @@ class Exercise {
     switch (countUnit) {
       case CountUnit.reps:
       case CountUnit.minutes:
-        raw = base * count;
+        raw = base * scoringCount;
         break;
       case CountUnit.seconds:
         switch (_effectiveTimePointsMode) {
           case TimePointsMode.perSecond:
-            raw = base * count;
+            raw = base * scoringCount;
             break;
           case TimePointsMode.perMinute:
-            raw = base * (count / 60.0);
+            raw = base * (scoringCount / 60.0);
             break;
         }
     }

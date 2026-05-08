@@ -9,6 +9,30 @@ import '../models/room_exercise_records.dart';
 class LogService {
   static final _db = SupabaseService.client;
 
+  /// Most recent (non-broadcast) log for a user+exercise in a room.
+  static Future<ExerciseLog?> getLastUserLogForExercise({
+    required String roomId,
+    required String userId,
+    required String exerciseId,
+  }) async {
+    final rows = await _db
+        .from('exercise_logs')
+        .select('*, profiles(username)')
+        .eq('room_id', roomId)
+        .eq('user_id', userId)
+        .eq('exercise_id', exerciseId)
+        .or(
+          'exercise_name.not.match.^__,exercise_name.match.^__STIMULUS__\\|',
+        )
+        .order('created_at', ascending: false)
+        .limit(1);
+
+    if (rows is! List || rows.isEmpty) return null;
+    final first = rows.first;
+    if (first is! Map) return null;
+    return ExerciseLog.fromJson(Map<String, dynamic>.from(first));
+  }
+
   static Future<ExerciseLog> insertLog({
     required String roomId,
     required String exerciseId,
