@@ -179,3 +179,4 @@ grant select, insert, update, delete on table public.user_fcm_tokens to service_
 -- === 40 exercises: full catalog sync + new rows in every room (from exercise_data.dart): run supabase_patches/40_exercises_full_sync_from_exercise_data.sql ===
 -- === 41 exercises: add Half Squats + Quarter Squats to all rooms (incremental, idempotent): run supabase_patches/41_add_half_quarter_squats_all_rooms.sql ===
 -- === 42 exercises: add rear-delt / shoulder-health accessories to all rooms (incremental, idempotent): run supabase_patches/42_add_rear_delt_accessories_all_rooms.sql ===
+-- === 43 exercises: add Hip Thrusts + Dead Hang to all rooms (incremental, idempotent): run supabase_patches/43_add_hip_thrusts_dead_hang_all_rooms.sql ===

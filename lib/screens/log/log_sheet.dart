@@ -282,7 +282,8 @@ class _LogSheetState extends ConsumerState<LogSheet>
     if (mounted) setState(() => _recentIds = ids);
   }
 
-  Future<double> _loadWeight(String exerciseId) async {
+  /// Local fallback only when there is no server log yet for this exercise.
+  Future<double> _loadWeightFromPrefs(String exerciseId) async {
     final prefs = await SharedPreferences.getInstance();
     final roomId = ref.read(activeRoomProvider)?.id;
     // Room-scoped key prevents "wrong previous weight" when switching rooms.
@@ -310,19 +311,31 @@ class _LogSheetState extends ConsumerState<LogSheet>
     }
   }
 
-  Future<void> _loadLastForSelected(Exercise ex) async {
+  Future<void> _clearSavedWeight(String exerciseId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final roomId = ref.read(activeRoomProvider)?.id;
+    if (roomId != null && roomId.isNotEmpty) {
+      await prefs.remove('$_kWeightKeyPrefix${roomId}_$exerciseId');
+    }
+    await prefs.remove('$_kWeightKeyPrefix$exerciseId');
+  }
+
+  Future<void> _persistWeightPreference(String exerciseId, double weight) async {
+    if (weight > 0) {
+      await _saveWeight(exerciseId, weight);
+    } else {
+      await _clearSavedWeight(exerciseId);
+    }
+  }
+
+  /// Last log wins for default weight (including 0). Prefs only fill in when
+  /// you have never logged this exercise in this room.
+  Future<double> _initialWeightForExercise(Exercise ex) async {
     final room = ref.read(activeRoomProvider);
     final userId = SupabaseService.currentUserId;
-    if (room == null || userId == null) return;
-
-    final cached = _lastByExerciseId[ex.id];
-    if (cached != null || _lastByExerciseId.containsKey(ex.id)) {
-      if (mounted && _selectedExercise?.id == ex.id) {
-        setState(() => _lastForSelected = cached);
-      }
-      return;
+    if (room == null || userId == null) {
+      return _loadWeightFromPrefs(ex.id);
     }
-
     try {
       final last = await LogService.getLastUserLogForExercise(
         roomId: room.id,
@@ -330,12 +343,15 @@ class _LogSheetState extends ConsumerState<LogSheet>
         exerciseId: ex.id,
       );
       _lastByExerciseId[ex.id] = last;
-      if (mounted && _selectedExercise?.id == ex.id) {
-        setState(() => _lastForSelected = last);
+      if (last != null) {
+        final w = last.weight <= 0 ? 0.0 : last.weight;
+        await _persistWeightPreference(ex.id, w);
+        return w;
       }
     } catch (_) {
       _lastByExerciseId[ex.id] = null;
     }
+    return _loadWeightFromPrefs(ex.id);
   }
 
   String _lastLine(ExerciseLog log) {
@@ -631,7 +647,7 @@ class _LogSheetState extends ConsumerState<LogSheet>
         exercise.calculatePoints(count, _weight > 0 ? _weight : null);
     setState(() => _logging = true);
 
-    if (_weight > 0) await _saveWeight(exercise.id, _weight);
+    await _persistWeightPreference(exercise.id, _weight);
 
     try {
       final before = await ScoreService.getUserScore(room.id, userId);
@@ -1347,14 +1363,15 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                               exercise: ex,
                                               selected: exercise?.id == ex.id,
                                               onTap: () async {
-                                                final saved =
-                                                    await _loadWeight(ex.id);
-                                                if (!mounted) return;
                                                 _resetTimerState();
+                                                final w =
+                                                    await _initialWeightForExercise(
+                                                        ex);
+                                                if (!mounted) return;
                                                 setState(() {
                                                   _selectedExercise = ex;
                                                   _reps = 0;
-                                                  _weight = saved;
+                                                  _weight = w;
                                                   _lastForSelected =
                                                       _lastByExerciseId[ex.id];
                                                   if (_searchQuery.isNotEmpty) {
@@ -1363,7 +1380,6 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                                   }
                                                 });
                                                 await _saveRecent(ex);
-                                                unawaited(_loadLastForSelected(ex));
                                               },
                                             );
                                           },
