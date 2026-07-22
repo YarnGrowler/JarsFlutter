@@ -6,15 +6,15 @@ import 'supabase_service.dart';
 import '../core/jars_timezone.dart';
 import 'log_service.dart';
 import 'notification_service.dart';
-import 'score_service.dart';
 import '../core/count_unit.dart';
 import '../core/log_display.dart';
 import '../core/member_feed_quips.dart';
 import '../models/exercise_log.dart';
-import '../models/score.dart';
 
-/// Generates special broadcast feed rows (Overtake, PR, First Log, Close Gap,
-/// Streak Milestone, Dead Streak) after a user logs an exercise.
+/// Generates celebratory broadcast feed rows (PR, First Log, Streak Milestone,
+/// Comeback) after a user logs an exercise. The old loss-framed events
+/// (Overtake, Close Gap, Dead Streak) were removed in the co-op redesign —
+/// we celebrate effort and returns, we never tell anyone they're "losing".
 ///
 /// Call [checkAndBroadcast] right after [ScoreService.addPoints] resolves.
 class EventService {
@@ -36,7 +36,6 @@ class EventService {
   }) async {
     try {
       await Future.wait([
-        _checkOvertake(roomId, userId, username, pointsBefore, pointsAfter),
         _checkPersonalRecord(
           roomId,
           userId,
@@ -49,45 +48,10 @@ class EventService {
         ),
         _checkFirstLogOfDay(roomId, userId, username),
         _checkStreakMilestone(roomId, userId, username, streakBefore, streakAfter),
-        _checkDeadStreak(roomId, userId, username, streakBefore, streakAfter),
-        _checkCloseGap(roomId, userId, pointsAfter),
+        _checkComeback(roomId, userId, username, currentLogId),
       ]);
     } catch (e, st) {
       developer.log('EventService: $e', name: 'Jars', error: e, stackTrace: st);
-    }
-  }
-
-  // ── Overtake ───────────────────────────────────────────────────────────────
-
-  static Future<void> _checkOvertake(
-    String roomId,
-    String userId,
-    String username,
-    double pointsBefore,
-    double pointsAfter,
-  ) async {
-    final scores = await ScoreService.getRoomScores(roomId);
-    // Find users who had more points than me before, but now I have >= them
-    for (final score in scores) {
-      if (score.userId == userId) continue;
-      if (score.totalScore > pointsBefore && score.totalScore <= pointsAfter) {
-        final overtakenName = score.username ?? 'someone';
-        final gap = (pointsAfter - score.totalScore).toInt();
-        await _insertBroadcast(
-          roomId: roomId,
-          userId: userId,
-          prefix: ExerciseLog.kOvertakePrefix,
-          payload:
-              '⚔️ $username overtook $overtakenName · now $gap pts ahead',
-        );
-        // Victim gets a targeted push; everyone else gets the routine
-        // "workout logged" push from [log_sheet] (avoid duplicate room-wide lines).
-        await NotificationService.sendNotification(
-          targetUserId: score.userId,
-          body: '$username just passed you. You\'re losing ground.',
-        );
-        break; // one card per log is enough
-      }
     }
   }
 
@@ -237,84 +201,46 @@ class EventService {
     }
   }
 
-  // ── Dead Streak ────────────────────────────────────────────────────────────
+  // ── Comeback ───────────────────────────────────────────────────────────────
 
-  static Future<void> _checkDeadStreak(
+  /// Warm welcome-back card when a member logs after a 3+ day gap. Replaces the
+  /// old "💀 streak just ended" taunt — returning should feel good, not shamed.
+  static Future<void> _checkComeback(
     String roomId,
     String userId,
     String username,
-    int streakBefore,
-    int streakAfter,
+    String currentLogId,
   ) async {
-    // If streak reset (went to 1 from something bigger ≥ 3), it died
-    if (streakBefore >= 3 && streakAfter == 1) {
-      await _insertBroadcast(
-        roomId: roomId,
-        userId: userId,
-        prefix: ExerciseLog.kDeadPrefix,
-        payload: "💀 $username's $streakBefore-day streak just ended",
-      );
-      // Push: covered by per-log activity in [log_sheet].
+    final logs = await LogService.getUserLogs(roomId, userId, limit: 50);
+    ExerciseLog? prev;
+    for (final l in logs) {
+      if (l.id == currentLogId) continue;
+      if (l.isAnyBroadcast || l.isRoomStimulus) continue;
+      prev = l; // newest-first, so the first match is the most recent real log
+      break;
     }
-  }
+    if (prev == null) return; // first ever real log isn't a comeback
 
-  // ── Close Gap ──────────────────────────────────────────────────────────────
+    JarsTimezone.ensureInitialized();
+    final loc = tz.getLocation(JarsTimezone.locationName);
+    final prevChi = tz.TZDateTime.from(prev.createdAt.toUtc(), loc);
+    final nowChi = tz.TZDateTime.now(loc);
+    final prevDay = DateTime(prevChi.year, prevChi.month, prevChi.day);
+    final today = DateTime(nowChi.year, nowChi.month, nowChi.day);
+    final gap = today.difference(prevDay).inDays;
+    if (gap < 3) return;
 
-  static Future<void> _checkCloseGap(
-    String roomId,
-    String userId,
-    double myNewScore,
-  ) async {
-    final scores = await ScoreService.getRoomScores(roomId);
-    // Find the person directly ahead of me
-    Score? ahead;
-    for (final s in scores) {
-      if (s.userId == userId) continue;
-      if (s.totalScore > myNewScore) {
-        if (ahead == null || s.totalScore < ahead.totalScore) {
-          ahead = s;
-        }
-      }
-    }
-    if (ahead == null) return;
-
-    final gap = (ahead.totalScore - myNewScore).toInt();
-    if (gap <= 50) {
-      // Insert a close-gap card visible only to the person being chased
-      await _insertBroadcastForUser(
-        roomId: roomId,
-        userId: ahead.userId,
-        prefix: ExerciseLog.kCloseGapPrefix,
-        payload: '👀 You are $gap pts ahead · someone is closing in fast',
-      );
-      // Also push-notify them
-      await NotificationService.sendNotification(
-        targetUserId: ahead.userId,
-        body: 'Watch out — someone is only $gap pts behind you.',
-      );
-    }
+    await _insertBroadcast(
+      roomId: roomId,
+      userId: userId,
+      prefix: ExerciseLog.kComebackPrefix,
+      payload: '👋 $username is back after $gap days — welcome back!',
+    );
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
   static Future<void> _insertBroadcast({
-    required String roomId,
-    required String userId,
-    required String prefix,
-    required String payload,
-  }) async {
-    await _db.from('exercise_logs').insert({
-      'room_id': roomId,
-      'user_id': userId,
-      'exercise_id': null,
-      'exercise_name': '$prefix$payload',
-      'count': 0,
-      'weight': 0,
-      'points_earned': 0,
-    });
-  }
-
-  static Future<void> _insertBroadcastForUser({
     required String roomId,
     required String userId,
     required String prefix,

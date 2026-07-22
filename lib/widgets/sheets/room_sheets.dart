@@ -437,6 +437,16 @@ class _CreateRoomSheetState extends ConsumerState<_CreateRoomSheet> {
                     controller: scrollController,
                     padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
                     children: [
+                      Text(
+                        'Your crew becomes a team in the league — you climb the '
+                        'divisions together, week by week.',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: JarsColors.textSecondary,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
                       TextField(
                         controller: _name,
                         style: GoogleFonts.spaceGrotesk(

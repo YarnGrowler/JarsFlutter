@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\patch_l2.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\patch_v14a.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\patch_v14a2.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\patch_v14b.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\patch_v14c.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\patch_v14d.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\patch_v14e.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\v14_tests.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\p15_types.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\p15_engine.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\p15_ui.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\p15_screens.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\p15_tests.py\")",
+      "Bash(break)",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\p16c_codes.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\p17_ui.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\p17_tests.py\")",
+      "Bash(python \"C:\\\\Users\\\\email\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-email-OneDrive-Desktop-Projects-2025-Fall-Jars-jars-jars-flutter\\\\d72b8b21-33cf-4833-a104-6bdb0779d6b6\\\\scratchpad\\\\p17_fix.py\")"
+    ]
+  }
+}

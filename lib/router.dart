@@ -20,6 +20,12 @@ import 'screens/onboarding/notif_priming_screen.dart';
 import 'screens/room/room_screen.dart';
 import 'screens/log/log_sheet.dart';
 import 'screens/log/log_history_screen.dart';
+import 'screens/war/war_hub_screen.dart';
+import 'screens/war/base_builder_screen.dart';
+import 'screens/war/base_lab_screen.dart';
+import 'screens/war/battle_screen.dart';
+import 'screens/war/battle_report_screen.dart';
+import 'screens/war/training_screen.dart';
 import 'screens/ranks/ranks_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'services/auth_service.dart';
@@ -317,6 +323,48 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
           GoRoute(
+            path: '/war',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: WarHubScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/war/build',
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const BaseBuilderScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/war/battle',
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              BattleScreen(
+                  mode: state.uri.queryParameters['mode'] ?? 'attack'),
+            ),
+          ),
+          GoRoute(
+            path: '/war/report',
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const BattleReportScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/war/train',
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const TrainingScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/war/lab',
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const BaseLabScreen(),
+            ),
+          ),
+          GoRoute(
             path: '/profile',
             pageBuilder: (context, state) => const NoTransitionPage(
               child: ProfileScreen(),
@@ -332,11 +380,16 @@ class _ScaffoldWithNav extends StatelessWidget {
   final Widget child;
   const _ScaffoldWithNav({required this.child});
 
-  static const _routes = ['/', '/log', '/ranks', '/profile'];
+  static const _routes = ['/', '/log', '/war', '/profile'];
 
   int _indexFromLocation(String location) {
     final idx = _routes.indexOf(location);
-    return idx >= 0 ? idx : 0;
+    if (idx >= 0) return idx;
+    // keep the tab lit on nested routes (e.g. /war/build → War tab)
+    for (var i = 1; i < _routes.length; i++) {
+      if (location.startsWith('${_routes[i]}/')) return i;
+    }
+    return 0;
   }
 
   @override
@@ -344,6 +397,31 @@ class _ScaffoldWithNav extends StatelessWidget {
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _indexFromLocation(location);
 
+    final shell = _buildShell(context, currentIndex);
+    // Phone frame on wide viewports (desktop web): the app is a mobile game —
+    // clamp it to a centered handset-width column instead of stretching bars
+    // across the whole monitor.
+    final width = MediaQuery.sizeOf(context).width;
+    if (width <= 600) return shell;
+    return ColoredBox(
+      color: const Color(0xFF030308),
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 470),
+          decoration: BoxDecoration(
+            border: Border.symmetric(
+              vertical: BorderSide(
+                color: JarsColors.border.withValues(alpha: 0.6),
+              ),
+            ),
+          ),
+          child: shell,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShell(BuildContext context, int currentIndex) {
     return Scaffold(
       body: Stack(
         clipBehavior: Clip.none,
@@ -413,9 +491,9 @@ class _ScaffoldWithNav extends StatelessWidget {
                   label: 'Log',
                 ),
                 const BottomNavigationBarItem(
-                  icon: Icon(Icons.leaderboard_outlined),
-                  activeIcon: Icon(Icons.leaderboard),
-                  label: 'Ranks',
+                  icon: Icon(Icons.shield_outlined),
+                  activeIcon: Icon(Icons.shield),
+                  label: 'War',
                 ),
                 const BottomNavigationBarItem(
                   icon: Icon(Icons.person_outline),

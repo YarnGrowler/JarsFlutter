@@ -45,3 +45,5 @@ flutter:
   uses-material-design: true
   assets:
     - env.example
+    - assets/leagues.json
+    - assets/siege.json

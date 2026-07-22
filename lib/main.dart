@@ -5,9 +5,17 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
+import 'core/debug_bots.dart';
+import 'core/debug_tools.dart';
+import 'core/demo_mode.dart';
+import 'core/jars_clock.dart';
+import 'war/war_game.dart';
 import 'core/jars_timezone.dart';
+import 'core/league_config.dart';
+import 'core/siege_config.dart';
 import 'core/theme.dart';
 import 'bootstrap/config_error_app.dart';
+import 'bootstrap/dev_auto_login.dart';
 import 'bootstrap/local_env.dart' show readLocalEnvPairs;
 import 'bootstrap/supabase_public_config.dart';
 import 'core/onboarding_campaign.dart';
@@ -31,6 +39,18 @@ Future<void> main() async {
   }
 
   await _loadEnv();
+  await LeagueConfig.load();
+  await SiegeConfig.load();
+  if (kDebugTools) {
+    // Time Machine state survives restarts (future-dated bot logs otherwise
+    // strand when "today" snaps back).
+    await DebugClockStore.restore();
+    await DebugBots.restore();
+  }
+  if (kDemoMode) {
+    // The local Clan War (Demo Mode) — the whole game.
+    await WarGame.load();
+  }
   final url = _resolveUrl();
   final anonKey = _resolveAnonKey();
 
@@ -46,6 +66,7 @@ Future<void> main() async {
   await Supabase.initialize(url: url, anonKey: anonKey);
 
   await OnboardingCampaign.init();
+  await devAutoLoginIfEnabled();
 
   runApp(
     const ColoredBox(

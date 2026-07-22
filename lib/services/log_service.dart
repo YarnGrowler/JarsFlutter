@@ -27,10 +27,35 @@ class LogService {
         .order('created_at', ascending: false)
         .limit(1);
 
-    if (rows is! List || rows.isEmpty) return null;
+    if (rows.isEmpty) return null;
     final first = rows.first;
-    if (first is! Map) return null;
-    return ExerciseLog.fromJson(Map<String, dynamic>.from(first));
+    return ExerciseLog.fromJson(
+        Map<String, dynamic>.from(first as Map<dynamic, dynamic>));
+  }
+
+  /// Recent logs for this user + exercise (newest first), for multi-set UI.
+  static Future<List<ExerciseLog>> getRecentUserLogsForExercise({
+    required String roomId,
+    required String userId,
+    required String exerciseId,
+    int limit = 8,
+  }) async {
+    final rows = await _db
+        .from('exercise_logs')
+        .select('*, profiles(username)')
+        .eq('room_id', roomId)
+        .eq('user_id', userId)
+        .eq('exercise_id', exerciseId)
+        .or(
+          'exercise_name.not.match.^__,exercise_name.match.^__STIMULUS__\\|',
+        )
+        .order('created_at', ascending: false)
+        .limit(limit);
+
+    return rows
+        .whereType<Map>()
+        .map((r) => ExerciseLog.fromJson(Map<String, dynamic>.from(r)))
+        .toList();
   }
 
   static Future<ExerciseLog> insertLog({
@@ -102,7 +127,8 @@ class LogService {
 
     final flat = rows
         .map((r) => ExerciseLog.fromJson(r))
-        .where((l) => !l.isRoomStimulus)
+        .where((l) =>
+            !l.isRoomStimulus && !l.isDeathSpiralBroadcast && !l.isSiegeEvent)
         .toList();
     return _groupAiReplies(flat);
   }
@@ -272,10 +298,8 @@ class LogService {
     final agg = <String, Map<String, double>>{};
     final usernames = <String, String>{};
 
-    final list = rows is List ? rows as List<dynamic> : <dynamic>[];
-    for (final raw in list) {
-      if (raw is! Map) continue;
-      final m = Map<String, dynamic>.from(raw);
+    for (final raw in rows) {
+      final m = Map<String, dynamic>.from(raw as Map);
       final name = m['exercise_name'] as String? ?? '';
       if (name.isEmpty) continue;
       final uid = m['user_id'] as String? ?? '';

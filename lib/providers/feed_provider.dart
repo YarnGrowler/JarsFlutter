@@ -3,27 +3,15 @@ import '../models/exercise_log.dart';
 import '../models/reaction.dart';
 import '../services/log_service.dart';
 import '../services/reaction_service.dart';
-import '../services/supabase_service.dart';
 import 'active_room_provider.dart';
 
-final _lastIdleWakeEnsure = <String, DateTime>{};
-
-Future<void> _ensureIdleWakeThrottled(String roomId) async {
-  final now = DateTime.now();
-  final last = _lastIdleWakeEnsure[roomId];
-  if (last != null && now.difference(last) < const Duration(minutes: 15)) {
-    return;
-  }
-  _lastIdleWakeEnsure[roomId] = now;
-  final uid = SupabaseService.currentUserId;
-  await LogService.ensureIdleWakeCards(roomId, actorUserId: uid);
-}
+/// After you log, room feed highlights this log id briefly (your workout card).
+final freshFeedLogIdProvider = StateProvider<String?>((ref) => null);
 
 final roomFeedProvider =
     FutureProvider<List<ExerciseLog>>((ref) async {
   final room = ref.watch(activeRoomProvider);
   if (room == null) return [];
-  await _ensureIdleWakeThrottled(room.id);
   return LogService.getRoomFeed(room.id);
 });
 
@@ -35,7 +23,6 @@ final roomFeedWithReactionsProvider =
         (ref) async {
   final room = ref.watch(activeRoomProvider);
   if (room == null) return [];
-  await _ensureIdleWakeThrottled(room.id);
   final logs = await LogService.getRoomFeed(room.id);
   if (logs.isEmpty) return [];
   final ids = logs.map((l) => l.id).toList();

@@ -4,6 +4,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/debug_tools.dart';
 import '../../core/super_reaction_meta.dart';
 import '../../core/theme.dart';
 import '../../models/exercise_log.dart';
@@ -13,6 +15,7 @@ import '../../providers/active_room_provider.dart';
 import '../../providers/achievement_post_log_provider.dart';
 import '../../providers/feed_provider.dart';
 import '../../providers/goal_provider.dart';
+import '../../providers/league_provider.dart';
 import '../../providers/score_provider.dart';
 import '../../providers/room_provider.dart';
 import '../../services/log_service.dart';
@@ -23,10 +26,11 @@ import '../../services/wake_nudge_service.dart';
 import '../../widgets/feed/feed_card.dart';
 import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../widgets/sheets/room_sheets.dart';
+import '../../widgets/sheets/whats_new_sheet.dart';
 import '../../widgets/onboarding/first_run_coach_mark.dart';
 import '../../widgets/ui/member_avatar_ring.dart';
 import '../../widgets/ui/confirm_delete_dialog.dart';
-import '../../widgets/ui/rivalry_banner.dart';
+import '../../widgets/league/league_mini_card.dart';
 import '../../widgets/ui/status_bar.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
@@ -38,10 +42,28 @@ class RoomScreen extends ConsumerStatefulWidget {
 
 class _RoomScreenState extends ConsumerState<RoomScreen> {
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowWhatsNew());
+  }
+
+  /// One-time "Jars is different now" relaunch moment for returning crews.
+  Future<void> _maybeShowWhatsNew() async {
+    if (kDebugTools) return; // fresh dev profiles would re-show it every run
+    final prefs = await SharedPreferences.getInstance();
+    const key = 'whats_new_seen_coop_v1';
+    if (prefs.getBool(key) ?? false) return;
+    await prefs.setBool(key, true);
+    if (!mounted) return;
+    final room = ref.read(activeRoomProvider);
+    await showWhatsNewSheet(context, roomCode: room?.roomCode);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final room = ref.watch(activeRoomProvider);
-    final scoresAsync = ref.watch(roomScoresProvider);
     final myScoreAsync = ref.watch(myScoreProvider);
+    final leagueAsync = ref.watch(leagueProvider);
     final feedAsync = ref.watch(roomFeedWithReactionsProvider);
 
     ref.listen<List<String>?>(achievementPostLogHintsProvider, (prev, next) {
@@ -59,6 +81,26 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         );
         ref.read(achievementPostLogHintsProvider.notifier).state = null;
       });
+    });
+
+    ref.listen<String?>(freshFeedLogIdProvider, (prev, next) {
+      if (next != null && next != prev) {
+        Future<void>.delayed(const Duration(seconds: 5), () {
+          if (!context.mounted) return;
+          if (ref.read(freshFeedLogIdProvider) == next) {
+            ref.read(freshFeedLogIdProvider.notifier).state = null;
+          }
+        });
+      }
+    });
+
+    // League updates live: when anyone in the room logs, the realtime feed
+    // stream ticks and we refresh the league + scores so the match score moves.
+    ref.listen(feedStreamProvider, (prev, next) {
+      ref.invalidate(leagueProvider);
+      ref.invalidate(roomFeedWithReactionsProvider);
+      ref.invalidate(roomScoresProvider);
+      ref.invalidate(myScoreProvider);
     });
 
     if (room == null) {
@@ -127,33 +169,23 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Rivalry Banner
-            scoresAsync.when(
-              data: (scores) {
-                return myScoreAsync.when(
-                  data: (myScore) {
-                    if (myScore == null || scores.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: RivalryBanner(
-                        myScore: myScore,
-                        allScores: scores,
-                        onLogTap: () => context.go('/log'),
-                      )
-                          .animate()
-                          .fadeIn(
-                              duration: 380.ms, curve: Curves.easeOutCubic)
-                          .slideY(
-                              begin: 0.06,
-                              end: 0,
-                              duration: 380.ms,
-                              curve: Curves.easeOutCubic),
-                    );
-                  },
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
+            // League standing (home hero — taps through to the League tab)
+            leagueAsync.when(
+              data: (table) {
+                if (table == null) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: LeagueMiniCard(
+                    table: table,
+                    onTap: () => context.go('/war'),
+                  )
+                      .animate()
+                      .fadeIn(duration: 380.ms, curve: Curves.easeOutCubic)
+                      .slideY(
+                          begin: 0.06,
+                          end: 0,
+                          duration: 380.ms,
+                          curve: Curves.easeOutCubic),
                 );
               },
               loading: () => const SizedBox.shrink(),
@@ -174,6 +206,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       RefreshIndicator(
                         color: JarsColors.primary,
                         onRefresh: () async {
+                          ref.invalidate(leagueProvider);
                           ref.invalidate(roomFeedWithReactionsProvider);
                           ref.invalidate(roomFeedProvider);
                           ref.invalidate(roomScoresProvider);
@@ -361,9 +394,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final isAdmin =
         room != null && uid != null && uid == room.adminId;
 
+    final freshId = ref.watch(freshFeedLogIdProvider);
+    final pulseFresh = freshId != null &&
+        freshId == log.id &&
+        uid != null &&
+        log.userId == uid &&
+        !log.isAnyBroadcast;
+
     final card = FeedCard(
       log: log,
       reactions: reactions,
+      pulseFresh: pulseFresh,
       onReact: (log.isWakeCard ||
               log.isFirstLog ||
               log.isMemberJoin ||
@@ -500,14 +541,16 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   }
 
   Widget _buildEmptyFeed() {
+    final prep =
+        ref.watch(leagueProvider).valueOrNull?.preseason ?? false;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('🏋️', style: TextStyle(fontSize: 48)),
+          Text(prep ? '⚒️' : '🏋️', style: const TextStyle(fontSize: 48)),
           const SizedBox(height: 16),
           Text(
-            'Suspiciously quiet.',
+            prep ? 'Training camp is open.' : 'Quiet so far this week.',
             style: GoogleFonts.spaceGrotesk(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -516,11 +559,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            "Either everyone's resting or plotting.",
+            prep
+                ? 'Everything you log now fuels Matchweek 1 on Monday.'
+                : 'Log a set — every rep scores for your team this matchweek.',
             style: GoogleFonts.inter(
               fontSize: 14,
               color: JarsColors.textTertiary,
             ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -549,7 +595,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Create or join a room to start competing.',
+                'Start a team and climb the league together.',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   color: JarsColors.textSecondary,

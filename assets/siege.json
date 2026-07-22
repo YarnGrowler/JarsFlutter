@@ -1,0 +1,25 @@
+{
+  "enabled": true,
+  "week": { "days": 7, "resolutionHour": 0 },
+  "stronghold": { "integrityStart": 100, "fronts": ["left", "center", "right"] },
+  "supply": { "supplyPerPoint": 1.0, "carryUnallocated": true },
+  "resolution": { "damageFactor": 7.0 },
+  "scouting": { "scoutAccuracy": "fuzzed" },
+  "assault": {
+    "tempoProfiles": ["steady", "lateSurge", "frontload"],
+    "signature": { "enabled": true, "multiplier": 1.6, "maxSignatureDays": 2 }
+  },
+  "shop": {
+    "enabled": false,
+    "crew": {
+      "wall":   { "cost": 400, "reduce": 200 },
+      "turret": { "cost": 350, "perDay": 40 },
+      "bomb":   { "cost": 600, "reduce": 500 },
+      "rally":  { "cost": 300, "boostPct": 15 }
+    },
+    "personal": {
+      "sharpen":   { "cost": 200, "boostPct": 25 },
+      "overdrive": { "cost": 350, "boostPct": 50 }
+    }
+  }
+}

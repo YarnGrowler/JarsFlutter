@@ -53,6 +53,16 @@ class ExerciseLog {
   static const kFirstLogPrefix = '__FIRSTLOG__|';
   static const kCloseGapPrefix = '__CLOSEGAP__|';
   static const kWakePrefix = '__WAKE__|';
+  /// Warm "welcome back" card when a member returns after a gap (co-op redesign
+  /// replacement for the old dead-streak taunt).
+  static const kComebackPrefix = '__COMEBACK__|';
+  /// Team-level league event (result / overtaken / promotion) — never
+  /// friend-vs-friend, always your team vs the AI league.
+  static const kLeaguePrefix = '__LEAGUE__|';
+  /// Siege game event row (JSON payload after prefix) — e.g. a crew member
+  /// committing supply onto a (day, front). Shared, append-only input to the
+  /// deterministic siege engine; carries 0 points and is hidden from the feed.
+  static const kSiegeEventPrefix = '__SIEGE__|';
   /// Server-only idle "welfare" points; counts toward score + daily, hidden from room feed.
   static const kStimulusPrefix = '__STIMULUS__|';
   static const kMemberJoinPrefix = '__JOIN__|';
@@ -70,6 +80,9 @@ class ExerciseLog {
   bool get isFirstLog           => exerciseName.startsWith(kFirstLogPrefix);
   bool get isCloseGap           => exerciseName.startsWith(kCloseGapPrefix);
   bool get isWakeCard           => exerciseName.startsWith(kWakePrefix);
+  bool get isComeback           => exerciseName.startsWith(kComebackPrefix);
+  bool get isLeague             => exerciseName.startsWith(kLeaguePrefix);
+  bool get isSiegeEvent         => exerciseName.startsWith(kSiegeEventPrefix);
   /// Room welfare / stimulus row (not a workout; shown in profile stats, not main feed).
   bool get isRoomStimulus       => exerciseName.startsWith(kStimulusPrefix);
   bool get isMemberJoin        => exerciseName.startsWith(kMemberJoinPrefix);
@@ -86,10 +99,20 @@ class ExerciseLog {
       isFirstLog ||
       isCloseGap ||
       isWakeCard ||
+      isComeback ||
+      isLeague ||
+      isSiegeEvent ||
       isMemberJoin ||
       isMemberKick ||
       isAiBroadcast ||
       isAchievementBroadcast;
+
+  /// Loss-framed / surveillance cards retired in the co-op redesign: idle ghost
+  /// cards, "you're losing ground" overtakes, close-gap countdown timers, and
+  /// dead-streak taunts. Filtered out of the feed so a quiet room never
+  /// broadcasts its own funeral to the people who could still revive it.
+  bool get isDeathSpiralBroadcast =>
+      isWakeCard || isOvertake || isCloseGap || isDeadStreak;
 
   String? get rankUpTitle {
     if (!isRankUpBroadcast) return null;
@@ -218,6 +241,8 @@ class ExerciseLog {
       kDeadPrefix,
       kFirstLogPrefix,
       kCloseGapPrefix,
+      kComebackPrefix,
+      kLeaguePrefix,
       kMemberJoinPrefix,
       kMemberKickPrefix,
     ]) {

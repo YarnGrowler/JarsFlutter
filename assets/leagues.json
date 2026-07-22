@@ -1,0 +1,43 @@
+{
+  "mode": "fixtures",
+  "teamsPerLeague": 8,
+  "incompleteSchedule": false,
+  "promoteCount": 2,
+  "relegateCount": 2,
+  "scoring": { "win": 3, "draw": 1, "loss": 0 },
+  "theme": "metal",
+  "divisions": [
+    { "id": "bronze",   "metal": "Bronze League",   "football": "Division Four",  "color": "#CD7F32", "icon": "🥉", "difficulty": 0.80, "aiAbility": [0.70, 1.00] },
+    { "id": "silver",   "metal": "Silver League",   "football": "Division Three", "color": "#B8C0CC", "icon": "🥈", "difficulty": 0.90, "aiAbility": [0.80, 1.10] },
+    { "id": "gold",     "metal": "Gold League",     "football": "Division Two",   "color": "#E8B923", "icon": "🥇", "difficulty": 1.00, "aiAbility": [0.90, 1.20] },
+    { "id": "platinum", "metal": "Platinum League", "football": "Division One",   "color": "#6EE7D6", "icon": "💠", "difficulty": 1.12, "aiAbility": [1.00, 1.30] },
+    { "id": "diamond",  "metal": "Diamond League",  "football": "Championship",   "color": "#67C7FF", "icon": "💎", "difficulty": 1.25, "aiAbility": [1.10, 1.45] },
+    { "id": "champion", "metal": "Champion League", "football": "Premier",        "color": "#B06BF0", "icon": "👑", "difficulty": 1.40, "aiAbility": [1.25, 1.60] },
+    { "id": "radiant",  "metal": "Radiant League",  "football": "Elite",          "color": "#FF7DB0", "icon": "🌟", "difficulty": 1.55, "aiAbility": [1.40, 1.80] }
+  ],
+  "ai": {
+    "teamNames": [
+      "Iron Wolves", "Night Owls", "Gym Rats", "Barbell Club", "Chalk Dust",
+      "Rep Machine", "Sweat Equity", "The Grinders", "Lactic Acid", "Peak Hour",
+      "Failure Sets", "Warm Bloods", "Rest Day Rebels", "Power Hour", "Deload Crew",
+      "Max Effort", "Split Squad", "Tempo Kings", "PR Chasers", "Couch to Beast"
+    ],
+    "playerNames": [
+      "Diesel", "Ace", "Tank", "Cardio Carl", "Bolt", "Rhino", "Nova", "Quads",
+      "Blitz", "Sarge", "Titan", "Echo", "Piston", "Maverick", "Bruno", "Vega",
+      "Hammer", "Ziggy", "Onyx", "Rocco", "Flex", "Turbo", "Gaz", "Mongo",
+      "Slate", "Fury", "Dash", "Kilo", "Ripley", "Brick"
+    ],
+    "rosterMin": 2,
+    "rosterMax": 8,
+    "missWeekChance": 0.12,
+    "formInertia": 0.6,
+    "weeklyNoise": 0.18
+  },
+  "balance": {
+    "anchorTrailingWeeks": 3,
+    "fallbackPerMember": null,
+    "nominalBaselinePerMember": 60,
+    "opponentSpread": 0.2
+  }
+}

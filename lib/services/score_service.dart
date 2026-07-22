@@ -2,6 +2,10 @@ import 'supabase_service.dart';
 import '../models/score.dart';
 import '../core/jars_timezone.dart';
 
+/// How many missed days the streak forgives before resetting. 1 = a single
+/// rest day never breaks your streak (co-op redesign: stop punishing life).
+const int kStreakGraceDays = 1;
+
 /// Preview-only: mirrors streak day logic in [addPoints] when only [basePoints]
 /// are applied toward daily (used to pick streak multiplier before bonus is added).
 int previewStreakDaysForBonus({
@@ -17,26 +21,18 @@ int previewStreakDaysForBonus({
   dailyPoints += basePoints;
   if (dailyPoints < streakMinimum) return 0;
 
-  int streakCurrent = score.streakCurrent;
+  final int streakCurrent = score.streakCurrent;
   final streakLastWorkout = score.streakLastWorkout;
+  if (streakLastWorkout == null) return 1;
 
-  DateTime? lastDay;
-  if (streakLastWorkout != null) {
-    lastDay = DateTime(
-      streakLastWorkout.year,
-      streakLastWorkout.month,
-      streakLastWorkout.day,
-    );
-  }
-  if (streakLastWorkout == null) {
-    return 1;
-  }
-  if (lastDay == today) {
-    return streakCurrent;
-  }
-  if (lastDay == today.subtract(const Duration(days: 1))) {
-    return streakCurrent + 1;
-  }
+  final lastDay = DateTime(
+    streakLastWorkout.year,
+    streakLastWorkout.month,
+    streakLastWorkout.day,
+  );
+  final gapDays = today.difference(lastDay).inDays;
+  if (gapDays <= 0) return streakCurrent; // already counted today
+  if (gapDays <= 1 + kStreakGraceDays) return streakCurrent + 1; // within grace
   return 1;
 }
 
@@ -94,20 +90,22 @@ class ScoreService {
     DateTime? streakLastWorkout = current.streakLastWorkout;
 
     if (dailyPoints >= streakMinimum) {
-      DateTime? lastDay;
       final prevStreak = streakLastWorkout;
-      if (prevStreak != null) {
-        lastDay = DateTime(prevStreak.year, prevStreak.month, prevStreak.day);
-      }
-      if (streakLastWorkout == null) {
+      if (prevStreak == null) {
         streakCurrent = 1;
-      } else if (lastDay == today) {
-        // Same Chicago calendar day, no streak change
-      } else if (lastDay ==
-          today.subtract(const Duration(days: 1))) {
-        streakCurrent += 1;
       } else {
-        streakCurrent = 1;
+        final lastDay =
+            DateTime(prevStreak.year, prevStreak.month, prevStreak.day);
+        final gapDays = today.difference(lastDay).inDays;
+        if (gapDays <= 0) {
+          // Same Chicago calendar day — already counted, no change.
+        } else if (gapDays <= 1 + kStreakGraceDays) {
+          // Consecutive day, or within the rest-day grace window: keep going.
+          streakCurrent += 1;
+        } else {
+          // Gap too large even with grace — fresh start.
+          streakCurrent = 1;
+        }
       }
       streakLastWorkout = today;
       if (streakCurrent > streakHighest) {

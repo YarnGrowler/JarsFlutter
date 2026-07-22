@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/log_display.dart';
@@ -41,6 +43,8 @@ class FeedCard extends StatelessWidget {
   final List<Reaction> reactions;
   final ValueChanged<String>? onReact;
   final VoidCallback? onWakeNudge;
+  /// Short celebration pulse on the room feed after you just logged this row.
+  final bool pulseFresh;
 
   const FeedCard({
     super.key,
@@ -49,6 +53,7 @@ class FeedCard extends StatelessWidget {
     this.reactions = const [],
     this.onReact,
     this.onWakeNudge,
+    this.pulseFresh = false,
   });
 
   @override
@@ -100,13 +105,19 @@ class FeedCard extends StatelessWidget {
     if (log.isWakeCard) {
       return _WakeCard(log: log, onNudge: onWakeNudge);
     }
+    if (log.isComeback) {
+      return _ComebackCard(log: log, reactions: reactions, onReact: onReact);
+    }
+    if (log.isLeague) {
+      return _LeagueCard(log: log, reactions: reactions, onReact: onReact);
+    }
 
     // Normal exercise log card
     final level = userTotalScore != null
         ? getLevelForScore(userTotalScore!)
         : null;
 
-    return Container(
+    final inner = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: JarsColors.surface,
@@ -177,6 +188,90 @@ class FeedCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (pulseFresh) {
+      return _FreshFeedPulse(child: inner);
+    }
+    return inner;
+  }
+}
+
+/// One-shot glow + scale so a new log feels “landed” on the feed.
+class _FreshFeedPulse extends StatefulWidget {
+  final Widget child;
+
+  const _FreshFeedPulse({required this.child});
+
+  @override
+  State<_FreshFeedPulse> createState() => _FreshFeedPulseState();
+}
+
+class _FreshFeedPulseState extends State<_FreshFeedPulse>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, child) {
+        final t = Curves.easeOutCubic.transform(_c.value);
+        // Peak glow mid-animation, then settle.
+        final glow = (t < 0.45 ? t / 0.45 : 1.0 - (t - 0.45) / 0.55).clamp(0.0, 1.0);
+        final scale = 1.0 + 0.018 * math.sin(t * math.pi * 3) * (1 - t);
+        return Transform.scale(
+          scale: scale,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(JarsRadius.card + 2),
+              boxShadow: [
+                BoxShadow(
+                  color: JarsColors.primary.withValues(alpha: 0.12 + 0.38 * glow),
+                  blurRadius: 6 + 22 * glow,
+                  spreadRadius: 1.5 * glow,
+                ),
+                BoxShadow(
+                  color: const Color(0xFFB8A8FF).withValues(alpha: 0.08 * glow),
+                  blurRadius: 28 * glow,
+                  spreadRadius: 0,
+                ),
+              ],
+            ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(JarsRadius.card),
+                border: Border.all(
+                  width: 1.2 + 1.8 * glow,
+                  color: Color.lerp(
+                        JarsColors.border,
+                        JarsColors.primary,
+                        0.25 + 0.55 * glow,
+                      ) ??
+                      JarsColors.border,
+                ),
+              ),
+              child: child,
+            ),
+          ),
+        );
+      },
+      child: widget.child,
     );
   }
 }
@@ -915,6 +1010,125 @@ class _StreakCard extends StatelessWidget {
               Text(
                 log.createdAt.timeAgo,
                 style: GoogleFonts.inter(fontSize: 12, color: JarsColors.textTertiary),
+              ),
+            ],
+          ),
+          _feedReactionBar(
+            context,
+            reactions: reactions,
+            onReact: onReact,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Comeback Card ──────────────────────────────────────────────────────────────
+
+class _ComebackCard extends StatelessWidget {
+  final ExerciseLog log;
+  final List<Reaction> reactions;
+  final ValueChanged<String>? onReact;
+
+  const _ComebackCard({
+    required this.log,
+    this.reactions = const [],
+    this.onReact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final payload = log.broadcastPayload ?? '';
+    final title = payload.isNotEmpty
+        ? payload
+        : '${log.username ?? 'Someone'} is back — welcome back!';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: JarsColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(JarsRadius.card),
+        border: Border.all(color: JarsColors.primary.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('👋 ', style: TextStyle(fontSize: 16)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: JarsColors.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                log.createdAt.timeAgo,
+                style: GoogleFonts.inter(
+                    fontSize: 12, color: JarsColors.textTertiary),
+              ),
+            ],
+          ),
+          _feedReactionBar(
+            context,
+            reactions: reactions,
+            onReact: onReact,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── League Card ────────────────────────────────────────────────────────────────
+
+class _LeagueCard extends StatelessWidget {
+  final ExerciseLog log;
+  final List<Reaction> reactions;
+  final ValueChanged<String>? onReact;
+
+  const _LeagueCard({
+    required this.log,
+    this.reactions = const [],
+    this.onReact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final payload = log.broadcastPayload ?? '';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: JarsColors.gold.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(JarsRadius.card),
+        border: Border.all(color: JarsColors.gold.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('🏆 ', style: TextStyle(fontSize: 16)),
+              Expanded(
+                child: Text(
+                  payload.isNotEmpty ? payload : 'League update',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: JarsColors.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                log.createdAt.timeAgo,
+                style: GoogleFonts.inter(
+                    fontSize: 12, color: JarsColors.textTertiary),
               ),
             ],
           ),
