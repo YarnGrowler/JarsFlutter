@@ -689,8 +689,11 @@ class _LogSheetState extends ConsumerState<LogSheet>
     setState(() => _logging = true);
 
     // Demo Mode: real exercise instantly fuels the player you're controlling
-    // in the Clan War — no network round-trip.
-    if (kDemoMode && basePts >= 1) {
+    // in the Clan War — no network round-trip. Only once the game is seated
+    // to THIS room (the War tab has synced at least once this session) —
+    // otherwise the points would land on a not-yet-real placeholder player
+    // and vanish the next time the roster syncs.
+    if (kDemoMode && basePts >= 1 && WarGame.instance.roomId == room.id) {
       WarGame.instance.earn(basePts);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('⚡ +${basePts.round()} WAR POINTS for ${WarGame.instance.active.name}'),

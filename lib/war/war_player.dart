@@ -10,6 +10,11 @@ class WarPlayer {
   int colorValue;
   final WarSide side;
   final bool isYou;
+
+  /// True for AI-controlled players only: the solo/offline crew and every
+  /// enemy. Real room teammates (seated via `WarGame.applyRoomRoster`) are
+  /// always false — their base sector is theirs to design, never auto-built.
+  final bool isBot;
   AiLevel ai;
 
   /// Continuous difficulty dial: multiplies the tier's competence (the enemy
@@ -42,6 +47,7 @@ class WarPlayer {
     required this.side,
     required this.ai,
     this.isYou = false,
+    this.isBot = false,
     this.skillMul = 1.0,
     this.resources = 0,
     this.ready = false,
@@ -65,6 +71,7 @@ class WarPlayer {
         'color': colorValue,
         'side': side.index,
         'isYou': isYou,
+        'isBot': isBot,
         'ai': ai.index,
         'mul': skillMul,
         'res': resources,
@@ -72,14 +79,21 @@ class WarPlayer {
         'army': {for (final e in army.entries) '${e.key.index}': e.value},
       };
 
-  factory WarPlayer.fromJson(Map<String, dynamic> j) {
+  /// [roomSeated]: for saves from before `isBot` existed, we have to guess —
+  /// enemies are always bots, and everyone else is a bot only in solo/offline
+  /// saves (no real room). Ignored once the JSON carries an explicit `isBot`.
+  factory WarPlayer.fromJson(Map<String, dynamic> j, {bool roomSeated = false}) {
+    final side = WarSide.values[(j['side'] as num).toInt()];
+    final isYou = j['isYou'] == true;
+    final legacyIsBot = side == WarSide.enemy || !roomSeated;
     final p = WarPlayer(
       id: j['id'] as String,
       name: j['name'] as String,
       emoji: j['emoji'] as String? ?? '🧑',
       colorValue: (j['color'] as num?)?.toInt() ?? 0xFF7C6FFF,
-      side: WarSide.values[(j['side'] as num).toInt()],
-      isYou: j['isYou'] == true,
+      side: side,
+      isYou: isYou,
+      isBot: j.containsKey('isBot') ? j['isBot'] == true : (!isYou && legacyIsBot),
       ai: AiLevel.values[(j['ai'] as num?)?.toInt() ?? 1],
       skillMul: (j['mul'] as num?)?.toDouble() ?? 1.0,
       resources: (j['res'] as num?)?.toDouble() ?? 0,
