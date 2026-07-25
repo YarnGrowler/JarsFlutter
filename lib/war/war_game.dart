@@ -248,7 +248,8 @@ class WarGame extends ChangeNotifier {
           emoji: c[2] as String,
           colorValue: c[3] as int,
           side: WarSide.you,
-          ai: AiLevel.seasoned));
+          ai: AiLevel.seasoned,
+          isBot: true));
     }
     final n = youClan.length;
     for (var i = 0; i < n; i++) {
@@ -259,7 +260,8 @@ class WarGame extends ChangeNotifier {
           emoji: c[2] as String,
           colorValue: c[3] as int,
           side: WarSide.enemy,
-          ai: enemyDifficulty));
+          ai: enemyDifficulty,
+          isBot: true));
     }
     activePlayerId = 'you';
   }
@@ -284,36 +286,55 @@ class WarGame extends ChangeNotifier {
       return; // same crew, already seated
     }
     roomId = realRoomId;
+    // A roster reconciliation (a teammate joins/leaves, or a device just
+    // catches up) must never wipe anyone's earned progress — carry every
+    // still-present player's pool/army/tallies forward by id instead of
+    // rebuilding them from scratch.
+    final prior = {for (final p in players) p.id: p};
+    WarPlayer seat(WarPlayer fresh) {
+      final old = prior[fresh.id];
+      if (old == null) return fresh;
+      fresh.resources = old.resources;
+      fresh.army = old.army;
+      fresh.ready = old.ready;
+      fresh.troopsLost = old.troopsLost;
+      fresh.resourcesSpent = old.resourcesSpent;
+      fresh.destructionDealt = old.destructionDealt;
+      return fresh;
+    }
     players.clear();
-    players.add(WarPlayer(
+    players.add(seat(WarPlayer(
         id: myUserId,
         name: myUsername,
         emoji: '🦁',
         colorValue: 0xFF2E6BE6,
         side: WarSide.you,
         ai: AiLevel.master,
-        isYou: true));
+        isYou: true)));
     for (final m in members) {
-      players.add(WarPlayer(
+      // Real teammates, never bots — they design and place their own base
+      // sector (see startPrep's aiCrew filter).
+      players.add(seat(WarPlayer(
           id: m.id,
           name: m.name,
           emoji: _emojiFor(m.id),
           colorValue: _colorFor(m.id),
           side: WarSide.you,
-          ai: AiLevel.seasoned));
+          ai: AiLevel.seasoned)));
     }
     final n = youClan.length;
     for (var i = 0; i < n; i++) {
       final c = _enemyChars[i % _enemyChars.length];
       final wave = i ~/ _enemyChars.length;
       final name = wave == 0 ? c[1] as String : '${c[1]} ${_romanNumeral(wave + 1)}';
-      players.add(WarPlayer(
+      players.add(seat(WarPlayer(
           id: 'foe_$i',
           name: name,
           emoji: c[2] as String,
           colorValue: c[3] as int,
           side: WarSide.enemy,
-          ai: enemyDifficulty));
+          ai: enemyDifficulty,
+          isBot: true)));
     }
     activePlayerId = myUserId;
     _save();
@@ -351,19 +372,25 @@ class WarGame extends ChangeNotifier {
     enemyIntel = {};
     for (final p in players) {
       // difficulty bites: sharper enemy clans bring a bigger war chest
-      // (rookie ~262 → master ~375); your clan always builds at par
+      // (rookie ~262 → master ~375). Real players get NO headstart — every
+      // ⚡ has to come from a logged workout. Bots still need a budget to
+      // auto-build with (solo/offline crew only).
       p.resources = p.side == WarSide.enemy
           ? WarCosts.prepBudgetFor(p.skill)
-          : WarCosts.prepBudget;
+          : (p.isBot ? WarCosts.prepBudget : 0);
       p.ready = false;
       p.resetWarTallies();
     }
-    // AI builds: the whole enemy base, and your AI crewmates' share of yours.
+    // AI builds: the whole enemy base, and your BOT crewmates' share of
+    // yours. Real teammates (isBot == false) place their own castle and
+    // structures — never auto-built for them.
     WarAi.designBase(
         enemyBase, enemyClan, SeededRng(seedFromParts([warSeed, 'enemyDesign'])));
-    final aiCrew = youClan.where((p) => !p.isYou).toList();
-    WarAi.designBase(
-        youBase, aiCrew, SeededRng(seedFromParts([warSeed, 'crewDesign'])));
+    final aiCrew = youClan.where((p) => p.isBot).toList();
+    if (aiCrew.isNotEmpty) {
+      WarAi.designBase(
+          youBase, aiCrew, SeededRng(seedFromParts([warSeed, 'crewDesign'])));
+    }
     _save();
     notifyListeners();
   }
@@ -973,7 +1000,11 @@ class WarGame extends ChangeNotifier {
     divisionIndex = 0;
     seasonResults = [];
     worldGen++; // fresh terrain, fresh strongholds — never the same rerun
-    _buildRosters();
+    // Solo/offline only: a real room's roster (seated via applyRoomRoster)
+    // must survive a reset untouched — swapping it for the fake bot crew
+    // here was auto-building a full stronghold for every real teammate the
+    // instant the season reset, same bug as startPrep used to have.
+    if (roomId == null) _buildRosters();
     startPrep();
   }
 
@@ -1075,7 +1106,7 @@ class WarGame extends ChangeNotifier {
       ..clear()
       ..addAll([
         for (final pj in (j['players'] as List? ?? const []))
-          WarPlayer.fromJson(pj as Map<String, dynamic>)
+          WarPlayer.fromJson(pj as Map<String, dynamic>, roomSeated: roomId != null)
       ]);
     if (players.isEmpty) _buildRosters();
     seasonResults = [
