@@ -1017,13 +1017,18 @@ void main() {
         return v;
       }
 
+      // the enemy's stronghold is sized and built at startWar() now — not
+      // startPrep() — since it's floored against what the real crew earned
+      // that prep (see 'the enemy war chest reflects real crew effort').
       final g1 = WarGame.fresh();
-      g1.setEnemyDifficulty(AiLevel.rookie);
       g1.startPrep();
+      g1.setDifficulty(1); // rookie-equivalent
+      g1.startWar();
       final rookieValue = value(g1.enemyBase);
       final g2 = WarGame.fresh();
-      g2.setEnemyDifficulty(AiLevel.master);
       g2.startPrep();
+      g2.setDifficulty(50); // master-equivalent
+      g2.startWar();
       final masterValue = value(g2.enemyBase);
       expect(masterValue, greaterThan(rookieValue),
           reason: 'the difficulty knob must BITE on defense too');

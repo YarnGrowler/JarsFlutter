@@ -41,17 +41,26 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
   if (myId == null) return;
 
   final game = WarGame.instance;
+  // re-derived every time the provider fires, never persisted/trusted from a
+  // shared blob — if the room's admin changes, this device finds out on its
+  // very next rebuild.
+  game.isRoomAdmin = room.adminId == myId;
 
   if (_syncedRoomId != room.id) {
     try {
       final (version, state) =
           await WarSyncService.ensure(room.id, game.toJson());
       game.loadFromJson(state);
+      // `activePlayerId` is PER-DEVICE identity, never shared state — a
+      // remote blob's 'active' field belongs to whoever last saved it, not
+      // to us. Reassert immediately, before anything can rebuild and read
+      // the wrong one (see the identical guard in applyRoomRoster below).
+      game.activePlayerId = myId;
       game.roomVersion = version;
       WarGame.onRoomSave = _pushRoomSave;
       _warRealtimeSub?.cancel();
       _warRealtimeSub = WarSyncService.stream(room.id).listen(
-        (rows) => _applyRemote(game, rows),
+        (rows) => _applyRemote(game, rows, myId),
         onError: (Object e) {
           if (kDebugMode) debugPrint('WarSync: realtime stream error: $e');
         },
@@ -87,7 +96,8 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
   );
 });
 
-void _applyRemote(WarGame game, List<Map<String, dynamic>> rows) {
+void _applyRemote(
+    WarGame game, List<Map<String, dynamic>> rows, String myId) {
   if (rows.isEmpty) return;
   final row = rows.first;
   final remoteVersion = (row['version'] as num?)?.toInt() ?? -1;
@@ -95,6 +105,9 @@ void _applyRemote(WarGame game, List<Map<String, dynamic>> rows) {
   final state = row['state'];
   if (state is! Map) return;
   game.loadFromJson(Map<String, dynamic>.from(state));
+  // same identity guard as the initial load — a teammate's realtime save
+  // carries THEIR activePlayerId; it must never leak onto this device.
+  game.activePlayerId = myId;
   game.roomVersion = remoteVersion;
   game.notifyListeners();
 }
@@ -105,11 +118,16 @@ void _applyRemote(WarGame game, List<Map<String, dynamic>> rows) {
 Future<void> _pushRoomSave(WarGame g) async {
   final roomId = g.roomId;
   if (roomId == null) return;
+  // captured BEFORE the round-trip: this device's own identity, which the
+  // conflict branch below must restore — a teammate's winning save carries
+  // THEIR activePlayerId, and it must never leak onto this device.
+  final myId = g.activePlayerId;
   try {
     final (version, state, conflict) =
         await WarSyncService.save(roomId, g.toJson(), g.roomVersion);
     if (conflict) {
       g.loadFromJson(state);
+      g.activePlayerId = myId;
       g.roomVersion = version;
       g.syncConflicts++;
     } else {

@@ -505,7 +505,11 @@ class WarCosts {
   static const double capture = 2; // flip a tile
   static const double attack = 3; // a troop striking
   static const double defend = 1; // a defender firing a shot / garrison acting
-  static const double prepBudget = 300; // starting build ⚡ per player
+  static const double prepBudget = 300; // starting build ⚡ per player (bots)
+
+  /// Real players get a small headstart, not a free stronghold — the rest
+  /// has to come from logged workouts, same as always intended.
+  static const double realPlayerPrepStipend = 100;
 
   /// The enemy's war chest by skill. Below master (1.0) it's the gentle old
   /// curve; past it the treasury EXPLODES — a difficulty-99 clan brings

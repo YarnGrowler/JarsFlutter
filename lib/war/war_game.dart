@@ -189,6 +189,21 @@ class WarGame extends ChangeNotifier {
   /// a brief "a teammate just updated the base" notice.
   int syncConflicts = 0;
 
+  /// Whether THIS device's signed-in user runs the room (`Room.adminId`).
+  /// Solo/offline play defaults true — you're always the admin of your own
+  /// local game. Set by the app layer (see `warRoomSyncProvider`); not
+  /// persisted — it's re-derived from the real room every session, never
+  /// trusted from a shared blob (same principle as `activePlayerId`).
+  bool isRoomAdmin = true;
+
+  /// War-wide controls (who's fighting whom, how hard, when the day starts)
+  /// are the room admin's call in a real room — nobody wants a teammate's
+  /// stray tap resetting the season or cranking the difficulty for
+  /// everyone. Per-player actions (building, training, raiding, readying up)
+  /// are never gated here; they only ever touch the acting player's own
+  /// resources and are already scoped correctly.
+  bool get canControlWar => roomId == null || isRoomAdmin;
+
   List<WarPlayer> get youClan =>
       players.where((p) => p.side == WarSide.you).toList();
   List<WarPlayer> get enemyClan =>
@@ -283,7 +298,19 @@ class WarGame extends ChangeNotifier {
     final want = {myUserId, ...members.map((m) => m.id)};
     final have = players.where((p) => p.side == WarSide.you).map((p) => p.id);
     if (roomId == realRoomId && want.length == have.length && want.containsAll(have)) {
-      return; // same crew, already seated
+      // Same crew, already seated — BUT a remote sync (a teammate's save,
+      // or the initial load) may have just overwritten `activePlayerId`
+      // with WHOEVER last saved from THEIR device. This device is never
+      // controlled by anyone but its own signed-in user — full stop. This
+      // is the exact bug that let one player's building silently spend a
+      // teammate's resources: `activePlayerId` is per-device identity, it
+      // must NEVER be trusted from a shared blob.
+      if (activePlayerId != myUserId) {
+        activePlayerId = myUserId;
+        _save();
+        notifyListeners();
+      }
+      return;
     }
     roomId = realRoomId;
     // A roster reconciliation (a teammate joins/leaves, or a device just
@@ -300,6 +327,7 @@ class WarGame extends ChangeNotifier {
       fresh.troopsLost = old.troopsLost;
       fresh.resourcesSpent = old.resourcesSpent;
       fresh.destructionDealt = old.destructionDealt;
+      fresh.prepEarned = old.prepEarned;
       return fresh;
     }
     players.clear();
@@ -371,21 +399,27 @@ class WarGame extends ChangeNotifier {
     youIntel = {};
     enemyIntel = {};
     for (final p in players) {
-      // difficulty bites: sharper enemy clans bring a bigger war chest
-      // (rookie ~262 → master ~375). Real players get NO headstart — every
-      // ⚡ has to come from a logged workout. Bots still need a budget to
-      // auto-build with (solo/offline crew only).
-      p.resources = p.side == WarSide.enemy
-          ? WarCosts.prepBudgetFor(p.skill)
-          : (p.isBot ? WarCosts.prepBudget : 0);
       p.ready = false;
-      p.resetWarTallies();
+      p.resetWarTallies(); // zeroes prepEarned too — a clean slate to build up
+      // Real players get a small headstart — the rest has to come from a
+      // logged workout, tracked in prepEarned from here. Bots (solo/offline
+      // crew) need their full budget now since they build immediately below.
+      // Enemies get NOTHING yet — their war chest isn't decided until
+      // startWar(), once it's clear what your crew actually earned this
+      // prep (see the comment there).
+      if (p.side == WarSide.enemy) {
+        p.resources = 0;
+      } else if (p.isBot) {
+        p.resources = WarCosts.prepBudget;
+      } else {
+        p.resources = WarCosts.realPlayerPrepStipend;
+        p.prepEarned = p.resources;
+      }
     }
-    // AI builds: the whole enemy base, and your BOT crewmates' share of
-    // yours. Real teammates (isBot == false) place their own castle and
-    // structures — never auto-built for them.
-    WarAi.designBase(
-        enemyBase, enemyClan, SeededRng(seedFromParts([warSeed, 'enemyDesign'])));
+    // Your BOT crewmates' share of the base builds immediately (solo/offline
+    // only) — real teammates (isBot == false) place their own castle and
+    // structures, never auto-built. The ENEMY base is deliberately NOT built
+    // here anymore — see startWar().
     final aiCrew = youClan.where((p) => p.isBot).toList();
     if (aiCrew.isNotEmpty) {
       WarAi.designBase(
@@ -461,8 +495,27 @@ class WarGame extends ChangeNotifier {
   bool get allReady => youClan.every((p) => p.ready);
   bool get youHaveCastle => youBase.castles.containsKey('you');
 
+  /// slider → effective enemy skill (0.3 .. 1.5), FLOORED by how far your
+  /// clan has climbed the league — Bronze asks nothing extra, Radiant floors
+  /// you into citadel territory even if nobody's touched the difficulty
+  /// dial. Whichever is HIGHER (dial or league) wins.
+  double _effectiveEnemySkill() {
+    final divCount = math.max(1, _lcfg.divisions.length - 1);
+    final leagueFloor = 0.3 + (divisionIndex / divCount) * 0.8;
+    return math.max(skillFor(difficulty), leagueFloor);
+  }
+
+  static AiLevel _tierForSkill(double s) => s >= 0.9
+      ? AiLevel.master
+      : s >= 0.65
+          ? AiLevel.elite
+          : s >= 0.4
+              ? AiLevel.seasoned
+              : AiLevel.rookie;
+
   // ── WAR ─────────────────────────────────────────────────────────────────────
   void startWar() {
+    if (!canControlWar) return; // only the room admin starts the war
     // ensure every player has a castle
     for (final p in youClan) {
       if (!youBase.castles.containsKey(p.id)) {
@@ -470,6 +523,31 @@ class WarGame extends ChangeNotifier {
         if (spot != null) youBase.placeCastle(p.id, spot.r, spot.c);
       }
     }
+
+    // ── the build phase just ended — THIS is when the enemy's stronghold
+    // is sized and built. Their war chest is floored at what your REAL crew
+    // actually earned this prep (never a number picked before anyone logged
+    // a workout), topped up by the difficulty dial / league standing —
+    // whichever asks for more. Bots (solo/offline crew) don't count toward
+    // this — it's real effort or nothing. ──
+    final crewTotal = youClan
+        .where((p) => !p.isBot)
+        .fold(0.0, (sum, p) => sum + p.prepEarned);
+    final foes = enemyClan;
+    if (foes.isNotEmpty) {
+      final effSkill = _effectiveEnemySkill();
+      final tier = _tierForSkill(effSkill);
+      enemyDifficulty = tier;
+      final perFoeFloor = crewTotal / foes.length;
+      for (final p in foes) {
+        p.ai = tier;
+        p.skillMul = effSkill / AiData.skill(tier);
+        p.resources = perFoeFloor + WarCosts.prepBudgetFor(p.skill);
+      }
+      WarAi.designBase(
+          enemyBase, foes, SeededRng(seedFromParts([warSeed, 'enemyDesign'])));
+    }
+
     phase = WarPhase.war;
     clock.simMinutes = 0;
     warStartedAtMs = nowMs(); // the wall clock starts ticking now
@@ -565,8 +643,11 @@ class WarGame extends ChangeNotifier {
   }
 
   /// Manual fast-forward (sandbox / testing). Also winds the wall-clock anchor
-  /// back so a hand-skipped war stays consistent with real-time sync.
+  /// back so a hand-skipped war stays consistent with real-time sync. Room
+  /// admin only — it rewinds the SHARED wall clock, so a teammate skipping
+  /// ahead would desync the whole crew's war.
   void advanceHours(int hours) {
+    if (!canControlWar) return;
     if (phase != WarPhase.war || hours <= 0) return;
     warStartedAtMs -= hours * realSecondsPerSimHour * 1000;
     _runHours(hours);
@@ -977,15 +1058,10 @@ class WarGame extends ChangeNotifier {
   /// The war dial (1..100): sets the tier for plan depth AND a continuous
   /// skill multiplier so the top half of the dial goes BEYOND master.
   void setDifficulty(int d) {
+    if (!canControlWar) return; // only the room admin sets the difficulty
     difficulty = d.clamp(1, 100);
     final s = skillFor(difficulty);
-    enemyDifficulty = s >= 0.9
-        ? AiLevel.master
-        : s >= 0.65
-            ? AiLevel.elite
-            : s >= 0.4
-                ? AiLevel.seasoned
-                : AiLevel.rookie;
+    enemyDifficulty = _tierForSkill(s);
     for (final p in enemyClan) {
       p.ai = enemyDifficulty;
       p.skillMul = s / AiData.skill(enemyDifficulty);
@@ -995,6 +1071,7 @@ class WarGame extends ChangeNotifier {
   }
 
   Future<void> resetSeason() async {
+    if (!canControlWar) return; // only the room admin resets the season
     seasonIndex = 0;
     warIndex = 0;
     divisionIndex = 0;
@@ -1013,6 +1090,10 @@ class WarGame extends ChangeNotifier {
   void earn(double points) {
     if (points <= 0) return;
     active.resources += points;
+    // track real prep-day effort — this is what floors the enemy's war
+    // chest at startWar(), so it has to be everything you had, not just
+    // whatever's left unspent by the time the day ends.
+    if (phase == WarPhase.prep) active.prepEarned += points;
     _save();
     notifyListeners();
   }

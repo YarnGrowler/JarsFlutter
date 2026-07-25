@@ -24,6 +24,13 @@ class WarPlayer {
   double resources;
   bool ready; // locked in their prep contribution
 
+  /// Total ⚡ this player has had available THIS prep — the starting stipend
+  /// plus every workout logged since, whether or not they've spent it yet.
+  /// This (summed across the real crew, bots excluded) is what the enemy's
+  /// war chest is floored against at `startWar()` — real effort, not a
+  /// number picked before anyone logged a single workout.
+  double prepEarned = 0;
+
   /// Effective competence 0..1.5 — ALWAYS use this instead of AiData.skill.
   double get skill => (AiData.skill(ai) * skillMul).clamp(0.0, 1.5);
 
@@ -59,6 +66,7 @@ class WarPlayer {
     troopsLost = 0;
     resourcesSpent = 0;
     destructionDealt = 0;
+    prepEarned = 0;
   }
 
   int armyCount(TroopType t) => army[t] ?? 0;
@@ -75,6 +83,7 @@ class WarPlayer {
         'ai': ai.index,
         'mul': skillMul,
         'res': resources,
+        'prepEarned': prepEarned,
         'ready': ready,
         'army': {for (final e in army.entries) '${e.key.index}': e.value},
       };
@@ -99,6 +108,7 @@ class WarPlayer {
       resources: (j['res'] as num?)?.toDouble() ?? 0,
       ready: j['ready'] == true,
     );
+    p.prepEarned = (j['prepEarned'] as num?)?.toDouble() ?? 0;
     final aj = j['army'] as Map<String, dynamic>? ?? {};
     aj.forEach((k, v) {
       final idx = int.tryParse(k);

@@ -209,15 +209,25 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                 Expanded(
                     child: _btn(
                         '⚔ START WAR',
-                        g.youHaveCastle ? JarsColors.gold : JarsColors.textTertiary,
-                        g.youHaveCastle
-                            ? () {
-                                g.startWar();
-                              }
-                            : () => ScaffoldMessenger.of(context).showSnackBar(
+                        g.youHaveCastle && g.canControlWar
+                            ? JarsColors.gold
+                            : JarsColors.textTertiary,
+                        () {
+                          if (!g.canControlWar) {
+                            ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                    content: Text('Place your castle first (Build your base).'))),
-                        dark: g.youHaveCastle)),
+                                    content: Text(
+                                        'Only the room admin can start the war.')));
+                          } else if (!g.youHaveCastle) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Place your castle first (Build your base).')));
+                          } else {
+                            g.startWar();
+                          }
+                        },
+                        dark: g.youHaveCastle && g.canControlWar)),
               ]),
               const SizedBox(height: 8),
               Row(children: [
@@ -292,21 +302,29 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                 ),
               const SizedBox(height: 12),
               _warClockCard(g),
-              const SizedBox(height: 8),
-              Text('SKIP AHEAD · testing',
-                  style: GoogleFonts.inter(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
-                      color: JarsColors.textTertiary)),
-              const SizedBox(height: 6),
-              Row(children: [
-                Expanded(child: _btn('+1h', JarsColors.surface, () => g.advanceHours(1))),
-                const SizedBox(width: 8),
-                Expanded(child: _btn('+6h', JarsColors.surface, () => g.advanceHours(6))),
-                const SizedBox(width: 8),
-                Expanded(child: _btn('End Day', JarsColors.surface, () => g.advanceToEndOfDay())),
-              ]),
+              if (g.canControlWar) ...[
+                const SizedBox(height: 8),
+                Text('SKIP AHEAD · testing',
+                    style: GoogleFonts.inter(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: JarsColors.textTertiary)),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Expanded(
+                      child: _btn('+1h', JarsColors.surface,
+                          () => g.advanceHours(1))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _btn('+6h', JarsColors.surface,
+                          () => g.advanceHours(6))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _btn('End Day', JarsColors.surface,
+                          () => g.advanceToEndOfDay())),
+                ]),
+              ],
               if (g.feed.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text('WAR FEED',
@@ -446,6 +464,10 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1,
                   color: JarsColors.textTertiary)),
+          if (!g.canControlWar) ...[
+            const SizedBox(width: 5),
+            Icon(Icons.lock_rounded, size: 11, color: JarsColors.textTertiary),
+          ],
           const Spacer(),
           Text(
               '${g.difficulty} · ${AiData.label(g.enemyDifficulty)}'
@@ -464,11 +486,19 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
             value: g.difficulty.toDouble(),
             min: 1,
             max: 100,
-            activeColor: JarsColors.red,
+            activeColor:
+                g.canControlWar ? JarsColors.red : JarsColors.textTertiary,
             inactiveColor: JarsColors.border,
-            onChanged: (v) => g.setDifficulty(v.round()),
+            // only the room admin sets the difficulty for everyone
+            onChanged: g.canControlWar
+                ? (v) => g.setDifficulty(v.round())
+                : null,
           ),
         ),
+        if (!g.canControlWar)
+          Text('Only the room admin can change this.',
+              style: GoogleFonts.inter(
+                  fontSize: 10.5, color: JarsColors.textTertiary)),
         Text(
             'Season: War ${g.warIndex + 1} of ${g.warsPerSeason} · Record '
             '${g.seasonResults.where((w) => w == true).length}W–'
@@ -486,14 +516,15 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
               style:
                   TextButton.styleFrom(foregroundColor: JarsColors.textTertiary),
             ),
-            TextButton.icon(
-              onPressed: () => _confirmReset(context, g),
-              icon: const Icon(Icons.restart_alt_rounded, size: 16),
-              label: Text('Reset season',
-                  style: GoogleFonts.inter(fontSize: 12)),
-              style:
-                  TextButton.styleFrom(foregroundColor: JarsColors.textTertiary),
-            ),
+            if (g.canControlWar)
+              TextButton.icon(
+                onPressed: () => _confirmReset(context, g),
+                icon: const Icon(Icons.restart_alt_rounded, size: 16),
+                label: Text('Reset season',
+                    style: GoogleFonts.inter(fontSize: 12)),
+                style: TextButton.styleFrom(
+                    foregroundColor: JarsColors.textTertiary),
+              ),
           ],
         ),
       ],

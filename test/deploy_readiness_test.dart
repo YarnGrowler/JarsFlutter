@@ -262,6 +262,267 @@ void main() {
           reason: 'you can never puppet a real friend\'s account');
     });
 
+    test(
+        'REGRESSION: a shared blob never overwrites you with a teammate\'s identity',
+        () {
+      // The exact real-world bug: ybb and BossmanFat share a room. ybb opens
+      // the war first, seats the real roster, and saves — his device's
+      // activePlayerId ('ybb') rides along in that same blob (it's a field
+      // on WarGame, serialized for the SOLO/offline case where it's a
+      // legitimate "who am I controlling"). BossmanFat's device then pulls
+      // THAT blob. If activePlayerId is trusted from it, BossmanFat's own
+      // screen silently starts spending ybb's resources.
+      final ybbDevice = WarGame.fresh();
+      ybbDevice.startPrep();
+      ybbDevice.applyRoomRoster(
+        realRoomId: 'the-gc',
+        myUserId: 'ybb-uid',
+        myUsername: 'ybb',
+        members: friends([
+          ['bossmanfat-uid', 'BossmanFat']
+        ]),
+      );
+      expect(ybbDevice.activePlayerId, 'ybb-uid');
+      final sharedBlob = ybbDevice.toJson(); // what lands in room_wars
+
+      // BossmanFat's device: a fresh instance loads that SAME blob (this is
+      // exactly what the initial `ensure()` / realtime `_applyRemote` do).
+      final bossmanfatDevice = WarGame.fresh();
+      bossmanfatDevice.loadFromJson(sharedBlob);
+      expect(bossmanfatDevice.activePlayerId, 'ybb-uid',
+          reason: 'raw loadFromJson is honest about what was IN the blob — '
+              'the guard belongs to whoever calls it next');
+
+      // Reconciling the roster for THIS device — the roster is already
+      // correct (same two real people), so this takes the CHEAP NO-OP path.
+      // That fast path must STILL correct the identity.
+      bossmanfatDevice.applyRoomRoster(
+        realRoomId: 'the-gc',
+        myUserId: 'bossmanfat-uid',
+        myUsername: 'BossmanFat',
+        members: friends([
+          ['ybb-uid', 'ybb']
+        ]),
+      );
+
+      expect(bossmanfatDevice.activePlayerId, 'bossmanfat-uid',
+          reason: 'BossmanFat must always control BossmanFat, never ybb');
+      expect(bossmanfatDevice.active.id, 'bossmanfat-uid');
+      expect(bossmanfatDevice.active.name, 'BossmanFat');
+    });
+
+    test('the no-op roster path corrects activePlayerId even with NO change',
+        () {
+      // narrower unit test of the same fix: applyRoomRoster's fast path
+      // (roster genuinely unchanged) must not skip the identity check.
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      // simulate a remote load quietly overwriting it (as loadFromJson does)
+      g.activePlayerId = 'f0';
+      expect(g.active.id, 'f0', reason: 'sanity: the corruption really happened');
+
+      // re-run with an UNCHANGED roster — must hit the no-op path AND fix it
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      expect(g.activePlayerId, 'me',
+          reason: 'the no-op fast path must still self-correct identity');
+    });
+
+    test('a non-admin real player cannot touch war-wide controls', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.isRoomAdmin = false;
+      expect(g.canControlWar, isFalse);
+
+      final diffBefore = g.difficulty;
+      g.setDifficulty(99);
+      expect(g.difficulty, diffBefore, reason: 'non-admin cannot set difficulty');
+
+      final phaseBefore = g.phase;
+      g.startWar();
+      expect(g.phase, phaseBefore, reason: 'non-admin cannot start the war');
+
+      final hourBefore = g.clock.hour;
+      g.startWar(); // no-op (still blocked), but ensure advanceHours also blocked
+      g.advanceHours(3);
+      expect(g.clock.hour, hourBefore, reason: 'non-admin cannot skip time');
+
+      final seasonBefore = g.seasonIndex;
+      g.resetSeason();
+      expect(g.seasonIndex, seasonBefore, reason: 'non-admin cannot reset the season');
+    });
+
+    // Structure value actually BUILT into a base — p.resources itself gets
+    // overwritten right after by startWar()'s war-day (raiding) allowance, so
+    // the built base is the only honest way to see what the prep budget
+    // bought.
+    double structureValue(Base b) {
+      var v = 0.0;
+      for (var r = 0; r < Base.rows; r++) {
+        for (var c = 0; c < Base.cols; c++) {
+          final s = b.structAt(r, c);
+          if (s != null) v += s.spec.cost;
+        }
+      }
+      return v;
+    }
+
+    test('the enemy war chest reflects real crew effort, not a guess', () {
+      double enemyBuildValue(double crewEarnedPerMember, int members) {
+        final g = WarGame.fresh();
+        g.startPrep();
+        g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            for (var i = 0; i < members - 1; i++) ['f$i', 'F$i']
+          ]),
+        );
+        for (final p in g.youClan) {
+          g.activePlayerId = p.id;
+          g.earn(crewEarnedPerMember);
+        }
+        g.activePlayerId = 'me';
+        g.startWar();
+        return structureValue(g.enemyBase);
+      }
+
+      final lightCrew = enemyBuildValue(20, 3); // barely worked out
+      final heavyCrew = enemyBuildValue(3000, 3); // grinded hard
+      expect(heavyCrew, greaterThan(lightCrew),
+          reason: 'a crew that earned more faces a tougher AI, at the SAME '
+              'difficulty dial');
+    });
+
+    test('bots never count toward the enemy\'s war-chest floor', () {
+      // solo/offline crew (bots) start with a flat 300 and build immediately
+      // — none of that should inflate a REAL room's enemy floor. Compare
+      // PER-ENEMY average build value (clan sizes differ: solo = you+3
+      // bots, so 4 foes share the floor; the room below is sized to match).
+      final soloGame = WarGame.fresh();
+      soloGame.startPrep(); // solo fallback crew: bots with 300⚡ each
+      expect(soloGame.youClan.any((p) => p.isBot), isTrue,
+          reason: 'sanity: bots exist');
+      soloGame.startWar();
+      final soloPerEnemy =
+          structureValue(soloGame.enemyBase) / soloGame.enemyClan.length;
+
+      final roomGame = WarGame.fresh();
+      roomGame.startPrep();
+      roomGame.applyRoomRoster(
+        realRoomId: 'r',
+        myUserId: 'me',
+        myUsername: 'Me',
+        // match the solo scenario's headcount (you + 3) with ZERO real
+        // earnings — a real room's honest floor when nobody's logged yet
+        members: friends([
+          ['f0', 'A'],
+          ['f1', 'B'],
+          ['f2', 'C'],
+        ]),
+      );
+      expect(roomGame.youClan.every((p) => !p.isBot), isTrue,
+          reason: 'a real room has no bots at all');
+      roomGame.startWar();
+      final roomPerEnemy =
+          structureValue(roomGame.enemyBase) / roomGame.enemyClan.length;
+
+      // same (zero) real earnings, same dial, same headcount — the SOLO
+      // game's leftover 300⚡-per-bot must not make ITS enemy tougher than
+      // the real room's zero-earned crew.
+      expect(roomPerEnemy, closeTo(soloPerEnemy, soloPerEnemy * 0.15 + 20),
+          reason: 'no bot money leaked into the real room\'s enemy floor');
+    });
+
+    test('the league floor bites even at the LOWEST difficulty dial', () {
+      final divCount = cfg.divisions.length;
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.setDifficulty(1); // the easiest the dial goes
+      g.divisionIndex = 0; // Bronze
+      g.startWar();
+      final bronzeSkill = g.enemyClan.first.skill;
+
+      final g2 = WarGame.fresh();
+      g2.startPrep();
+      g2.setDifficulty(1); // SAME easy dial
+      g2.divisionIndex = divCount - 1; // Radiant — the top of the ladder
+      g2.startWar();
+      final radiantSkill = g2.enemyClan.first.skill;
+
+      expect(radiantSkill, greaterThan(bronzeSkill),
+          reason: 'climbing the league must bite even if nobody touches the '
+              'difficulty dial');
+      expect(radiantSkill, greaterThan(1.0),
+          reason: 'Radiant floors you into citadel territory no matter what');
+    });
+
+    test('the enemy clan always matches your real crew size, still', () {
+      for (final size in [1, 3, 5]) {
+        final g = WarGame.fresh();
+        g.startPrep();
+        g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            for (var i = 0; i < size - 1; i++) ['f$i', 'F$i']
+          ]),
+        );
+        g.startWar();
+        expect(g.enemyClan.length, size);
+      }
+    });
+
+    test('the room admin CAN use every war-wide control', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.isRoomAdmin = true;
+      expect(g.canControlWar, isTrue);
+
+      g.setDifficulty(80);
+      expect(g.difficulty, 80);
+
+      g.startWar();
+      expect(g.phase, WarPhase.war);
+    });
+
+    test('solo/offline play always has full control (no room = no admin gate)',
+        () {
+      final g = WarGame.fresh();
+      g.startPrep(); // never wired to a room — roomId stays null
+      expect(g.canControlWar, isTrue);
+      g.setDifficulty(70);
+      expect(g.difficulty, 70);
+    });
+
     test('rapid-fire saves never let an OLDER write clobber a NEWER one',
         () async {
       // regression: SharedPreferences.getInstance().then(...) calls, fired
