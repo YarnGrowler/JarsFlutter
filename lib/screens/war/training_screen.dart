@@ -15,6 +15,9 @@ class TrainingScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // same reasoning as base_builder_screen: this screen must never trust a
+    // roster/identity that hasn't been reconciled against the real room.
+    ref.watch(warRoomSyncProvider);
     final g = ref.watch(warGameProvider);
     final p = g.active;
     return Scaffold(

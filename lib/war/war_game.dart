@@ -313,6 +313,11 @@ class WarGame extends ChangeNotifier {
       return;
     }
     roomId = realRoomId;
+    // A stale crew's castles (the solo/offline bot crew's auto-built ones,
+    // or a friend who's since left) must never linger once the roster no
+    // longer includes them — otherwise "how many castles are down" reads
+    // wrong forever and orphaned structures clutter the base.
+    youBase.pruneCastlesNotIn(want);
     // A roster reconciliation (a teammate joins/leaves, or a device just
     // catches up) must never wipe anyone's earned progress — carry every
     // still-present player's pool/army/tallies forward by id instead of
@@ -456,10 +461,13 @@ class WarGame extends ChangeNotifier {
     if (phase != WarPhase.prep) return;
     final s = youBase.structAt(r, c);
     if (s == null || s.isCastle) return; // castles are sacred
-    // co-op base: anyone can re-plan it — the refund goes to the OWNER
-    final owner = players.firstWhere((p) => p.id == s.ownerId,
-        orElse: () => active);
-    owner.resources += youBase.removeAt(r, c);
+    // co-op base: anyone can re-plan it — the refund goes to the OWNER.
+    // If the owner has since left the room, nobody gets a free refund for
+    // materials they didn't pay for (mirrors pruneCastlesNotIn: a departed
+    // player's stuff is gone, not up for grabs).
+    final ownerIndex = players.indexWhere((p) => p.id == s.ownerId);
+    final refund = youBase.removeAt(r, c);
+    if (ownerIndex != -1) players[ownerIndex].resources += refund;
     _save();
     notifyListeners();
   }
@@ -493,7 +501,15 @@ class WarGame extends ChangeNotifier {
   }
 
   bool get allReady => youClan.every((p) => p.ready);
-  bool get youHaveCastle => youBase.castles.containsKey('you');
+
+  /// Has the player CURRENTLY at the controls placed their own castle yet
+  /// (the builder's "place your castle first" hint). Per-player — everyone
+  /// on the crew has their own answer to this.
+  bool get activeHasCastle => youBase.castles.containsKey(active.id);
+
+  /// Has ANYONE on the crew placed a castle — not everyone has to. The
+  /// admin can start the war the moment a single castle is down.
+  bool get anyCastlePlaced => youBase.castles.isNotEmpty;
 
   /// slider → effective enemy skill (0.3 .. 1.5), FLOORED by how far your
   /// clan has climbed the league — Bronze asks nothing extra, Radiant floors
@@ -1246,6 +1262,22 @@ class WarGame extends ChangeNotifier {
   /// (below) — an offline mirror that keeps solo play, tests, and "no
   /// network right now" all working exactly as before.
   static void Function(WarGame game)? onRoomSave;
+
+  /// Call on SIGN-OUT. Nothing else clears `WarGame.instance` between
+  /// sessions — if a different real user signs in on the same device
+  /// without a full app restart (two friends testing on one laptop is
+  /// exactly this), they must NEVER inherit the outgoing user's room,
+  /// identity, or roster, even for the one frame before the next screen's
+  /// sync gets a chance to run.
+  void resetForSignOut() {
+    roomId = null;
+    roomVersion = 0;
+    syncConflicts = 0;
+    isRoomAdmin = true;
+    players.clear();
+    activePlayerId = 'you';
+    onRoomSave = null;
+  }
 
   // A bare `SharedPreferences.getInstance().then(...)` per call races: two
   // independent Future chains resolving out of order can let an OLDER save

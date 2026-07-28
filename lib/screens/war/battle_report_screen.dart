@@ -20,6 +20,9 @@ class BattleReportScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // same reasoning as base_builder_screen: reachable via a direct
+    // deep-link/reload, so it must trigger its own sync, not rely on the hub.
+    ref.watch(warRoomSyncProvider);
     final g = ref.watch(warGameProvider);
     final v = g.lastVerdict;
     final won = v?.winner == WarSide.you;

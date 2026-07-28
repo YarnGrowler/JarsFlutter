@@ -209,7 +209,7 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                 Expanded(
                     child: _btn(
                         '⚔ START WAR',
-                        g.youHaveCastle && g.canControlWar
+                        g.anyCastlePlaced && g.canControlWar
                             ? JarsColors.gold
                             : JarsColors.textTertiary,
                         () {
@@ -218,16 +218,16 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                                 const SnackBar(
                                     content: Text(
                                         'Only the room admin can start the war.')));
-                          } else if (!g.youHaveCastle) {
+                          } else if (!g.anyCastlePlaced) {
                             ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                     content: Text(
-                                        'Place your castle first (Build your base).')));
+                                        'Nobody has placed a castle yet — build one first.')));
                           } else {
                             g.startWar();
                           }
                         },
-                        dark: g.youHaveCastle && g.canControlWar)),
+                        dark: g.anyCastlePlaced && g.canControlWar)),
               ]),
               const SizedBox(height: 8),
               Row(children: [

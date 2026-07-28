@@ -30,6 +30,11 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // a direct deep-link/reload can land here WITHOUT ever passing through
+    // the war hub — the roster/remote-state sync has to fire from every
+    // war screen, not just the hub, or this screen could show a stale or
+    // wrong-identity roster.
+    ref.watch(warRoomSyncProvider);
     final g = ref.watch(warGameProvider);
     final base = g.youBase;
 
@@ -262,14 +267,14 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                         fontWeight: FontWeight.w800,
                         color: JarsColors.textPrimary)),
                 Text(
-                    g.youHaveCastle
+                    g.activeHasCastle
                         ? 'tap a placed defense to see its range'
                         : 'place your 🏰 castle first',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
                         fontSize: 11,
-                        color: g.youHaveCastle
+                        color: g.activeHasCastle
                             ? JarsColors.textTertiary
                             : JarsColors.gold)),
               ],

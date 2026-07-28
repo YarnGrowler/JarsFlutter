@@ -28,6 +28,8 @@ import '../../widgets/debug/teammates_sheet.dart';
 import '../../widgets/sheets/create_custom_exercise_sheet.dart';
 import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../providers/ui_text_scale_provider.dart';
+import '../../providers/war_providers.dart';
+import '../../war/war_game.dart';
 import '../../core/user_display_name.dart';
 import '../../widgets/onboarding/first_run_coach_mark.dart';
 import '../../widgets/ui/rank_badge.dart';
@@ -492,6 +494,12 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   onTap: () async {
                     Navigator.pop(sheetContext);
+                    // a DIFFERENT real user signing in on this same
+                    // device/browser next must never inherit this session's
+                    // room, war identity, or roster.
+                    WarGame.instance.resetForSignOut();
+                    resetWarRoomSync();
+                    ref.read(activeRoomProvider.notifier).clear();
                     await AuthService.signOut();
                     if (context.mounted) {
                       context.go('/auth');

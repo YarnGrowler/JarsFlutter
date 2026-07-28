@@ -22,6 +22,17 @@ final warGameProvider =
 String? _syncedRoomId;
 StreamSubscription<List<Map<String, dynamic>>>? _warRealtimeSub;
 
+/// Call on SIGN-OUT, alongside [WarGame.resetForSignOut]. Without this, a
+/// different real user signing in on the same device/browser would find
+/// `_syncedRoomId` already matching (if they happen to share a room with the
+/// outgoing user) and skip straight to the "already synced" fast path —
+/// never re-fetching, never re-subscribing fresh for THEIR session.
+void resetWarRoomSync() {
+  _syncedRoomId = null;
+  _warRealtimeSub?.cancel();
+  _warRealtimeSub = null;
+}
+
 /// Keeps [WarGame] true to your REAL room: your teammates are whoever's
 /// actually in the room (no fake AI crew), the enemy clan is sized to match,
 /// and — once, per room, per session — the shared war state is pulled from

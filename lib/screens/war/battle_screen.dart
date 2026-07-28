@@ -555,6 +555,9 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   // ── build ───────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    // same reasoning as base_builder_screen: reachable via a direct
+    // deep-link/reload, so it must trigger its own sync, not rely on the hub.
+    ref.watch(warRoomSyncProvider);
     final g = ref.watch(warGameProvider);
     final base = _mode == 'defense'
         ? g.youBase

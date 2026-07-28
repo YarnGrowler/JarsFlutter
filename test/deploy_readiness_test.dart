@@ -494,6 +494,140 @@ void main() {
       }
     });
 
+    test(
+        'REGRESSION: the admin starts the war with only THEIR OWN castle down — '
+        'nobody else has to place one', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A'],
+            ['f1', 'B'],
+          ]));
+      g.isRoomAdmin = true;
+      // ONLY the admin places a castle — friends A and B never touch the
+      // builder at all.
+      g.placeCastle(10, 10);
+      expect(g.anyCastlePlaced, isTrue,
+          reason: 'the old check (literal id "you") ALWAYS failed for real '
+              'rooms — this is the exact bug reported');
+      expect(g.youBase.castles.length, 1);
+
+      g.startWar();
+      expect(g.phase, WarPhase.war,
+          reason: 'the war starts — not everyone needs a castle down');
+      // stragglers get auto-seated a fallback spot so the war is still fair
+      expect(g.youBase.castles.length, 3,
+          reason: 'A and B get fallback castles so they can still be raided');
+    });
+
+    test(
+        'REGRESSION: the solo bot crew\'s auto-built castles never linger '
+        'once a real room takes over', () {
+      final g = WarGame.fresh();
+      g.startPrep(); // solo fallback: you + 3 bots, bots auto-place castles
+      final botCastleCount = g.youBase.castles.length;
+      expect(botCastleCount, greaterThan(0),
+          reason: 'sanity: the bot crew really did auto-build');
+
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      expect(g.youBase.castles.keys, isNot(contains('casey')),
+          reason: 'the old bot crew\'s castles must not haunt a real room');
+      expect(g.youBase.castles.length, 0,
+          reason: 'nobody real has placed a castle yet — should read as zero');
+      expect(g.anyCastlePlaced, isFalse);
+    });
+
+    test('activeHasCastle reflects the CURRENTLY CONTROLLED player, not a '
+        'hardcoded id', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      expect(g.activeHasCastle, isFalse);
+      g.placeCastle(10, 10);
+      expect(g.activeHasCastle, isTrue,
+          reason: 'the active player (a real id, never the literal "you") '
+              'now has a castle');
+    });
+
+    test(
+        'REGRESSION: signing out leaves nothing for the NEXT real user to '
+        'inherit', () {
+      // two friends testing on the SAME device/browser — a very real
+      // scenario, and exactly how the original identity bug was found.
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'ybb-uid',
+          myUsername: 'ybb',
+          members: friends([
+            ['bossmanfat-uid', 'BossmanFat']
+          ]));
+      g.isRoomAdmin = true;
+      expect(g.roomId, isNotNull);
+      expect(g.players, isNotEmpty);
+
+      g.resetForSignOut();
+
+      expect(g.roomId, isNull, reason: 'no lingering room after sign-out');
+      expect(g.players, isEmpty, reason: 'no lingering roster after sign-out');
+      expect(g.activePlayerId, 'you',
+          reason: 'back to the neutral default, not a real leftover id');
+      expect(g.isRoomAdmin, isTrue, reason: 'admin flag re-defaults safely');
+      expect(WarGame.onRoomSave, isNull,
+          reason: 'no stray save hook still pointing at the old room');
+    });
+
+    test(
+        'REGRESSION: a departed teammate\'s leftover structure refunds '
+        'nobody', () {
+      // f0 places a wall, then leaves the room (roster shrinks). The wall
+      // itself isn't pruned (only castles are, via pruneCastlesNotIn) — but
+      // when the remaining player later bulldozes it, the refund must not
+      // land on whoever happens to click it. That would let anyone farm
+      // free resources off a teammate who quit.
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.youBase.place(10, 10, DefType.wall, 'f0');
+      final meBefore = g.active.resources;
+
+      // f0 leaves — roster shrinks back down to just you
+      g.applyRoomRoster(
+          realRoomId: 'r', myUserId: 'me', myUsername: 'Me', members: const []);
+      expect(g.players.any((p) => p.id == 'f0'), isFalse,
+          reason: 'sanity: f0 is really gone from the roster');
+      expect(g.youBase.structAt(10, 10)?.ownerId, 'f0',
+          reason: 'sanity: the wall itself survives the reseat, orphaned');
+
+      g.removeStructure(10, 10);
+      expect(g.youBase.structAt(10, 10), isNull, reason: 'the wall is gone');
+      expect(g.active.resources, meBefore,
+          reason: 'no free refund for materials you didn\'t pay for');
+    });
+
     test('the room admin CAN use every war-wide control', () {
       final g = WarGame.fresh();
       g.startPrep();

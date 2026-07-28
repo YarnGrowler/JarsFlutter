@@ -373,6 +373,18 @@ class Base {
     return s.spec.cost;
   }
 
+  /// Tears down any castle owned by someone NOT in [validOwnerIds] — for
+  /// when a roster reconciliation replaces the whole crew (e.g. the local
+  /// solo/offline bot crew hands off to a real room) and the old owners'
+  /// castles would otherwise linger forever as orphaned structures.
+  void pruneCastlesNotIn(Set<String> validOwnerIds) {
+    final stale = castles.keys.where((id) => !validOwnerIds.contains(id)).toList();
+    for (final id in stale) {
+      final cell = castles.remove(id);
+      if (cell != null) grid[cell.r][cell.c].structure = null;
+    }
+  }
+
   /// 🪓 Chop a forest tile into buildable plains. Mountains and the river are
   /// permanent. Returns false when there's nothing to clear.
   bool clearForest(int r, int c) {
