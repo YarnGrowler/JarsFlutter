@@ -2229,7 +2229,8 @@ void main() {
             emoji: '🦊',
             colorValue: 0xFF22C55E,
             side: WarSide.you,
-            ai: AiLevel.master);
+            ai: AiLevel.master,
+            isBot: true);
         casey.skillMul = 3; // skill clamps to 1.5 → raid chance > 1
         return WarSim.runHour(
             hour: 1,

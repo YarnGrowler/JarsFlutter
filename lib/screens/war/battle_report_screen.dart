@@ -9,24 +9,113 @@ import '../../war/war_base.dart';
 import '../../war/war_engine.dart';
 import '../../war/war_game.dart';
 import '../../war/war_player.dart';
+import '../../war/war_scoring.dart';
 import '../../war/war_sim.dart';
 import '../../war/war_types.dart';
 import 'war_replay_viewer.dart';
 
+/// A frozen read of one player's war performance — captured once, so a
+/// teammate advancing to the next war on their own device (or this device's
+/// own eventual NEXT WAR tap) can never rewrite the numbers out from under
+/// someone still reading this report.
+class _ReportPlayer {
+  final String name;
+  final String emoji;
+  final WarSide side;
+  final double destructionDealt;
+  final int troopsLost;
+  final double resourcesSpent;
+  const _ReportPlayer({
+    required this.name,
+    required this.emoji,
+    required this.side,
+    required this.destructionDealt,
+    required this.troopsLost,
+    required this.resourcesSpent,
+  });
+}
+
 /// The multi-factor battle report — the verdict, both clans' numbers, the MVP,
 /// the tiebreak reasoning, and the raid feed with full replays.
-class BattleReportScreen extends ConsumerWidget {
+///
+/// Everything shown here is captured ONCE, the first time real data is
+/// available, into local state — never read live off [WarGame]. The war's
+/// shared state can legitimately change out from under this screen at any
+/// moment (a teammate elsewhere tapping NEXT WAR, which pushes a fresh
+/// prep-phase state over realtime); without a frozen snapshot, that shared
+/// mutation used to yank the verdict, feed, and both bases out from under
+/// whoever was still reading the report — including corrupting the replay
+/// viewer, which would then render old raid frames against a brand new,
+/// unrelated base.
+class BattleReportScreen extends ConsumerStatefulWidget {
   const BattleReportScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // same reasoning as base_builder_screen: reachable via a direct
-    // deep-link/reload, so it must trigger its own sync, not rely on the hub.
-    ref.watch(warRoomSyncProvider);
-    final g = ref.watch(warGameProvider);
-    final v = g.lastVerdict;
+  ConsumerState<BattleReportScreen> createState() => _BattleReportScreenState();
+}
+
+class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
+  bool _captured = false;
+  WarVerdict? _verdict;
+  List<WarLogEntry> _feed = const [];
+  late Base _youBase;
+  late Base _enemyBase;
+  double _youDestruction = 0;
+  double _enemyDestruction = 0;
+  bool _enemyBaseRazed = false;
+  bool _youBaseRazed = false;
+  String _enemyClanName = '';
+  List<_ReportPlayer> _youClan = const [];
+  List<_ReportPlayer> _enemyClan = const [];
+
+  _ReportPlayer _snap(WarPlayer p) => _ReportPlayer(
+        name: p.name,
+        emoji: p.emoji,
+        side: p.side,
+        destructionDealt: p.destructionDealt,
+        troopsLost: p.troopsLost,
+        resourcesSpent: p.resourcesSpent,
+      );
+
+  void _captureOnce(WarGame g) {
+    if (_captured) return;
+    _captured = true;
+    _verdict = g.lastVerdict;
+    _feed = List<WarLogEntry>.of(g.feed);
+    _youBase = g.youBase;
+    _enemyBase = g.enemyBase;
+    _youDestruction = g.youDestruction;
+    _enemyDestruction = g.enemyDestruction;
+    _enemyBaseRazed = g.enemyBase.allCastlesRazed;
+    _youBaseRazed = g.youBase.allCastlesRazed;
+    _enemyClanName = g.enemyClanName;
+    _youClan = [for (final p in g.youClan) _snap(p)];
+    _enemyClan = [for (final p in g.enemyClan) _snap(p)];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Read, not watch: this screen must never react to later state changes —
+    // that's the whole point of the snapshot below.
+    _captureOnce(ref.read(warGameProvider));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // A cold deep-link can mount this screen before the room's remote state
+    // has finished loading (initState's read may have caught the local
+    // pre-sync default). If we haven't captured a real verdict yet, keep
+    // trying on each rebuild until we have — but the INSTANT we do, we never
+    // look at live game state again.
+    if (!_haveRealData) {
+      _captured = false;
+      _captureOnce(ref.watch(warGameProvider));
+    }
+
+    final v = _verdict;
     final won = v?.winner == WarSide.you;
-    final mvp = _mvp(g);
+    final mvp = _mvp();
 
     return Scaffold(
       backgroundColor: JarsColors.background,
@@ -62,13 +151,13 @@ class BattleReportScreen extends ConsumerWidget {
               ]),
             ),
             const SizedBox(height: 16),
-            _clanCard(g, WarSide.you),
+            _clanCard(WarSide.you),
             const SizedBox(height: 10),
-            _clanCard(g, WarSide.enemy),
+            _clanCard(WarSide.enemy),
             const SizedBox(height: 16),
-            if (mvp != null) _mvpCard(g, mvp),
+            if (mvp != null) _mvpCard(mvp),
             const SizedBox(height: 16),
-            _topRaiders(g),
+            _topRaiders(),
             const SizedBox(height: 16),
             if (v != null && v.reasons.isNotEmpty) ...[
               Text('THE VERDICT',
@@ -93,7 +182,7 @@ class BattleReportScreen extends ConsumerWidget {
                 child: _bigChip(
                   label: '▶ FULL WAR REPLAY',
                   color: JarsColors.gold,
-                  onTap: () => _watchChronicle(context, g),
+                  onTap: () => _watchChronicle(context),
                 ),
               ),
               const SizedBox(width: 8),
@@ -101,7 +190,7 @@ class BattleReportScreen extends ConsumerWidget {
                 child: _bigChip(
                   label: '🗺 THEIR BASE',
                   color: JarsColors.red,
-                  onTap: () => _viewBase(context, g, WarSide.enemy),
+                  onTap: () => _viewBase(context, WarSide.enemy),
                 ),
               ),
               const SizedBox(width: 8),
@@ -109,12 +198,12 @@ class BattleReportScreen extends ConsumerWidget {
                 child: _bigChip(
                   label: '🏰 YOUR BASE',
                   color: JarsColors.primary,
-                  onTap: () => _viewBase(context, g, WarSide.you),
+                  onTap: () => _viewBase(context, WarSide.you),
                 ),
               ),
             ]),
             const SizedBox(height: 16),
-            if (g.feed.isNotEmpty) ...[
+            if (_feed.isNotEmpty) ...[
               Text('RAID LOG · tap ▶ to watch the battle',
                   style: GoogleFonts.inter(
                       fontSize: 10,
@@ -122,7 +211,7 @@ class BattleReportScreen extends ConsumerWidget {
                       letterSpacing: 1,
                       color: JarsColors.textTertiary)),
               const SizedBox(height: 6),
-              for (final e in g.feed.reversed.take(12))
+              for (final e in _feed.reversed.take(12))
                 Padding(
                   padding: const EdgeInsets.only(bottom: 3),
                   child: Row(children: [
@@ -136,7 +225,7 @@ class BattleReportScreen extends ConsumerWidget {
                     ),
                     if (e.replay != null && e.replay!.isNotEmpty)
                       GestureDetector(
-                        onTap: () => _watchRaid(context, g, e),
+                        onTap: () => _watchRaid(context, e),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 3),
@@ -159,7 +248,7 @@ class BattleReportScreen extends ConsumerWidget {
             const SizedBox(height: 20),
             GestureDetector(
               onTap: () {
-                g.nextWar();
+                WarGame.instance.nextWar();
                 context.go('/war');
               },
               child: Container(
@@ -182,25 +271,26 @@ class BattleReportScreen extends ConsumerWidget {
     );
   }
 
-  void _watchRaid(BuildContext context, WarGame g, WarLogEntry e) {
-    // your clan's raids hit the ENEMY base; theirs hit yours. Once the war is
-    // DECIDED there is nothing left to hide — no fog on any replay.
-    final over = g.phase == WarPhase.results;
-    final base = e.attackerSide == WarSide.you ? g.enemyBase : g.youBase;
+  bool get _haveRealData => _verdict != null;
+
+  void _watchRaid(BuildContext context, WarLogEntry e) {
+    // your clan's raids hit the ENEMY base; theirs hit yours. The war is
+    // DECIDED — there is nothing left to hide, no fog on any replay.
+    final base = e.attackerSide == WarSide.you ? _enemyBase : _youBase;
     WarReplayViewer.show(context,
         base: base,
         frames: e.replay!,
-        fog: !over && e.attackerSide == WarSide.you ? g.youIntel : null,
+        fog: null,
         title:
             '${e.attackerSide == WarSide.you ? '🔵' : '🔴'} ${e.attackerName}\'s raid');
   }
 
   /// The WAR, twice over: one continuous TIMELAPSE per base — every raid on
   /// it, chronological, start to finish, with title-card beats in between.
-  void _watchChronicle(BuildContext context, WarGame g) {
+  void _watchChronicle(BuildContext context) {
     List<RaidFrame> timelapse(WarSide attacker) {
       final frames = <RaidFrame>[];
-      for (final e in g.feed) {
+      for (final e in _feed) {
         if (e.attackerSide != attacker) continue;
         if (e.replay == null || e.replay!.isEmpty) continue;
         // a title-card beat: hold the incoming raid's first frame
@@ -218,12 +308,12 @@ class BattleReportScreen extends ConsumerWidget {
     final entries = <ReplayEntry>[
       if (siege.isNotEmpty)
         ReplayEntry(
-            base: g.enemyBase,
+            base: _enemyBase,
             frames: siege,
-            title: '⚔ The siege of ${g.enemyClanName} — the whole war'),
+            title: '⚔ The siege of $_enemyClanName — the whole war'),
       if (defense.isNotEmpty)
         ReplayEntry(
-            base: g.youBase,
+            base: _youBase,
             frames: defense,
             title: '🛡 Your Crew holds the line — the whole war'),
     ];
@@ -237,8 +327,8 @@ class BattleReportScreen extends ConsumerWidget {
 
   /// Post-war base tour: the whole board, no fog, EVERYTHING revealed — even
   /// the mines and teslas they never got to spring.
-  void _viewBase(BuildContext context, WarGame g, WarSide side) {
-    final base = side == WarSide.you ? g.youBase : g.enemyBase;
+  void _viewBase(BuildContext context, WarSide side) {
+    final base = side == WarSide.you ? _youBase : _enemyBase;
     final structs = <RaidStruct>[
       for (var r = 0; r < Base.rows; r++)
         for (var c = 0; c < Base.cols; c++)
@@ -282,21 +372,21 @@ class BattleReportScreen extends ConsumerWidget {
   }
 
   /// Everyone who fought, BOTH clans, best first — the honest ladder.
-  List<WarPlayer> _ranked(WarGame g) {
-    final all = [...g.youClan, ...g.enemyClan];
+  List<_ReportPlayer> _ranked() {
+    final all = [..._youClan, ..._enemyClan];
     all.sort((a, b) => b.destructionDealt.compareTo(a.destructionDealt));
     return all;
   }
 
-  WarPlayer? _mvp(WarGame g) {
-    final all = _ranked(g);
+  _ReportPlayer? _mvp() {
+    final all = _ranked();
     if (all.isEmpty) return null;
     return all.first.destructionDealt > 0 ? all.first : null;
   }
 
   /// 🥇🥈🥉 + the full TOP RAIDERS table across both clans.
-  Widget _topRaiders(WarGame g) {
-    final all = _ranked(g).where((p) => p.destructionDealt > 0).toList();
+  Widget _topRaiders() {
+    final all = _ranked().where((p) => p.destructionDealt > 0).toList();
     if (all.isEmpty) return const SizedBox.shrink();
     const medals = ['🥇', '🥈', '🥉'];
     return Column(
@@ -349,11 +439,11 @@ class BattleReportScreen extends ConsumerWidget {
     );
   }
 
-  Widget _clanCard(WarGame g, WarSide side) {
+  Widget _clanCard(WarSide side) {
     final you = side == WarSide.you;
-    final clan = you ? g.youClan : g.enemyClan;
-    final dealt = you ? g.youDestruction : g.enemyDestruction;
-    final razed = you ? g.enemyBase.allCastlesRazed : g.youBase.allCastlesRazed;
+    final clan = you ? _youClan : _enemyClan;
+    final dealt = you ? _youDestruction : _enemyDestruction;
+    final razed = you ? _enemyBaseRazed : _youBaseRazed;
     final lost = clan.fold<int>(0, (a, p) => a + p.troopsLost);
     final spent = clan.fold<double>(0, (a, p) => a + p.resourcesSpent);
     final c = you ? const Color(0xFF2E6BE6) : const Color(0xFFE6483F);
@@ -368,7 +458,7 @@ class BattleReportScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text(you ? '🔵 YOUR CREW' : '🔴 ${g.enemyClanName.toUpperCase()}',
+            Text(you ? '🔵 YOUR CREW' : '🔴 ${_enemyClanName.toUpperCase()}',
                 style: GoogleFonts.spaceGrotesk(
                     fontSize: 14, fontWeight: FontWeight.w800, color: c)),
             const Spacer(),
@@ -403,7 +493,7 @@ class BattleReportScreen extends ConsumerWidget {
         ),
       );
 
-  Widget _mvpCard(WarGame g, WarPlayer mvp) {
+  Widget _mvpCard(_ReportPlayer mvp) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(

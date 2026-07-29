@@ -58,6 +58,12 @@ class WarSim {
     final out = <WarLogEntry>[];
     for (final p in players) {
       if (p.id == activePlayerId) continue; // human raids are hands-on
+      // Real teammates are never auto-played: no free hourly income, no
+      // AI-piloted raids on their behalf. Only actual bots (solo/offline
+      // crew, and the always-bot enemy clan) get simulated here — a real
+      // friend who isn't at the wheel right now simply doesn't raid until
+      // they show up and play their own raid live.
+      if (!p.isBot) continue;
       final rng = SeededRng(seedFromParts([warSeed, 'hour', hour, p.id]));
       // income (variable per team/hour)
       final ownBase = p.side == WarSide.you ? youBase : enemyBase;

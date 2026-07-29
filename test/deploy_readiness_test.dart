@@ -628,6 +628,63 @@ void main() {
           reason: 'no free refund for materials you didn\'t pay for');
     });
 
+    test(
+        'REGRESSION: real players get a modest war-day stipend, not a bot '
+        'war chest', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.startWar();
+      expect(g.active.resources, WarCosts.realPlayerWarStipend,
+          reason: 'a real player starts war day with a modest stipend, not '
+              'the bot-sized war chest');
+      final teammate = g.youClan.firstWhere((p) => p.id == 'f0');
+      expect(teammate.resources, WarCosts.realPlayerWarStipend,
+          reason: 'every real teammate gets the same modest stipend');
+    });
+
+    test(
+        'REGRESSION: real teammates never get free income or auto-raids as '
+        'war hours pass', () {
+      final originalNowMs = WarGame.nowMs;
+      var fakeMs = 1700000000000;
+      WarGame.nowMs = () => fakeMs;
+      addTearDown(() => WarGame.nowMs = originalNowMs);
+
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.setDifficulty(50);
+      g.startWar();
+      final stipend =
+          g.youClan.firstWhere((p) => p.id == 'f0').resources;
+
+      // 10 war-hours pass while nobody but 'me' is at the wheel — f0 never
+      // logs in during this stretch.
+      fakeMs += 10 * WarGame.realSecondsPerSimHour * 1000;
+      g.syncToWallClock();
+
+      final teammateAfter = g.youClan.firstWhere((p) => p.id == 'f0');
+      expect(teammateAfter.resources, stipend,
+          reason: 'a real teammate earns nothing just from time passing — '
+              'no bot-style hourly income');
+      expect(g.feed.any((e) => e.attackerName == 'A'), isFalse,
+          reason: 'a real teammate is never auto-piloted into raiding for '
+              'them while they\'re away');
+    });
+
     test('the room admin CAN use every war-wide control', () {
       final g = WarGame.fresh();
       g.startPrep();

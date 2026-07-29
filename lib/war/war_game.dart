@@ -101,10 +101,11 @@ class WarGame extends ChangeNotifier {
   /// have happened since — the crew comes home to a war that kept raging.
   int warStartedAtMs = 0;
 
-  /// How much real time one simulated war-hour costs. A war day is 24 sim-hours,
-  /// so at 2 minutes/hour a whole war unfolds over ~48 real minutes. Bump this
-  /// to 3600 for a Clash-style "one war per real day" cadence.
-  static const int realSecondsPerSimHour = 120;
+  /// How much real time one simulated war-hour costs. A war day is
+  /// [WarClock.dayMinutes] sim-hours (16), so at 3600 seconds (1 real hour)
+  /// per sim-hour a whole war unfolds over 16 real hours — Clash-style raid
+  /// windows, not a compressed demo.
+  static const int realSecondsPerSimHour = 3600;
 
   /// Wall-clock source, seam-injected so tests can time-travel. This drives ONLY
   /// how many hours have elapsed — each raid is still seeded, so catch-up is
@@ -568,10 +569,16 @@ class WarGame extends ChangeNotifier {
     clock.simMinutes = 0;
     warStartedAtMs = nowMs(); // the wall clock starts ticking now
     for (final p in players) {
-      // hard enemies march to war RICH — their raids come big and often
+      // hard enemies march to war RICH — their raids come big and often.
+      // Bots (solo/offline crew) get the same flat bot chest as before. Real
+      // players get a modest stipend, not a free bot-sized war chest — the
+      // rest of their war-day budget comes from raids won and workouts
+      // logged, same principle as the prep-day stipend.
       p.resources = p.side == WarSide.enemy
           ? WarCosts.warStartResources * (0.75 + p.skill)
-          : WarCosts.warStartResources;
+          : (p.isBot
+              ? WarCosts.warStartResources
+              : WarCosts.realPlayerWarStipend);
       p.resetWarTallies();
     }
     feed.clear();
