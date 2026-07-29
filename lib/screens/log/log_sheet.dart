@@ -395,23 +395,6 @@ class _LogSheetState extends ConsumerState<LogSheet>
     HapticFeedback.selectionClick();
   }
 
-  String _lastLine(ExerciseLog log) {
-    final vol = formatExerciseLogDetailSubtitle(log);
-    final when = _relativeWhen(log.createdAt.toLocal());
-    return 'Last: $vol · $when';
-  }
-
-  String _relativeWhen(DateTime t) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final day = DateTime(t.year, t.month, t.day);
-    final d = today.difference(day).inDays;
-    if (d == 0) return 'today';
-    if (d == 1) return 'yesterday';
-    if (d < 7) return '${d}d ago';
-    return '${t.month}/${t.day}/${t.year.toString().padLeft(4, '0')}';
-  }
-
   // ── Rep bump (~80% original shake, ~20% bigger scale/tilt + longer) ────────
   Duration get _repBumpDuration =>
       _powerRepBump ? kRepBumpPower : kRepBumpTotal;
@@ -688,19 +671,6 @@ class _LogSheetState extends ConsumerState<LogSheet>
         exercise.calculatePoints(count, _weight > 0 ? _weight : null);
     setState(() => _logging = true);
 
-    // Demo Mode: real exercise instantly fuels the player you're controlling
-    // in the Clan War — no network round-trip. Only once the game is seated
-    // to THIS room (the War tab has synced at least once this session) —
-    // otherwise the points would land on a not-yet-real placeholder player
-    // and vanish the next time the roster syncs.
-    if (kDemoMode && basePts >= 1 && WarGame.instance.roomId == room.id) {
-      WarGame.instance.earn(basePts);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('⚡ +${basePts.round()} WAR POINTS for ${WarGame.instance.active.name}'),
-        duration: const Duration(seconds: 2),
-      ));
-    }
-
     await _persistWeightPreference(exercise.id, _weight);
 
     try {
@@ -744,6 +714,25 @@ class _LogSheetState extends ConsumerState<LogSheet>
 
       final totalPts = subtotalPts + rankBonusPts;
       final totalEarned = totalPts.toDouble();
+
+      // Demo Mode: real exercise instantly fuels the player you're
+      // controlling in the Clan War — no network round-trip. Uses the FULL
+      // total (streak + rank bonus included, not just the base exercise
+      // points) so war points always match what you actually earned. Only
+      // once the game is seated to THIS room (the War tab has synced at
+      // least once this session) — otherwise the points would land on a
+      // not-yet-real placeholder player and vanish the next time the
+      // roster syncs.
+      if (kDemoMode && totalEarned >= 1 && WarGame.instance.roomId == room.id) {
+        WarGame.instance.earn(totalEarned);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                '⚡ +${totalEarned.round()} WAR POINTS for ${WarGame.instance.active.name}'),
+            duration: const Duration(seconds: 2),
+          ));
+        }
+      }
 
       final log = await LogService.insertLog(
         roomId: room.id,
@@ -1108,149 +1097,22 @@ class _LogSheetState extends ConsumerState<LogSheet>
                                           ),
                                         if (_selectedExercise != null &&
                                             !_holding &&
-                                            !_sustainingFlood)
+                                            !_sustainingFlood &&
+                                            previewCount == 0 &&
+                                            (!_timerUiActive ||
+                                                _timerMsTotal == 0))
                                           Positioned(
                                             bottom: 8,
                                             left: 8,
                                             right: 80,
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.center,
-                                              children: [
-                                                if (_recentSetsSameExercise
-                                                        .length >
-                                                    1) ...[
-                                                  SizedBox(
-                                                    height: 36,
-                                                    child: ListView.separated(
-                                                      scrollDirection:
-                                                          Axis.horizontal,
-                                                      physics:
-                                                          const BouncingScrollPhysics(),
-                                                      itemCount:
-                                                          _recentSetsSameExercise
-                                                              .length,
-                                                      separatorBuilder: (_, __) =>
-                                                          const SizedBox(
-                                                              width: 6),
-                                                      itemBuilder: (ctx, i) {
-                                                        final ordered =
-                                                            _recentSetsSameExercise
-                                                                .reversed
-                                                                .toList();
-                                                        final setLog =
-                                                            ordered[i];
-                                                        return Container(
-                                                          constraints:
-                                                              const BoxConstraints(
-                                                                  maxWidth:
-                                                                      200),
-                                                          padding:
-                                                              const EdgeInsets
-                                                                  .symmetric(
-                                                            horizontal: 10,
-                                                            vertical: 6,
-                                                          ),
-                                                          decoration:
-                                                              BoxDecoration(
-                                                            color: Colors.white
-                                                                .withValues(
-                                                                    alpha:
-                                                                        0.06),
-                                                            borderRadius:
-                                                                BorderRadius
-                                                                    .circular(
-                                                                        999),
-                                                            border: Border.all(
-                                                              color: Colors
-                                                                  .white
-                                                                  .withValues(
-                                                                      alpha:
-                                                                          0.12),
-                                                            ),
-                                                          ),
-                                                          child: Text(
-                                                            'Set ${i + 1} · ${formatExerciseLogDetailSubtitle(setLog)}',
-                                                            maxLines: 1,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                            style: GoogleFonts
-                                                                .inter(
-                                                              fontSize: 11,
-                                                              color: Colors
-                                                                  .white
-                                                                  .withValues(
-                                                                      alpha:
-                                                                          0.42),
-                                                            ),
-                                                          ),
-                                                        );
-                                                      },
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 6),
-                                                ],
-                                                if (_lastForSelected !=
-                                                    null) ...[
-                                                  Text(
-                                                    _lastLine(
-                                                        _lastForSelected!),
-                                                    textAlign: TextAlign.center,
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 12,
-                                                      color: Colors.white
-                                                          .withValues(
-                                                              alpha: 0.28),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  TextButton(
-                                                    onPressed: _copyLastSet,
-                                                    style: TextButton.styleFrom(
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 2,
-                                                      ),
-                                                      minimumSize: Size.zero,
-                                                      tapTargetSize:
-                                                          MaterialTapTargetSize
-                                                              .shrinkWrap,
-                                                      foregroundColor: kLogPurple
-                                                          .withValues(
-                                                              alpha: 0.95),
-                                                    ),
-                                                    child: Text(
-                                                      'Copy last set',
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                                if (previewCount == 0 &&
-                                                    (!_timerUiActive ||
-                                                        _timerMsTotal ==
-                                                            0)) ...[
-                                                  if (_lastForSelected !=
-                                                      null)
-                                                    const SizedBox(height: 2),
-                                                  Text(
-                                                    tapCountHint(),
-                                                    textAlign: TextAlign.center,
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 13,
-                                                      color: Colors.white
-                                                          .withValues(
-                                                              alpha: 0.22),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
+                                            child: Text(
+                                              tapCountHint(),
+                                              textAlign: TextAlign.center,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 13,
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.22),
+                                              ),
                                             ),
                                           ),
                                       ],
@@ -1319,6 +1181,68 @@ class _LogSheetState extends ConsumerState<LogSheet>
                               ),
                             ),
                           ),
+                          // Today's sets for this exercise, as small badges
+                          // right under the points — only while the sheet is
+                          // peeking (minimized), so they never fight the
+                          // sheet's own content for attention when it's open.
+                          if (_selectedExercise != null &&
+                              _recentSetsSameExercise.length > 1 &&
+                              _sheetExtent <= _kLogSheetMin + 0.001)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: SizedBox(
+                                height: 22,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  physics: const BouncingScrollPhysics(),
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 20),
+                                  itemCount: _recentSetsSameExercise.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(width: 6),
+                                  itemBuilder: (ctx, i) {
+                                    final ordered = _recentSetsSameExercise
+                                        .reversed
+                                        .toList();
+                                    final setLog = ordered[i];
+                                    final isLast = i == ordered.length - 1;
+                                    return GestureDetector(
+                                      onTap: isLast ? _copyLastSet : null,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                              alpha: isLast ? 0.10 : 0.05),
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                          border: Border.all(
+                                            color: Colors.white.withValues(
+                                                alpha: isLast ? 0.2 : 0.1),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          formatExerciseLogDetailSubtitle(
+                                              setLog),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10,
+                                            fontWeight: isLast
+                                                ? FontWeight.w600
+                                                : FontWeight.w400,
+                                            color: Colors.white.withValues(
+                                                alpha: isLast ? 0.6 : 0.32),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                       if (showFlood && floodOrigin != null)

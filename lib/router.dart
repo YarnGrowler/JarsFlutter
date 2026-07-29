@@ -28,6 +28,7 @@ import 'screens/war/battle_report_screen.dart';
 import 'screens/war/training_screen.dart';
 import 'screens/ranks/ranks_screen.dart';
 import 'screens/profile/profile_screen.dart';
+import 'providers/war_providers.dart';
 import 'services/auth_service.dart';
 import 'core/onboarding_campaign.dart';
 import 'core/onboarding_redo.dart';
@@ -376,6 +377,24 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
+// Keeps the shared Clan War state synced app-wide, not just while a War
+// screen is on-screen. `warRoomSyncProvider` is a plain (non-autoDispose)
+// FutureProvider, so Riverpod never instantiates it until something
+// watches it — if that only ever happened inside War screens, a player who
+// logs a workout without ever opening the War tab this session would have
+// `WarGame.instance.roomId` still null, silently earning zero war points.
+// Watching it once, here, on the shell that's mounted for the whole
+// authenticated app regardless of which tab is showing, closes that gap.
+class _WarSyncKeepAlive extends ConsumerWidget {
+  const _WarSyncKeepAlive();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(warRoomSyncProvider);
+    return const SizedBox.shrink();
+  }
+}
+
 class _ScaffoldWithNav extends StatelessWidget {
   final Widget child;
   const _ScaffoldWithNav({required this.child});
@@ -428,6 +447,7 @@ class _ScaffoldWithNav extends StatelessWidget {
         children: [
           child,
           const AchievementToastLayer(),
+          const _WarSyncKeepAlive(),
         ],
       ),
       bottomNavigationBar: Container(
