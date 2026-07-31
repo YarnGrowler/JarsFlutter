@@ -628,6 +628,39 @@ void main() {
           reason: 'no free refund for materials you didn\'t pay for');
     });
 
+    test('REGRESSION: you cannot sell a real teammate\'s structure', () {
+      // The base is shared, but the pieces are paid for individually. A
+      // teammate's wall is theirs — tapping it must not hand you a sell
+      // button, and calling through anyway must be refused.
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      final mate = g.players.firstWhere((p) => p.id == 'f0');
+      g.youBase.place(10, 10, DefType.wall, 'f0');
+      final mateBefore = mate.resources;
+
+      expect(g.canRemoveStructure(10, 10), isFalse,
+          reason: 'the sell button must not even render on a teammate\'s piece');
+      expect(g.removeStructure(10, 10), isNotNull,
+          reason: 'and the action itself is refused, not silently applied');
+      expect(g.youBase.structAt(10, 10), isNotNull, reason: 'the wall stands');
+      expect(mate.resources, mateBefore, reason: 'no surprise refund either');
+
+      // your own piece is still yours to tear down
+      g.youBase.place(10, 12, DefType.wall, 'me');
+      final meBefore = g.active.resources;
+      expect(g.canRemoveStructure(10, 12), isTrue);
+      expect(g.removeStructure(10, 12), isNull);
+      expect(g.youBase.structAt(10, 12), isNull);
+      expect(g.active.resources, greaterThan(meBefore));
+    });
+
     test(
         'REGRESSION: real players get a modest war-day stipend, not a bot '
         'war chest', () {

@@ -14,7 +14,8 @@ import 'war_board_view.dart';
 import 'war_info_cards.dart';
 
 /// Prep-day base editor. Arm a tool, tap ground to place; tap a placed defense
-/// to SELECT it (range ring + info + sell); 🪓 clears forests for ⚡.
+/// to SELECT it (range ring + info, and SELL if it's yours); 🪓 clears forests
+/// for ⚡.
 class BaseBuilderScreen extends ConsumerStatefulWidget {
   const BaseBuilderScreen({super.key});
 
@@ -208,8 +209,8 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
       setState(() {});
       return;
     }
-    // tap ANY crew piece → inspect (range ring + info + sell) — the whole
-    // base belongs to the whole crew; only castles are personal.
+    // tap ANY crew piece → inspect (range ring + info) — the whole base
+    // belongs to the whole crew, but selling is owner-only.
     if (s != null && !s.isCastle) {
       setState(() => _selectedCell = cell);
       HapticFeedback.selectionClick();
@@ -336,10 +337,13 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
     );
   }
 
-  /// The inspect panel for a selected placed defense (range + info + sell).
+  /// The inspect panel for a selected placed defense (range + info, plus sell
+  /// when the piece is yours).
   Widget _inspectPanel(dynamic g, Cell cell, dynamic s) {
     final spec = s.spec as DefSpec;
-    final canSell = !(s.isCastle as bool);
+    final canSell = g.canRemoveStructure(cell.r, cell.c) as bool;
+    final mine = (s.ownerId as String) == g.active.id;
+    final ownerName = g.structureOwnerName(cell.r, cell.c) as String?;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: const BoxDecoration(
@@ -384,7 +388,8 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                   '${spec.isShooter ? ' · ⚔ ${s.damage} · 🎯 ${spec.range}' : ''}'
                   '${spec.type == DefType.guardPost ? ' · 📍 patrol ${AttackState.garrisonLeash + ((s.level as int) - 1) * 2}' : ''}'
                   '${spec.type == DefType.housing ? ' · 🏠 tents +1 defender' : ''}'
-                  '${g.youBase.grid[cell.r][cell.c].terrain == Terrain.hill && spec.isShooter ? ' · ⛰ high ground +1🎯' : ''}',
+                  '${g.youBase.grid[cell.r][cell.c].terrain == Terrain.hill && spec.isShooter ? ' · ⛰ high ground +1🎯' : ''}'
+                  '${!mine && ownerName != null ? ' · 🧑 $ownerName' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
@@ -435,9 +440,9 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
         if (canSell)
           GestureDetector(
             onTap: () {
-              g.removeStructure(cell.r, cell.c);
-              setState(() => _selectedCell = null);
-              HapticFeedback.selectionClick();
+              final err = g.removeStructure(cell.r, cell.c) as String?;
+              _feedback(err);
+              if (err == null) setState(() => _selectedCell = null);
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),

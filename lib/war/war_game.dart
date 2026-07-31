@@ -458,19 +458,45 @@ class WarGame extends ChangeNotifier {
     return null;
   }
 
-  void removeStructure(int r, int c) {
-    if (phase != WarPhase.prep) return;
+  /// Display name of whoever paid for the piece at (r, c), or null when the
+  /// tile is empty or its owner has left the room.
+  String? structureOwnerName(int r, int c) {
     final s = youBase.structAt(r, c);
-    if (s == null || s.isCastle) return; // castles are sacred
-    // co-op base: anyone can re-plan it — the refund goes to the OWNER.
-    // If the owner has since left the room, nobody gets a free refund for
-    // materials they didn't pay for (mirrors pruneCastlesNotIn: a departed
-    // player's stuff is gone, not up for grabs).
+    if (s == null) return null;
+    final i = players.indexWhere((p) => p.id == s.ownerId);
+    return i == -1 ? null : players[i].name;
+  }
+
+  /// The base is shared, but a real teammate's build is *theirs* — you can't
+  /// bulldoze what someone else paid for. AI crewmates (solo/offline) and
+  /// players who have left the room have nobody to object, so their leftovers
+  /// stay clearable.
+  bool canRemoveStructure(int r, int c) {
+    final s = youBase.structAt(r, c);
+    if (s == null || s.isCastle) return false; // castles are sacred
+    if (s.ownerId == active.id) return true;
+    final i = players.indexWhere((p) => p.id == s.ownerId);
+    return i == -1 || players[i].isBot;
+  }
+
+  String? removeStructure(int r, int c) {
+    if (phase != WarPhase.prep) return 'Prep is over.';
+    final s = youBase.structAt(r, c);
+    if (s == null) return null;
+    if (s.isCastle) return 'Castles are sacred.';
+    if (!canRemoveStructure(r, c)) {
+      final who = structureOwnerName(r, c) ?? 'A crewmate';
+      return '$who built that — only they can sell it.';
+    }
+    // The refund goes to the OWNER. If the owner has since left the room,
+    // nobody gets a free refund for materials they didn't pay for (mirrors
+    // pruneCastlesNotIn: a departed player's stuff is gone, not up for grabs).
     final ownerIndex = players.indexWhere((p) => p.id == s.ownerId);
     final refund = youBase.removeAt(r, c);
     if (ownerIndex != -1) players[ownerIndex].resources += refund;
     _save();
     notifyListeners();
+    return null;
   }
 
   /// Upgrade any upgradable defense: +30% hp, +25% damage, gilded look
