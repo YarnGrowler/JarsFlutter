@@ -54,6 +54,7 @@ class WarSim {
     required String activePlayerId,
     required Set<int> youIntel, // your clan's scouting of the ENEMY base
     required Set<int> enemyIntel, // their clan's scouting of YOURS
+    Set<TroopType> unlockTroops = const {},
   }) {
     final out = <WarLogEntry>[];
     for (final p in players) {
@@ -97,7 +98,8 @@ class WarSim {
           pools: pools,
           rng: rng,
           intel: intel,
-          defenderIq: defenderIq);
+          defenderIq: defenderIq,
+          unlockTroops: unlockTroops);
       intel.addAll(res.revealed); // the clan shares everything it scouts
       if (res.frames.isEmpty) continue; // nothing to raid — no still-frame junk
       final gained = (target.destructionPercent - before).clamp(0.0, 100.0);

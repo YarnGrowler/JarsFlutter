@@ -71,7 +71,7 @@
       "unlockTroops": ["fogger"],
       "unlockDefs": ["pitchPot"],
       "wards": 2,
-      "mountainFrac": 0.10,
+      "mountainFrac": 0.08,
       "forestFrac": 0.14,
       "water": { "dry": 0.15, "light": 0.40, "wet": 0.45 }
     },
@@ -88,7 +88,7 @@
       "unlockTroops": ["elephant"],
       "unlockDefs": [],
       "wards": 2,
-      "mountainFrac": 0.16,
+      "mountainFrac": 0.05,
       "forestFrac": 0.20,
       "water": { "dry": 0.20, "light": 0.45, "wet": 0.35 }
     },
@@ -105,7 +105,7 @@
       "unlockTroops": [],
       "unlockDefs": [],
       "wards": 3,
-      "mountainFrac": 0.14,
+      "mountainFrac": 0.04,
       "forestFrac": 0.15,
       "water": { "dry": 0.30, "light": 0.40, "wet": 0.30 }
     },
@@ -122,7 +122,7 @@
       "unlockTroops": [],
       "unlockDefs": ["citadelCore"],
       "wards": 3,
-      "mountainFrac": 0.18,
+      "mountainFrac": 0.03,
       "forestFrac": 0.12,
       "water": { "dry": 0.35, "light": 0.40, "wet": 0.25 }
     }

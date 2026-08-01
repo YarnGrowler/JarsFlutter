@@ -23,6 +23,11 @@ class StrongholdStyle {
   /// capping it. Leagues use this so a bigger rung never builds a smaller
   /// city than the difficulty dial already earns.
   final int? minRooms;
+
+  /// League-gated defenses the builder is allowed to place (tribute chest,
+  /// command tent, pitch pot, citadel core). Empty = none of those.
+  final Set<DefType> unlockDefs;
+
   const StrongholdStyle(
       {this.archetype,
       this.gates,
@@ -32,7 +37,8 @@ class StrongholdStyle {
       this.innerKeep,
       this.layers,
       this.rooms,
-      this.minRooms});
+      this.minRooms,
+      this.unlockDefs = const {}});
 }
 
 /// What the generator actually built — read by the Lab readout and the tests.
@@ -198,6 +204,18 @@ class WarAi {
             ? autoTarget
             : math.max(autoTarget, floorTarget));
     final citadel = roomTarget != null;
+
+    // Heavy artillery + pitch budgets — scale with the city, but DON'T let
+    // leftover-loop spam dump 40 pitch pots on every doorway once the chest
+    // is fat. Mortars used to hard-cap at ~4 even on Radiant (rooms~/8).
+    var mortarsPlaced = 0;
+    var pitchesPlaced = 0;
+    final mortarCap = citadel
+        ? (2 + roomTarget! ~/ 4 + (base.rows >= 56 ? 2 : 0)).clamp(2, 14)
+        : (depth >= 7 ? 1 : 0);
+    final pitchCap = citadel
+        ? (4 + roomTarget! ~/ 10).clamp(4, 14)
+        : (depth >= 6 ? 3 : 0);
 
     // spacing discipline: towers keep their distance so the base BREATHES —
     // rhythm instead of clumps
@@ -468,8 +486,6 @@ class WarAi {
       // ── WARDS: slice the interior into compartments (BSP), each with its
       // own door and its own JOB — randomly layered like a real citadel,
       // not the same outer-wall-plus-keep pattern every time ──
-      var mortars = 0;
-      final mortarCap = citadel ? 1 + roomTarget! ~/ 8 : 1;
       if (isCore) {
         bool nearCastle(int rr, int cc) =>
             group.any((k) => (k.r - rr).abs() <= 1 && (k.c - cc).abs() <= 1);
@@ -727,8 +743,10 @@ class WarAi {
               k.r >= reg[0] && k.r <= reg[1] && k.c >= reg[2] && k.c <= reg[3]);
           if (hasCastle) {
             // the SANCTUM: the mortar guards the heart
-            if (depth >= 7 && mortars == 0) {
-              if (buyNear(midR, midC, DefType.mortar, spread: 2)) mortars++;
+            if (depth >= 7 && mortarsPlaced == 0) {
+              if (buyNear(midR, midC, DefType.mortar, spread: 2)) {
+                mortarsPlaced++;
+              }
             }
             continue;
           }
@@ -750,12 +768,12 @@ class WarAi {
               // a CITY mounts a BATTERY of mortars, not a single tube
               if (citadel &&
                   depth >= 7 &&
-                  mortars < mortarCap &&
-                  rng.unit() < 0.6) {
+                  mortarsPlaced < mortarCap &&
+                  rng.unit() < 0.85) {
                 if (buyNear(midR + rng.intRange(-1, 2),
                     midC + rng.intRange(-1, 2), DefType.mortar,
                     spread: 2)) {
-                  mortars++;
+                  mortarsPlaced++;
                 }
               }
             case 1: // camp ward — tents, and HOUSING to double the watch
@@ -786,6 +804,17 @@ class WarAi {
                 if (citadel && depth >= 7 && rng.unit() < 0.5) {
                   buyTowerNear(midR, midC, DefType.tesla);
                 }
+                // pitch pots: hidden tar bombs in the trap yard
+                if (style.unlockDefs.contains(DefType.pitchPot)) {
+                  for (var m = 0; m < 2; m++) {
+                    buy(
+                        reg[0] +
+                            rng.intRange(0, math.max(1, reg[1] - reg[0] + 1)),
+                        reg[2] +
+                            rng.intRange(0, math.max(1, reg[3] - reg[2] + 1)),
+                        DefType.pitchPot);
+                  }
+                }
               }
             default: // open yard — a watcher, and the clan's granary
               if (depth >= 6 || rng.unit() < 0.5) {
@@ -805,8 +834,11 @@ class WarAi {
         }
       }
       // no sanctum roll (or an outpost)? the mortar still takes the center
-      if (mortars == 0 && depth >= 7) {
-        buyNear((gr0 + gr1) ~/ 2, (gc0 + gc1) ~/ 2, DefType.mortar, spread: 2);
+      if (mortarsPlaced == 0 && depth >= 7) {
+        if (buyNear((gr0 + gr1) ~/ 2, (gc0 + gc1) ~/ 2, DefType.mortar,
+            spread: 2)) {
+          mortarsPlaced++;
+        }
       }
 
       // ── inner keep: the OLD castle ring, off by default now (wards layer
@@ -994,10 +1026,15 @@ class WarAi {
         buyNear(g[0] + inR + perpR, g[1] + inC + perpC, DefType.tesla,
             spread: 1);
       }
-      // boiling pitch over every busy doorway
-      if (depth >= 6) {
-        buyNear(g[0] + inR - perpR, g[1] + inC - perpC, DefType.pitchThrower,
-            spread: 1);
+      // boiling pitch over a FEW doorways — not every ward jamb (that was
+      // how Radiant grew 40 pitch pots overnight once leftover coin existed)
+      if (depth >= 6 &&
+          pitchesPlaced < pitchCap &&
+          (gi < 3 || gi % 5 == 0)) {
+        if (buyNear(g[0] + inR - perpR, g[1] + inC - perpC, DefType.pitchThrower,
+            spread: 1)) {
+          pitchesPlaced++;
+        }
       }
       if (depth >= 5) {
         // scattered across the approach — a minefield, not a marked path
@@ -1085,6 +1122,63 @@ class WarAi {
       }
     }
 
+    // ── league unlock kit: tribute / command / pitch pot / citadel core,
+    // plus war generators (always available — raid bait + eco pump) ──
+    final kit = style.unlockDefs;
+    final keep = castles.isNotEmpty ? castles.first : null;
+    if (kit.contains(DefType.citadelCore) && keep != null) {
+      buyNear(keep.r, keep.c, DefType.citadelCore, spread: 3);
+    }
+    if (kit.contains(DefType.commandTent)) {
+      for (final p in players) {
+        final cell = base.castles[p.id];
+        if (cell != null) {
+          buyNear(cell.r, cell.c, DefType.commandTent, spread: 2);
+        }
+      }
+    }
+    if (kit.contains(DefType.tributeChest)) {
+      final n = citadel ? 2 : 1;
+      for (var i = 0; i < n; i++) {
+        if (coreRegions.isNotEmpty) {
+          final reg = coreRegions[rng.intRange(0, coreRegions.length)];
+          buyNear((reg[0] + reg[1]) ~/ 2, (reg[2] + reg[3]) ~/ 2,
+              DefType.tributeChest,
+              spread: 2);
+        } else if (keep != null) {
+          buyNear(keep.r + rng.intRange(-2, 3), keep.c + rng.intRange(-2, 3),
+              DefType.tributeChest,
+              spread: 3);
+        }
+      }
+    }
+    if (kit.contains(DefType.pitchPot)) {
+      var pots = 0;
+      final potCap = (6 + (citadel ? (roomTarget! ~/ 8) : 0)).clamp(4, 14);
+      for (final g in gateInfo) {
+        if (pots >= potCap) break;
+        if (rng.unit() > 0.55) continue;
+        if (buy(g[0] + g[2] * rng.intRange(1, 4),
+            g[1] + g[3] * rng.intRange(1, 4), DefType.pitchPot)) {
+          pots++;
+        }
+      }
+    }
+    // War generators: 1–3 pumps deep inside (not league-gated)
+    if (depth >= 5) {
+      final gens = base.rows >= 56 ? 3 : (citadel ? 2 : 1);
+      for (var i = 0; i < gens; i++) {
+        if (coreRegions.isNotEmpty) {
+          final reg = coreRegions[i % coreRegions.length];
+          buyNear((reg[0] + reg[1]) ~/ 2 + rng.intRange(-1, 2),
+              (reg[2] + reg[3]) ~/ 2 + rng.intRange(-1, 2), DefType.warGenerator,
+              spread: 2);
+        } else if (keep != null) {
+          buyNear(keep.r, keep.c, DefType.warGenerator, spread: 3);
+        }
+      }
+    }
+
     // ── the FORGE (citadel): a war chest this deep buys STEEL, not just
     // stone — every shooter and tent to the cap, then the doors, then the
     // walls themselves turn to slate ──
@@ -1117,32 +1211,48 @@ class WarAi {
         return did;
       }
 
-      // Phase the forge so guns aren't starved by a 700-wall curtain:
-      // 1) raise the WHOLE curtain to a sturdy mid tier
-      // 2) gild every battery to the tower cap
-      // 3) push the curtain the rest of the way
-      // 4) doors + support buildings
-      final wallMid = math.min(3, wallCap);
+      // Phase the forge so GUNS lead and the curtain doesn't devour the chest:
+      // 1) gild every battery / tent to the tower cap (the threat)
+      // 2) doors
+      // 3) raise the WHOLE curtain to a sturdy mid tier (cheap steel)
+      // 4) deep walls ONLY beside the keep — blanket L4–L5 on a 64² curtain
+      //    ate half the Radiant chest (every wall sat next to a guard post)
+      // 5) support buildings
+      final wallMid = base.rows >= 56
+          ? math.min(2, wallCap)
+          : math.min(3, wallCap);
+      bool nearKeep(int r, int c) {
+        for (var dr = -1; dr <= 1; dr++) {
+          for (var dc = -1; dc <= 1; dc++) {
+            final s = base.structAt(r + dr, c + dc);
+            if (s != null && s.isCastle) return true;
+          }
+        }
+        return false;
+      }
+
       for (final pass in const [0, 1, 2, 3, 4]) {
         for (var r = 0; r < base.rows; r++) {
           for (var c = 0; c < base.cols; c++) {
             final st = base.structAt(r, c);
             if (st == null || st.isCastle) continue;
             final wants = switch (pass) {
-              0 => st.type == DefType.wall,
-              1 => st.spec.isShooter || st.type == DefType.guardPost,
+              0 => st.spec.isShooter || st.type == DefType.guardPost,
+              1 => st.type == DefType.gate,
               2 => st.type == DefType.wall,
-              3 => st.type == DefType.gate,
+              3 => st.type == DefType.wall && nearKeep(r, c),
               _ => st.type == DefType.banner ||
                   st.type == DefType.storehouse ||
                   st.type == DefType.watchtower ||
-                  st.type == DefType.housing,
+                  st.type == DefType.housing ||
+                  st.type == DefType.warGenerator,
             };
             if (!wants) continue;
             final cap = switch (pass) {
-              0 => wallMid,
+              0 => lvlCap,
               1 => lvlCap,
-              2 => wallCap,
+              2 => wallMid,
+              3 => wallCap,
               _ => lvlCap,
             };
             forge(st, cap);
@@ -1152,7 +1262,7 @@ class WarAi {
     }
 
     // leftovers → extra spaced towers inside, mines outside — never wall spam
-    // (a citadel's treasury runs deep: the loop runs long enough to spend it)
+    // Prefer under-cap mortars over pitch spam when the chest still has coin.
     var guard = 0;
     while (guard++ < 6 + depth * 2 + (citadel ? roomTarget! * 5 : 0)) {
       final towerMoney = players
@@ -1162,6 +1272,10 @@ class WarAi {
       if (!towerMoney && !mineMoney) break;
       if (rects.isEmpty) break;
       final rect = rects[guard % rects.length];
+      final midR =
+          rect[0] + 1 + rng.intRange(0, math.max(1, rect[1] - rect[0] - 1));
+      final midC =
+          rect[2] + 1 + rng.intRange(0, math.max(1, rect[3] - rect[2] - 1));
       if (depth >= 6 && guard % 3 == 0 && towerSpots.isNotEmpty) {
         // masters GILD their batteries: leftovers buy upgrades
         final spot = towerSpots[rng.intRange(0, towerSpots.length)];
@@ -1182,17 +1296,21 @@ class WarAi {
           }
         }
       } else if (citadel &&
+          depth >= 7 &&
+          mortarsPlaced < mortarCap &&
+          guard % 4 == 0) {
+        if (buyNear(midR, midC, DefType.mortar, spread: 2)) mortarsPlaced++;
+      } else if (citadel &&
           depth >= 8 &&
-          guard % 5 == 0 &&
+          pitchesPlaced < pitchCap &&
+          guard % 7 == 0 &&
           innerGates.isNotEmpty) {
-        // boiling pitch on the labyrinth's doorways
         final g = innerGates[rng.intRange(0, innerGates.length)];
-        buyNear(g[0], g[1], DefType.pitchThrower, spread: 1);
+        if (buyNear(g[0], g[1], DefType.pitchThrower, spread: 1)) {
+          pitchesPlaced++;
+        }
       } else if (towerMoney && depth >= 3 && guard % 2 == 0) {
-        buyTowerNear(
-            rect[0] + 1 + rng.intRange(0, math.max(1, rect[1] - rect[0] - 1)),
-            rect[2] + 1 + rng.intRange(0, math.max(1, rect[3] - rect[2] - 1)),
-            DefType.archerTower);
+        buyTowerNear(midR, midC, DefType.archerTower);
       } else if (mineMoney && depth >= 5) {
         final side = rng.intRange(0, 4);
         int r, c;
@@ -1661,6 +1779,7 @@ class WarAi {
     required SeededRng rng,
     Set<int>? intel,
     double defenderIq = 0.5,
+    Set<TroopType> unlockTroops = const {},
   }) {
     // AI raids fight under the SAME rules as the player's: troops are paid for
     // at spawn ("training"), then act free.
@@ -1712,7 +1831,7 @@ class WarAi {
       while (n < perWave &&
           pools.of(attacker.id) > 30 &&
           dropIdx < ordered.length) {
-        final type = _pickTroop(n, skill, rng);
+        final type = _pickTroop(n, skill, rng, unlockTroops: unlockTroops);
         final drop = ordered[dropIdx];
         final spawned = st.spawn(type, attacker.id, drop.r, drop.c);
         if (spawned == null) {
@@ -1763,19 +1882,54 @@ class WarAi {
 
   /// Public wave composition — the sandbox summons waves with the same
   /// doctrine the real AI uses.
-  static TroopType waveTroop(int i, double skill, SeededRng rng) =>
-      _pickTroop(i, skill, rng);
+  static TroopType waveTroop(int i, double skill, SeededRng rng,
+          {Set<TroopType> unlockTroops = const {}}) =>
+      _pickTroop(i, skill, rng, unlockTroops: unlockTroops);
 
-  /// Wave doctrine: scout first for eyes, then the TANK leads the push,
-  /// sappers to demolish, archers behind the brute, a healer keeping the
-  /// spearhead alive, soldiers filling the line.
-  static TroopType _pickTroop(int i, double skill, SeededRng rng) {
-    if (i == 0) return TroopType.runner; // scout clears fog
-    if (i == 1 && skill > 0.4) return TroopType.brute; // tank leads
-    if (i == 3 && skill >= 0.9) return TroopType.healer; // medic in the wave
-    if (skill >= 0.6 && (i == 4 || i == 7)) return TroopType.archer;
+  /// Wave doctrine: scout → tank → breach → support. League unlocks slot in
+  /// when the rung has earned them (or when [unlockTroops] is empty, skill
+  /// approximates the ladder so old call sites still field healers etc.).
+  static TroopType _pickTroop(int i, double skill, SeededRng rng,
+      {Set<TroopType> unlockTroops = const {}}) {
+    bool has(TroopType t) {
+      if (!kLeagueGatedTroops.contains(t)) return true;
+      if (unlockTroops.isNotEmpty) return unlockTroops.contains(t);
+      // skill fallback ≈ Silver / Gold / Platinum / Diamond floors
+      return switch (t) {
+        TroopType.healer => skill >= 0.9,
+        TroopType.javelin => skill >= 1.0,
+        TroopType.fogger => skill >= 1.12,
+        TroopType.elephant => skill >= 1.25,
+        _ => false,
+      };
+    }
+
+    if (i == 0) {
+      // fogger opens the fog on high rungs; else the classic runner scout
+      return has(TroopType.fogger) && rng.unit() < 0.55
+          ? TroopType.fogger
+          : TroopType.runner;
+    }
+    if (i == 1 && skill > 0.4) {
+      return has(TroopType.elephant) && rng.unit() < 0.45
+          ? TroopType.elephant
+          : TroopType.brute;
+    }
+    if (i == 3 && has(TroopType.healer)) return TroopType.healer;
+    if (skill >= 0.6 && (i == 4 || i == 7)) {
+      return has(TroopType.javelin) && rng.unit() < 0.55
+          ? TroopType.javelin
+          : TroopType.archer;
+    }
     if (i % 3 == 2) return TroopType.sapper;
-    if (skill > 0.7 && i % 4 == 0) return TroopType.brute;
+    if (skill > 0.7 && i % 4 == 0) {
+      return has(TroopType.elephant) && rng.unit() < 0.35
+          ? TroopType.elephant
+          : TroopType.brute;
+    }
+    if (has(TroopType.javelin) && i % 5 == 1 && skill >= 1.0) {
+      return TroopType.javelin;
+    }
     return TroopType.soldier;
   }
 

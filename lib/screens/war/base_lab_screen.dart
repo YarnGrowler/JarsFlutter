@@ -158,6 +158,15 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
           layers: _layers.round() < 0 ? null : _layers.round(),
           rooms: _rooms.round() < 0 ? null : _rooms.round().clamp(2, 40),
           minRooms: _minRooms > 1 ? _minRooms : null,
+          unlockDefs: () {
+            final idx = _leaguePreset ?? 0;
+            final keys =
+                LeagueConfig.instance.unlockedDefsThrough(idx);
+            return {
+              for (final t in kLeagueGatedDefs)
+                if (keys.contains(defUnlockKey(t))) t,
+            };
+          }(),
         ));
     setState(() => _base = base);
   }

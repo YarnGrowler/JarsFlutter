@@ -92,13 +92,14 @@ class _WarBoardViewState extends State<WarBoardView>
       _keyPan(dt);
       if (_shakeAmp > 0) _shakeAmp = math.max(0, _shakeAmp - dt * 26);
       widget.onTick?.call(dt);
-      // Zoomed-out boards: ambient motion is frozen in the painter, so
-      // repainting 60×/sec just burns CPU. Drop to ~8 fps unless the camera
-      // is shaking or the player is mid-gesture (pan handled by setState).
+      // Big boards + zoomed out: ambient motion is frozen in the painter, so
+      // repainting 60×/sec just burns CPU. Drop to ~6–8 fps unless shaking.
       final tile = baseTile * _zoom;
-      if (tile < 20 && _shakeAmp <= 0) {
+      final bigBoard = widget.base.rows >= 52;
+      final lod = tile < 22 || (bigBoard && tile < 28);
+      if (lod && _shakeAmp <= 0) {
         _paintAccum += dt;
-        if (_paintAccum < 0.12) return;
+        if (_paintAccum < (tile < 14 ? 0.2 : 0.14)) return;
         _paintAccum = 0;
       } else {
         _paintAccum = 0;

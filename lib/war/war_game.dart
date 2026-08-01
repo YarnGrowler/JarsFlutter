@@ -197,6 +197,24 @@ class WarGame extends ChangeNotifier {
     return _lcfg.divisions.length - 1;
   }
 
+  /// Gated defenses unlocked through the current rung (for AI builders).
+  Set<DefType> get unlockedDefsNow {
+    final keys = _lcfg.unlockedDefsThrough(divisionIndex);
+    return {
+      for (final t in kLeagueGatedDefs)
+        if (keys.contains(defUnlockKey(t))) t,
+    };
+  }
+
+  /// Gated troops unlocked through the current rung (for AI waves).
+  Set<TroopType> get unlockedTroopsNow {
+    final keys = _lcfg.unlockedTroopsThrough(divisionIndex);
+    return {
+      for (final t in kLeagueGatedTroops)
+        if (keys.contains(troopUnlockKey(t))) t,
+    };
+  }
+
   // ── rosters ─────────────────────────────────────────────────────────────────
   // The solo/offline fallback crew — used only when no real room is wired in
   // (fresh installs before onboarding, the practice sandbox, and every
@@ -696,6 +714,7 @@ class WarGame extends ChangeNotifier {
         SeededRng(seedFromParts([warSeed, 'enemyDesign'])),
         style: StrongholdStyle(
           minRooms: wards >= 2 ? 8 + wards * 6 : null,
+          unlockDefs: unlockedDefsNow,
         ),
       );
     }
@@ -874,6 +893,7 @@ class WarGame extends ChangeNotifier {
         activePlayerId: activePlayerId,
         youIntel: youIntel,
         enemyIntel: enemyIntel,
+        unlockTroops: unlockedTroopsNow,
       );
       feed.addAll(entries);
       for (final e in entries) {
@@ -1119,7 +1139,11 @@ class WarGame extends ChangeNotifier {
     var dropIdx = 0;
     while (i < cap && dropIdx < drops.length) {
       final drop = drops[dropIdx];
-      final t = st.spawn(WarAi.waveTroop(i, skill, rng), 'drill', drop.r, drop.c);
+      final t = st.spawn(
+          WarAi.waveTroop(i, skill, rng, unlockTroops: unlockedTroopsNow),
+          'drill',
+          drop.r,
+          drop.c);
       if (t == null) {
         dropIdx++;
         continue;

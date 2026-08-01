@@ -269,6 +269,7 @@ void main() {
       expect(kDefSpecs[DefType.wall]!.maxLevel, 5);
       expect(kDefSpecs[DefType.archerTower]!.maxLevel, 5);
       expect(kDefSpecs[DefType.cannon]!.maxLevel, 5);
+      expect(kDefSpecs[DefType.ballista]!.maxLevel, 5);
     });
   });
 
@@ -319,6 +320,42 @@ void main() {
       expect(radiant.maxWall, greaterThanOrEqualTo(4));
       expect(radiant.maxTower, greaterThanOrEqualTo(4),
           reason: 'Radiant guns should be forged past Bronze L3');
+    });
+
+    test('AI places league unlock kit from Gold upward', () {
+      int count(WarGame g, DefType t) {
+        var n = 0;
+        for (var r = 0; r < g.enemyBase.rows; r++) {
+          for (var c = 0; c < g.enemyBase.cols; c++) {
+            if (g.enemyBase.structAt(r, c)?.type == t) n++;
+          }
+        }
+        return n;
+      }
+
+      WarGame at(int div) {
+        final g = WarGame.fresh();
+        g.divisionIndex = div;
+        g.startPrep();
+        g.setDifficulty(100);
+        g.startWar();
+        return g;
+      }
+
+      final gold = at(2);
+      expect(count(gold, DefType.tributeChest), greaterThan(0));
+      expect(count(gold, DefType.commandTent), greaterThan(0));
+      expect(count(gold, DefType.pitchPot), 0);
+      expect(count(gold, DefType.citadelCore), 0);
+      expect(count(gold, DefType.warGenerator), greaterThan(0));
+
+      final plat = at(3);
+      expect(count(plat, DefType.pitchPot), greaterThan(0));
+      expect(count(plat, DefType.tributeChest), greaterThan(0));
+
+      final rad = at(cfg.divisions.length - 1);
+      expect(count(rad, DefType.citadelCore), 1);
+      expect(count(rad, DefType.warGenerator), greaterThanOrEqualTo(2));
     });
 
     test('the ladder tops out at a 64x64 board', () {

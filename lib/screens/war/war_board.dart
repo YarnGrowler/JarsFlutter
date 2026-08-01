@@ -138,26 +138,28 @@ class WarBoardPainter extends CustomPainter {
     // Zoom LOD: terrain already dumps detail under ~18px; freeze ambient
     // motion and skip people/dressing so a 64² Radiant board stays playable
     // when fitted to the screen.
-    _hiDetail = tile >= 20;
+    _hiDetail = tile >= 22;
     _at = _hiDetail ? t : 0;
     _cull(size);
     _groundPass(canvas);
-    if (showTerritory) _territoryPass(canvas);
+    if (showTerritory && _hiDetail) _territoryPass(canvas);
     _terrainPass(canvas);
-    _smokePass(canvas);
+    if (_hiDetail) _smokePass(canvas);
     if (replayFrame == null) {
-      _scorchPass(canvas, base.scorch);
-    } else {
+      if (_hiDetail || tile >= 14) {
+        _scorchPass(canvas, base.scorch);
+      }
+    } else if (_hiDetail || tile >= 14) {
       _scorchPass(
           canvas, {for (final e in replayFrame!.scorch) e[0]: e[1]});
     }
-    if (showDropLane) _ringPass(canvas);
+    if (showDropLane && tile >= 14) _ringPass(canvas);
     if (replayFrame == null) {
       _structurePass(canvas);
       if (_hiDetail) _dressingPass(canvas);
     }
-    _gravesPass(canvas, replayFrame?.graves ?? base.graves);
-    _rangeRingPass(canvas);
+    if (_hiDetail) _gravesPass(canvas, replayFrame?.graves ?? base.graves);
+    if (_hiDetail) _rangeRingPass(canvas);
     _highlightPass(canvas);
     if (replayFrame != null) {
       _drawReplay(canvas, replayFrame!);
@@ -166,7 +168,7 @@ class WarBoardPainter extends CustomPainter {
         if (tr.alive) _troop(canvas, tr);
       }
     }
-    _fogPass(canvas);
+    if (fog != null) _fogPass(canvas);
     canvas.restore();
   }
 
@@ -174,6 +176,26 @@ class WarBoardPainter extends CustomPainter {
   /// in a world (and the camera has something to overscroll onto), CoC-style.
   void _skirtPass(Canvas canvas, Size size, Rect board) {
     canvas.drawRect(Offset.zero & size, Paint()..color = biome.skirt);
+    // Zoomed-out / big boards: solid skirt only — pine scatter is expensive
+    // and invisible under ~14px tiles anyway.
+    if (tile < 16) {
+      canvas.drawRect(
+          Offset.zero & size,
+          Paint()
+            ..shader = RadialGradient(
+              center: Alignment(
+                ((board.center.dx / size.width) * 2 - 1).clamp(-1.0, 1.0),
+                ((board.center.dy / size.height) * 2 - 1).clamp(-1.0, 1.0),
+              ),
+              radius: 1.15,
+              colors: [
+                Colors.transparent,
+                Colors.black.withValues(alpha: 0.55),
+              ],
+              stops: const [0.45, 1.0],
+            ).createShader(Offset.zero & size));
+      return;
+    }
     // scattered dark pines outside the board, deterministic, culled to view
     final leaf = Paint()..color = biome.skirtLeaf;
     final leafD = Paint()..color = biome.skirtLeafDeep;
@@ -692,12 +714,19 @@ class WarBoardPainter extends CustomPainter {
   }
 
   void _structurePass(Canvas canvas) {
+    // Fitted big boards: cheap silhouettes. Raise the bar so a 64² map
+    // fitted to phone width (~8–12px/tile) never runs full path art.
+    final lo = tile < 18;
     // walls first, connected into fortification lines
     for (var r = _r0; r <= _r1; r++) {
       for (var c = _c0; c <= _c1; c++) {
         if (_isWall(r, c) && _revealed(r, c)) {
           final s = base.structAt(r, c)!;
-          _wall(canvas, r, c, _wallish, s.hp / s.maxHp, level: s.level);
+          if (lo) {
+            _wallLo(canvas, r, c, s.level);
+          } else {
+            _wall(canvas, r, c, _wallish, s.hp / s.maxHp, level: s.level);
+          }
         }
       }
     }
@@ -707,12 +736,87 @@ class WarBoardPainter extends CustomPainter {
         final s = base.structAt(r, c);
         if (s == null || s.type == DefType.wall) continue;
         if (s.hp <= 0) {
-          _rubble(canvas, _rect(r, c), r, c);
+          if (!lo) _rubble(canvas, _rect(r, c), r, c);
           continue;
         }
         final hideHidden = s.spec.hidden && !s.triggered && !ownBase;
-        if (!hideHidden) _building(canvas, _rect(r, c), s, r, c);
+        if (hideHidden) continue;
+        if (lo) {
+          _buildingLo(canvas, _rect(r, c), s);
+        } else {
+          _building(canvas, _rect(r, c), s, r, c);
+        }
       }
+    }
+  }
+
+  /// Zoomed-out wall stub — solid connected block, no cracks/shadows/HP.
+  void _wallLo(Canvas canvas, int r, int c, int level) {
+    final rect = _rect(r, c);
+    final th = rect.width * 0.5;
+    final stone = level >= 5
+        ? const Color(0xFF1A1018)
+        : level >= 4
+            ? const Color(0xFF2A3040)
+            : level >= 3
+                ? const Color(0xFF3E4650)
+                : level >= 2
+                    ? const Color(0xFF636E80)
+                    : const Color(0xFF808A99);
+    final paint = Paint()..color = stone;
+    canvas.drawRect(
+        Rect.fromCenter(center: rect.center, width: th, height: th), paint);
+    if (_wallish(r - 1, c)) {
+      canvas.drawRect(
+          Rect.fromLTRB(rect.center.dx - th / 2, rect.top, rect.center.dx + th / 2,
+              rect.center.dy),
+          paint);
+    }
+    if (_wallish(r + 1, c)) {
+      canvas.drawRect(
+          Rect.fromLTRB(rect.center.dx - th / 2, rect.center.dy,
+              rect.center.dx + th / 2, rect.bottom),
+          paint);
+    }
+    if (_wallish(r, c - 1)) {
+      canvas.drawRect(
+          Rect.fromLTRB(rect.left, rect.center.dy - th / 2, rect.center.dx,
+              rect.center.dy + th / 2),
+          paint);
+    }
+    if (_wallish(r, c + 1)) {
+      canvas.drawRect(
+          Rect.fromLTRB(rect.center.dx, rect.center.dy - th / 2, rect.right,
+              rect.center.dy + th / 2),
+          paint);
+    }
+  }
+
+  /// Zoomed-out building stub — tinted chip, no path art / people / FX.
+  void _buildingLo(Canvas canvas, Rect rect, Structure s) {
+    final col = switch (s.type) {
+      DefType.castle => const Color(0xFFB08D3E),
+      DefType.archerTower ||
+      DefType.cannon ||
+      DefType.tesla ||
+      DefType.mortar ||
+      DefType.ballista ||
+      DefType.pitchThrower =>
+        const Color(0xFF6B7482),
+      DefType.guardPost || DefType.commandTent || DefType.housing =>
+        const Color(0xFFB8544A),
+      DefType.gate => const Color(0xFF8F6B42),
+      _ => const Color(0xFF4A5568),
+    };
+    final body = rect.deflate(rect.width * 0.18);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(body, Radius.circular(body.width * 0.2)),
+        Paint()..color = col);
+    if (s.level >= 3) {
+      canvas.drawCircle(
+          body.topCenter.translate(0, body.height * 0.15),
+          body.width * 0.12,
+          Paint()..color = Colors.white.withValues(alpha: 0.35));
     }
   }
 
@@ -960,7 +1064,7 @@ class WarBoardPainter extends CustomPainter {
         _warBannerArt(canvas, rect);
         break;
       case DefType.ballista:
-        _ballistaArt(canvas, rect, s.aimAngle);
+        _ballistaArt(canvas, rect, s.aimAngle, s.level);
         break;
       case DefType.watchtower:
         _watchtowerArt(canvas, rect);
@@ -1888,11 +1992,13 @@ class WarBoardPainter extends CustomPainter {
     // into the light instead of cutting a hard geometric edge
     final cover = Paint()..color = const Color(0xFF0A0D16).withValues(alpha: 0.95);
     const fogColor = Color(0xFF0A0D16);
+    final featherOk = _hiDetail;
     for (var r = _r0; r <= _r1; r++) {
       for (var c = _c0; c <= _c1; c++) {
         if (_revealed(r, c)) continue;
         final rect = _rect(r, c);
         canvas.drawRect(rect, cover);
+        if (!featherOk) continue;
         bool rev(int nr, int nc) => base.inBounds(nr, nc) && _revealed(nr, nc);
         // soft spill into each revealed neighbour (≈ half a tile of gradient)
         void feather(Rect strip, Alignment from, Alignment to) {
@@ -2104,7 +2210,7 @@ class WarBoardPainter extends CustomPainter {
         _warBannerArt(canvas, rect);
         break;
       case DefType.ballista:
-        _ballistaArt(canvas, rect, null);
+        _ballistaArt(canvas, rect, null, 1);
         break;
       case DefType.watchtower:
         _watchtowerArt(canvas, rect);
@@ -2376,47 +2482,99 @@ class WarBoardPainter extends CustomPainter {
         Paint()..color = const Color(0xFFB08D3E));
   }
 
-  /// Ballista: a mounted crossbow the size of a cart.
-  void _ballistaArt(Canvas canvas, Rect rect, double? aim) {
+  /// Ballista: a mounted crossbow the size of a cart. Levels darken the
+  /// timber, widen the arms, and at L5 add an obsidian bolt rail.
+  void _ballistaArt(Canvas canvas, Rect rect, double? aim, [int level = 1]) {
     _shadow(canvas, rect, w: 0.62, y: 0.8);
     final w = rect.width;
     final c = rect.center;
+    final up = level >= 2;
+    final elite = level >= 3;
+    final apex = level >= 4;
+    final mythic = level >= 5;
+    final timber = mythic
+        ? const Color(0xFF1A1018)
+        : apex
+            ? const Color(0xFF2A1830)
+            : elite
+                ? const Color(0xFF3A2E1E)
+                : up
+                    ? const Color(0xFF5A4028)
+                    : const Color(0xFF6B4E2E);
     // timber base
     canvas.drawRRect(
         RRect.fromRectAndRadius(
-            Rect.fromCenter(center: c.translate(0, w * 0.08), width: w * 0.5, height: w * 0.3),
+            Rect.fromCenter(
+                center: c.translate(0, w * 0.08),
+                width: w * (apex ? 0.56 : 0.5),
+                height: w * (apex ? 0.34 : 0.3)),
             Radius.circular(w * 0.05)),
-        Paint()..color = const Color(0xFF6B4E2E));
-    final ang = aim ?? -math.pi / 2 + math.sin(_at * 0.6 + c.dx * 0.01) * 0.5;
+        Paint()..color = timber);
+    if (elite) {
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              Rect.fromCenter(
+                  center: c.translate(0, w * 0.08),
+                  width: w * (apex ? 0.56 : 0.5),
+                  height: w * (apex ? 0.34 : 0.3)),
+              Radius.circular(w * 0.05)),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.4
+            ..color = mythic
+                ? const Color(0xFF7B5CFF)
+                : const Color(0xFFB08D3E));
+    }
+    final ang = aim ??
+        -math.pi / 2 +
+            math.sin(_at * 0.6 + c.dx * 0.01) * (_hiDetail ? 0.5 : 0);
     canvas.save();
     canvas.translate(c.dx, c.dy);
     canvas.rotate(ang);
     // the stock
-    canvas.drawRect(Rect.fromLTWH(-w * 0.05, -w * 0.06, w * 0.42, w * 0.1),
-        Paint()..color = const Color(0xFF4E3920));
+    canvas.drawRect(
+        Rect.fromLTWH(-w * 0.05, -w * 0.06, w * (apex ? 0.48 : 0.42), w * 0.1),
+        Paint()
+          ..color = mythic
+              ? const Color(0xFF2A1830)
+              : const Color(0xFF4E3920));
     // the bow arms + string
     final arm = Paint()
-      ..color = const Color(0xFF3A2E1E)
-      ..strokeWidth = w * 0.045
+      ..color = mythic ? const Color(0xFF7B5CFF) : const Color(0xFF3A2E1E)
+      ..strokeWidth = w * (apex ? 0.055 : 0.045)
       ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset(w * 0.3, 0), Offset(w * 0.18, -w * 0.2), arm);
-    canvas.drawLine(Offset(w * 0.3, 0), Offset(w * 0.18, w * 0.2), arm);
+    final reach = apex ? 0.24 : 0.2;
+    canvas.drawLine(Offset(w * 0.3, 0), Offset(w * 0.18, -w * reach), arm);
+    canvas.drawLine(Offset(w * 0.3, 0), Offset(w * 0.18, w * reach), arm);
     canvas.drawLine(
-        Offset(w * 0.18, -w * 0.2),
-        Offset(w * 0.18, w * 0.2),
+        Offset(w * 0.18, -w * reach),
+        Offset(w * 0.18, w * reach),
         Paint()
-          ..color = const Color(0xFFD8C9A3)
-          ..strokeWidth = 1.4);
+          ..color = mythic
+              ? const Color(0xFFE8DEFF)
+              : const Color(0xFFD8C9A3)
+          ..strokeWidth = elite ? 1.8 : 1.4);
     // the loaded bolt
     canvas.drawLine(
         Offset(w * 0.02, 0),
-        Offset(w * 0.34, 0),
+        Offset(w * (apex ? 0.4 : 0.34), 0),
         Paint()
-          ..color = const Color(0xFF23272E)
-          ..strokeWidth = w * 0.035);
+          ..color = mythic
+              ? const Color(0xFFB07BFF)
+              : const Color(0xFF23272E)
+          ..strokeWidth = w * (elite ? 0.045 : 0.035));
     canvas.restore();
     // pivot
     canvas.drawCircle(c, w * 0.06, Paint()..color = const Color(0xFF262C35));
+    if (mythic) {
+      canvas.drawCircle(
+          c,
+          w * 0.09,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..color = const Color(0xFF7B5CFF).withValues(alpha: 0.7));
+    }
   }
 
   /// Watchtower: a tall wooden lookout with a lit lantern — EYES, not guns.

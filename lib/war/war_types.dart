@@ -253,7 +253,7 @@ const Map<DefType, DefSpec> kDefSpecs = {
       category: DefCategory.garrison,
       cost: 35,
       hp: 60,
-      upgradeCost: 30,
+      upgradeCost: 20,
       maxLevel: 5,
       blurb:
           'Stations a live defender at the start of every raid — upgrades '
@@ -318,7 +318,7 @@ const Map<DefType, DefSpec> kDefSpecs = {
       hp: 85,
       blocks: true,
       upgradeCost: 55,
-      maxLevel: 4,
+      maxLevel: 5,
       range: 7,
       minRange: 2,
       damage: 55,
