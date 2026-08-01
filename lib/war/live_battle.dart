@@ -9,7 +9,12 @@ class LiveBattle {
 
   /// Can the player still deploy something? (trained troops remaining)
   final bool Function() canDeploy;
-  static const double stepPeriod = 0.55; // seconds per battle round
+  /// Simulation cadence. Classic uses the original 0.55s round. Drill's
+  /// free-flow preview runs smaller movement decisions between defense volleys.
+  static const double stepPeriod = 0.55;
+  final double roundPeriod;
+  final int defenseEveryRounds;
+  int _roundSeq = 0;
   /// Clash rules: five minutes on the clock once the first boot lands.
   static const double maxDuration = 300;
   double elapsed = 0;
@@ -18,7 +23,10 @@ class LiveBattle {
   int _stallRounds = 0;
   bool over = false;
 
-  LiveBattle(this.st, {required this.canDeploy});
+  LiveBattle(this.st,
+      {required this.canDeploy,
+      this.roundPeriod = stepPeriod,
+      this.defenseEveryRounds = 1});
 
   double get destruction => st.base.destructionPercent;
   int get troopsAlive => st.troops.where((t) => t.alive).length;
@@ -36,8 +44,8 @@ class LiveBattle {
       }
     }
     _acc += dt;
-    while (_acc >= stepPeriod && !over) {
-      _acc -= stepPeriod;
+    while (_acc >= roundPeriod && !over) {
+      _acc -= roundPeriod;
       round();
     }
   }
@@ -49,8 +57,13 @@ class LiveBattle {
     for (final t in st.troops.where((x) => x.alive).toList()) {
       if (WarAi.aiStep(st, t)) acted = true;
     }
-    st.defendersReact();
-    st.snapshot();
+    _roundSeq++;
+    // Keep defense DPS and replay volume stable when an experimental mode
+    // raises movement cadence. Only movement/target decisions run faster.
+    if (_roundSeq % defenseEveryRounds == 0) {
+      st.defendersReact();
+      st.snapshot();
+    }
     if (st.base.allCastlesRazed) {
       over = true;
       return;

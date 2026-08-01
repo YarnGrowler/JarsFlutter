@@ -61,6 +61,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   // clash state
   LiveBattle? _battle;
   int _drillDiff = 50; // difficulty of SUMMONED sandbox waves
+  bool _freeFlowDrill = false;
   bool _clashBanked = false;
   double _uiThrottle = 0;
 
@@ -155,7 +156,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
       // a DRILL on a clone of your own base — unlimited troops, zero stakes
       final st = WarGame.instance.startPracticeBattle();
       _mode = 'practice';
-      _battle = LiveBattle(st, canDeploy: () => true);
+      _battle = _newDrillBattle(st);
       _clashBanked = false;
       _deploy = TroopType.soldier;
     } else {
@@ -201,6 +202,34 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   Map<String, String> get _badges =>
       {for (final p in WarGame.instance.players) p.id: p.emoji};
 
+  LiveBattle _newDrillBattle(AttackState st) => LiveBattle(st,
+      canDeploy: () => true,
+      // Preserve the proven combat cadence. Free Flow changes presentation,
+      // formation spacing, and interpolation without multiplying expensive
+      // 64² objective scans.
+      roundPeriod: LiveBattle.stepPeriod,
+      defenseEveryRounds: 1);
+
+  void _resetDrill(WarGame g, {bool clean = true}) {
+    final st = g.startPracticeBattle(clean: clean);
+    _battle = _newDrillBattle(st);
+    _animPos.clear();
+    _fx.clear();
+    _drillOverShown = false;
+    _selected = null;
+    _reachInfo = {};
+    _targets = [];
+  }
+
+  Offset _freeFlowOffset(String id) {
+    // Deterministic sub-cell formation: quarter-size units spread instead of
+    // stacking visually at cell centers. No per-frame allocation/cache.
+    final h = id.hashCode & 0x7fffffff;
+    final x = (((h & 0xff) / 255.0) - 0.5) * 0.58;
+    final y = ((((h >> 8) & 0xff) / 255.0) - 0.5) * 0.58;
+    return Offset(x, y);
+  }
+
   void _refreshSel() {
     final t = _selected;
     final atk = _atk;
@@ -225,7 +254,10 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
     for (final tr in [...atk.troops, ...atk.garrison]) {
       if (!tr.alive) continue;
       liveIds.add(tr.id);
-      final target = Offset(tr.c.toDouble(), tr.r.toDouble());
+      final target = Offset(tr.c.toDouble(), tr.r.toDouble()) +
+          (_mode == 'practice' && _freeFlowDrill
+              ? _freeFlowOffset(tr.id)
+              : Offset.zero);
       final cur = _animPos[tr.id];
       if (cur == null) {
         _animPos[tr.id] = target;
@@ -236,7 +268,10 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
       if (dist < 0.01) {
         _animPos[tr.id] = target;
       } else {
-        final step = (5.5 * dt).clamp(0.0, dist);
+        // Deliberately slower than the classic snap-glide, so each route reads
+        // as continuous travel between combat decisions.
+        final speed = _mode == 'practice' && _freeFlowDrill ? 2.4 : 5.5;
+        final step = (speed * dt).clamp(0.0, dist);
         _animPos[tr.id] = cur + delta / dist * step;
       }
     }
@@ -394,11 +429,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
             onPressed: () {
               Navigator.pop(dCtx);
               setState(() {
-                final s2 =
-                    WarGame.instance.startPracticeBattle(clean: true);
-                _battle = LiveBattle(s2, canDeploy: () => true);
-                _animPos.clear();
-                _drillOverShown = false;
+                _resetDrill(WarGame.instance);
               });
             },
             child: const Text('🧹 RESET'),
@@ -434,7 +465,23 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
           duration: Duration(milliseconds: 1100)));
       return;
     }
-    final t = st.spawn(type, 'drill', cell.r, cell.c);
+    Troop? t = st.spawn(type, 'drill', cell.r, cell.c);
+    // Free-flow units are tiny, so make rapid formation deployment forgiving:
+    // if the tapped ring cell is occupied, use the nearest open ring slot.
+    if (t == null && _freeFlowDrill) {
+      for (var radius = 1; radius <= 4 && t == null; radius++) {
+        for (var dr = -radius; dr <= radius && t == null; dr++) {
+          for (var dc = -radius; dc <= radius && t == null; dc++) {
+            if (dr.abs() != radius && dc.abs() != radius) continue;
+            final rr = cell.r + dr, cc = cell.c + dc;
+            if (!st.base.inBounds(rr, cc) || !st.base.isRing(rr, cc)) {
+              continue;
+            }
+            t = st.spawn(type, 'drill', rr, cc);
+          }
+        }
+      }
+    }
     if (t == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('That landing spot is blocked.')));
@@ -580,6 +627,11 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                 startFocus: _mode == 'attack'
                     ? Cell(base.rows - 1, base.cols ~/ 2)
                     : null,
+                // Smooth enough to read movement, capped hard so 64² drills
+                // never repaint at an unnecessary 60 fps.
+                animationFps: _mode == 'practice' && _freeFlowDrill
+                    ? (base.rows >= 52 ? 16 : 24)
+                    : null,
                 onTick: _onTick,
                 onCellTap: switch (_mode) {
                   'attack' => (cell) => _onCommanderTap(cell, g),
@@ -614,6 +666,8 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                       _selected == null ? null : Cell(_selected!.r, _selected!.c),
                   ownerBadges: _mode == 'defense' ? const {} : _badges,
                   troopPositions: _mode == 'defense' ? const {} : _animPos,
+                  troopScale:
+                      _mode == 'practice' && _freeFlowDrill ? 0.45 : 1,
                   // on defense, show where the ENEMY has eyes (their scouting),
                   // not the marched trail; on attack the fog is the signal
                   showTerritory: _mode == 'defense',
@@ -651,7 +705,8 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
         break;
       case 'practice':
         status =
-            '🎯 DRILL — ${(_atk?.base.destructionPercent ?? 0).round()}% razed${_clockSuffix()}';
+            '🎯 ${_freeFlowDrill ? 'FREE FLOW' : 'CLASSIC'} — '
+            '${(_atk?.base.destructionPercent ?? 0).round()}% razed${_clockSuffix()}';
         break;
       case 'attack':
         status = 'enemy base ${g.youDestruction.round()}% razed';
@@ -931,12 +986,25 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
           Row(children: [
             Expanded(
               child: Text(
-                  '🎯 SANDBOX — deploy anything, or summon an AI wave at it.',
+                  _freeFlowDrill
+                      ? 'FREE FLOW PREVIEW — quarter-size troops, smooth formations.'
+                      : 'CLASSIC DRILL — original tile combat.',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
                       fontSize: 11, color: JarsColors.textSecondary)),
             ),
+            _sandChip(
+                _freeFlowDrill ? '◉ FREE FLOW' : '▦ CLASSIC',
+                _freeFlowDrill ? JarsColors.green : JarsColors.textSecondary,
+                () {
+              setState(() {
+                _freeFlowDrill = !_freeFlowDrill;
+                // Never cross engines: switching starts a pristine clone.
+                _resetDrill(g);
+              });
+            }),
+            const SizedBox(width: 6),
             // the wave dial: 25 → 50 → 75 → 100, tap to cycle
             _sandChip('💀 $_drillDiff', JarsColors.red, () {
               setState(() =>
@@ -990,10 +1058,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
             _sandSquare('🧹', 'RESET', () {
               // fresh clone, scars swept — a pristine yard to wreck again
               setState(() {
-                final st = g.startPracticeBattle(clean: true);
-                _battle = LiveBattle(st, canDeploy: () => true);
-                _animPos.clear();
-                _drillOverShown = false;
+                _resetDrill(g);
               });
             }),
             const SizedBox(width: 6),

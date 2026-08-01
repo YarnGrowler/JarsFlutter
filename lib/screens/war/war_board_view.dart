@@ -35,6 +35,9 @@ class WarBoardView extends StatefulWidget {
   final bool startFitted; // open showing the whole map
   final Cell? startFocus; // else center here at 1× zoom
   final WarBoardController? controller; // screen shake hookup
+  /// Optional fixed repaint cap for experimental high-motion views. Simulation
+  /// still ticks every frame; only painting is capped.
+  final int? animationFps;
 
   const WarBoardView({
     super.key,
@@ -46,6 +49,7 @@ class WarBoardView extends StatefulWidget {
     this.startFitted = false,
     this.startFocus,
     this.controller,
+    this.animationFps,
   });
 
   @override
@@ -92,6 +96,14 @@ class _WarBoardViewState extends State<WarBoardView>
       _keyPan(dt);
       if (_shakeAmp > 0) _shakeAmp = math.max(0, _shakeAmp - dt * 26);
       widget.onTick?.call(dt);
+      final requestedFps = widget.animationFps;
+      if (requestedFps != null && _shakeAmp <= 0) {
+        _paintAccum += dt;
+        if (_paintAccum < 1 / requestedFps.clamp(1, 60)) return;
+        _paintAccum = 0;
+        if (mounted) setState(() {});
+        return;
+      }
       // Big boards + zoomed out: ambient motion is frozen in the painter, so
       // repainting 60×/sec just burns CPU. Drop to ~6–8 fps unless shaking.
       final tile = baseTile * _zoom;

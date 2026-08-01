@@ -23,6 +23,8 @@ class _Fx {
 class FxLayer {
   final List<_Fx> _live = [];
 
+  void clear() => _live.clear();
+
   static double _durationFor(FxEvent e) {
     switch (e.kind) {
       case FxKind.shot:

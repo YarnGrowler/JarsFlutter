@@ -47,6 +47,8 @@ class WarBoardPainter extends CustomPainter {
   /// Smooth per-troop display positions (cell-space) — tokens glide between
   /// tiles instead of snapping.
   final Map<String, Offset> troopPositions;
+  /// Experimental Drill free-flow uses quarter-tile units. Real wars keep 1.
+  final double troopScale;
 
   /// Tombstones: [r, c, slot 0..3] — where troops fell this raid.
   final List<List<int>> graves;
@@ -80,6 +82,7 @@ class WarBoardPainter extends CustomPainter {
     this.ownerBadges = const {},
     this.rangeRings = const [],
     this.troopPositions = const {},
+    this.troopScale = 1,
     this.graves = const [],
     this.biome = WarBiome.meadow,
     this.smokeCells = const {},
@@ -2059,7 +2062,10 @@ class WarBoardPainter extends CustomPainter {
 
   // ── units ───────────────────────────────────────────────────────────────────
   void _troop(Canvas canvas, Troop tr) {
-    final bob = math.sin(_at * 3.2 + (tr.id.hashCode % 7)) * tile * 0.03;
+    final bob = math.sin(_at * 3.2 + (tr.id.hashCode % 7)) *
+        tile *
+        0.03 *
+        troopScale;
     // glide: draw at the animated position when the screen provides one
     final pos = troopPositions[tr.id];
     final center = (pos != null
@@ -2071,8 +2077,12 @@ class WarBoardPainter extends CustomPainter {
         level: tr.level);
     // ON FIRE: clinging pitch — a flame tag until it gutters out
     if (tr.burnRounds > 0) {
-      _emojiAt(canvas, center.translate(-tile * 0.28, -tile * 0.32), '🔥',
-          tile * 0.3);
+      _emojiAt(
+          canvas,
+          center.translate(-tile * 0.28 * troopScale,
+              -tile * 0.32 * troopScale),
+          '🔥',
+          tile * 0.3 * troopScale);
     }
     // CONCEALED: in the trees the guns can't see them from afar — a green
     // veil + leaf tag says WHY the defense went quiet
@@ -2080,14 +2090,16 @@ class WarBoardPainter extends CustomPainter {
         base.grid[tr.r][tr.c].terrain == Terrain.forest) {
       canvas.drawCircle(
           center,
-          tile * 0.36,
+          tile * 0.36 * troopScale,
           Paint()..color = const Color(0xFF224422).withValues(alpha: 0.32));
-      _emojiAt(canvas, center.translate(tile * 0.28, -tile * 0.32), '🌿',
-          tile * 0.32);
+      if (troopScale >= 0.7) {
+        _emojiAt(canvas, center.translate(tile * 0.28, -tile * 0.32), '🌿',
+            tile * 0.32);
+      }
     }
     // whose troop is this? (owner badge, top-left)
     final badge = ownerBadges[tr.ownerId];
-    if (badge != null && tile >= 34) {
+    if (badge != null && tile >= 34 && troopScale >= 0.7) {
       final s = tile * 0.32;
       final pos = center.translate(-s * 0.95, -s * 0.95);
       canvas.drawCircle(pos, s * 0.42,
@@ -3377,7 +3389,7 @@ class WarBoardPainter extends CustomPainter {
 
   void _sprite(Canvas canvas, Offset center, String emoji, WarSide side, double hpFrac,
       {bool selected = false, int level = 1}) {
-    final s = tile * 0.32;
+    final s = tile * 0.32 * troopScale;
     final col = side == WarSide.you ? _you : _enemy;
     if (selected) {
       canvas.drawCircle(
@@ -3421,7 +3433,7 @@ class WarBoardPainter extends CustomPainter {
           ..color = frac > 0.5
               ? JarsColors.green
               : (frac > 0.25 ? JarsColors.gold : JarsColors.red));
-    if (level > 1) {
+    if (level > 1 && troopScale >= 0.7) {
       _textAt(canvas, center.translate(s * 0.95, -s * 0.95), 'L$level', s * 0.68, JarsColors.gold);
     }
   }
