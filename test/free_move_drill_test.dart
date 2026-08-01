@@ -145,6 +145,66 @@ void main() {
     expect(t.alive ? t.hp : 0, lessThan(full));
   });
 
+  test('a raider that shares a defender tile still fights, never freezes', () {
+    final base = yard();
+    base.place(20, base.cols ~/ 2, DefType.guardPost, 'def');
+    final st = AttackState(
+      base: base,
+      attacker: WarSide.you,
+      attackerName: 'Drill',
+      pools: MapPools({'drill': 1e9}),
+      freeActions: true,
+      intel: {for (var k = 0; k < 40 * 40; k++) k},
+    );
+    final g = st.garrison.first;
+    final b = armed(st);
+    final t = st.spawn(TroopType.brute, 'drill', base.rows - 1, base.cols ~/ 2,
+        allowStack: true)!;
+    // drop it right on top of the defender — free move has no occupancy, and
+    // troopAt would hand the raider back to itself as its own "victim"
+    t.r = g.r;
+    t.c = g.c;
+    b.placeAt(t, g.c.toDouble(), g.r.toDouble());
+    final guardHp = g.hp;
+    run(b, 6);
+    expect(g.alive ? g.hp : 0, lessThan(guardHp),
+        reason: 'the raider stood on the guard and swung at thin air');
+  });
+
+  test('one hopeless unit cannot starve the army of planning', () {
+    final st = drill();
+    // a tower sealed inside mountains: scores well, can never be reached
+    const sr = 30, sc = 10;
+    st.base.place(sr, sc, DefType.archerTower, 'def');
+    for (var dr = -1; dr <= 1; dr++) {
+      for (var dc = -1; dc <= 1; dc++) {
+        if (dr == 0 && dc == 0) continue;
+        st.base.grid[sr + dr][sc + dc].terrain = Terrain.mountain;
+      }
+    }
+    final b = armed(st);
+    final drop = st.base.rows - 1;
+    final start = <String, double>{};
+    for (final c in [sc, sc + 1]) {
+      final t = st.spawn(TroopType.soldier, 'drill', drop, c, allowStack: true)!;
+      b.placeAt(t, c.toDouble(), drop.toDouble());
+    }
+    final squad = <String>[];
+    for (var c = st.base.cols ~/ 2 - 3; c <= st.base.cols ~/ 2 + 3; c++) {
+      final t = st.spawn(TroopType.soldier, 'drill', drop, c, allowStack: true)!;
+      b.placeAt(t, c.toDouble(), drop.toDouble());
+      start[t.id] = drop.toDouble();
+      squad.add(t.id);
+    }
+    run(b, 3);
+    for (final id in squad) {
+      final p = b.positions[id];
+      if (p == null) continue; // died on the way in, which counts as moving
+      expect(start[id]! - p.row, greaterThan(0.5),
+          reason: 'raider $id never left the drop ring');
+    }
+  });
+
   test('a full army on a 64² master base stays cheap', () {
     final base = Base(WarSide.enemy, 30, size: 64);
     WarAi.designBase(

@@ -113,7 +113,7 @@ class FreeMoveBattle {
   // ── one simulation step ─────────────────────────────────────────────────────
   void _step(double h) {
     _sync();
-    _thinkBudget = 2; // cap the expensive route/objective scans per step
+    _thinkBudget = 4; // cap the expensive route/objective scans per step
     _bin();
     for (final u in _units.values) {
       if (!u.t.alive) continue;
@@ -211,25 +211,48 @@ class FreeMoveBattle {
     final t = u.t;
     u.cd -= h;
     u.think -= h;
+    u.noSwing -= h;
 
-    if (t.type == TroopType.fogger && !t.smokeUsed) st.dropSmoke(t);
     if (t.type == TroopType.healer) {
       _healerStep(u, h);
       return;
     }
 
     // Something worth hitting inside reach? Then plant your feet and swing.
-    final hit = _targetInReach(u);
+    final hit = u.noSwing > 0 ? null : _targetInReach(u);
     if (hit != null) {
       u.stuck = 0;
       if (u.cd <= 0) {
         u.cd = attackPeriod;
+        final before = _victimHp(hit);
         st.attackCell(t, hit.r, hit.c);
+        if (_victimHp(hit) < before) {
+          u.idle = 0;
+        } else {
+          // The swing landed on nothing. Whatever the reason, a unit that
+          // stands still hitting air is the worst bug in a battle sim — so
+          // after a couple of wasted beats it stops swinging and walks.
+          u.idle += attackPeriod;
+          if (u.idle >= 2.0) {
+            u.idle = 0;
+            u.noSwing = 1.0;
+            u.think = 0;
+          }
+        }
       }
       return;
     }
 
     _walk(u, h);
+  }
+
+  /// Hit points of whatever a swing at [c] would actually land on, or -1 when
+  /// there is nothing there to hit.
+  int _victimHp(Cell c) {
+    final foe = _foeAt[_key(c.r, c.c)];
+    if (foe != null && foe.alive) return foe.hp;
+    final s = st.base.structAt(c.r, c.c);
+    return s != null && s.alive ? s.hp : -1;
   }
 
   /// Stop-and-fight test: the best target whose tile centre sits inside this
@@ -253,10 +276,16 @@ class FreeMoveBattle {
         if (ranged && !st.visible(r, c)) continue; // no blind volleys
         final foe = _foeAt[_key(r, c)];
         if (foe != null && foe.side != t.side) {
-          final s = 100.0 - math.sqrt(ex * ex + ey * ey);
-          if (s > bestScore) {
-            bestScore = s;
-            best = Cell(r, c);
+          // attackCell resolves the victim through troopAt, which hands back
+          // ATTACKERS first. If one of ours is standing on this defender the
+          // swing would land on nothing at all — and a unit that keeps
+          // swinging at nothing never moves again. Skip it; it walks instead.
+          if (identical(st.troopAt(r, c), foe)) {
+            final s = 100.0 - math.sqrt(ex * ex + ey * ey);
+            if (s > bestScore) {
+              bestScore = s;
+              best = Cell(r, c);
+            }
           }
           continue;
         }
@@ -300,13 +329,18 @@ class FreeMoveBattle {
   // ── continuous movement ─────────────────────────────────────────────────────
   void _walk(_Unit u, double h) {
     final t = u.t;
-    if (u.route.isEmpty || u.leg >= u.route.length || u.think <= 0) {
-      if (_thinkBudget > 0) {
-        _thinkBudget--;
-        _replan(u);
-      } else if (u.route.isEmpty) {
-        return; // wait a step for a planning slot rather than wander blind
-      }
+    if (u.route.isNotEmpty && u.leg >= u.route.length) {
+      u.route = const []; // arrived — plan the next leg right away
+      u.leg = 0;
+      u.think = 0;
+    }
+    // Planning is rationed, so the trigger MUST be the timer and nothing else.
+    // Keying it off "no route" instead let a unit that can never find one burn
+    // a slot every single step, which starved the whole army — including fresh
+    // arrivals, who always start routeless and would sit on the drop ring.
+    if (u.think <= 0 && _thinkBudget > 0) {
+      _thinkBudget--;
+      _replan(u);
     }
     if (u.route.isEmpty || u.leg >= u.route.length) return;
 
@@ -380,6 +414,10 @@ class FreeMoveBattle {
     if (!TerrainData.passable(st.base.grid[r][c].terrain)) return false;
     final s = st.base.grid[r][c].structure;
     if (s != null && s.alive && s.spec.blocks) return false;
+    // raiders pile onto each other freely, but a DEFENDER is a body in the
+    // way: you stop and fight it instead of walking through it
+    final foe = _foeAt[_key(r, c)];
+    if (foe != null && foe.alive && foe.side != t.side) return false;
     // the landing ring stays one-way, exactly as in the tile engine
     if (st.base.isRing(r, c) && !st.base.isRing(t.r, t.c)) return false;
     return true;
@@ -417,14 +455,27 @@ class FreeMoveBattle {
   void _replan(_Unit u) {
     final t = u.t;
     if (_objsStale) _rebuildObjectives();
-    u.think = 1.4 + (t.id.hashCode & 7) * 0.08; // stagger the thinking
     u.blockKey = null;
+    u.leg = 0;
 
     final obj = _pickObjective(u);
-    if (obj == null) {
-      u.route = const [];
-      return;
+    u.route = obj == null ? const [] : _routeToward(u, obj);
+    if (u.route.isEmpty) {
+      // Nothing reachable from here — a raider still never just stands there.
+      // March for the middle of the yard; a new objective almost always opens
+      // up on the way in.
+      u.route = _routeToward(
+          u, Cell(st.base.rows ~/ 2, st.base.cols ~/ 2),
+          plain: true);
     }
+    // A failed plan retries soon, but never every step — see _walk.
+    u.think = u.route.isEmpty ? 0.6 : 1.4 + (t.id.hashCode & 7) * 0.08;
+  }
+
+  /// Best road to [obj]: around the walls if there is one, through them if the
+  /// detour is absurd. Marks the wall to smash in [u.blockKey] when breaching.
+  List<List<int>> _routeToward(_Unit u, Cell obj, {bool plain = false}) {
+    final t = u.t;
     var route = st.routeTo(t, obj.r, obj.c);
     if (route.isEmpty) {
       for (final d in _orth) {
@@ -434,6 +485,8 @@ class FreeMoveBattle {
         if (route.isNotEmpty) break;
       }
     }
+    // a plain march (the fallback to the middle) never smashes its way there
+    if (plain) return route;
     // the long way around is a trap: if smashing straight through is far
     // shorter, breach instead — same call the classic engine makes
     if (route.length > 10) {
@@ -442,29 +495,22 @@ class FreeMoveBattle {
         route = const [];
       }
     }
-    if (route.isEmpty) {
-      final breach = st.routeTo(t, obj.r, obj.c, throughWalls: true);
-      if (breach.isEmpty) {
-        u.route = const [];
-        return;
+    if (route.isNotEmpty) return route;
+
+    final breach = st.routeTo(t, obj.r, obj.c, throughWalls: true);
+    if (breach.isEmpty) return const [];
+    // walk the breach line and mark the first wall on it as the target;
+    // _targetInReach will swing at it the moment we're close enough
+    final cut = <List<int>>[];
+    for (final step in breach) {
+      final s = st.base.structAt(step[0], step[1]);
+      if (s != null && s.alive && s.spec.blocks) {
+        u.blockKey = _key(step[0], step[1]);
+        break;
       }
-      // walk the breach line and mark the first wall on it as the target;
-      // _targetInReach will swing at it the moment we're close enough
-      final cut = <List<int>>[];
-      for (final step in breach) {
-        final s = st.base.structAt(step[0], step[1]);
-        if (s != null && s.alive && s.spec.blocks) {
-          u.blockKey = _key(step[0], step[1]);
-          break;
-        }
-        cut.add(step);
-      }
-      u.route = cut;
-      u.leg = 0;
-      return;
+      cut.add(step);
     }
-    u.route = route;
-    u.leg = 0;
+    return cut;
   }
 
   Cell? _pickObjective(_Unit u) {
@@ -588,6 +634,8 @@ class _Unit {
   double cd = 0;
   double think = 0;
   double stuck = 0;
+  double idle = 0; // beats spent swinging at nothing
+  double noSwing = 0; // forced march: ignore targets until this runs out
   int leg = 0;
   int? blockKey;
   bool garrison = false;

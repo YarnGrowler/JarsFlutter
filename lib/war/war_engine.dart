@@ -383,8 +383,6 @@ class AttackState {
     troopsSent++;
     _reveal(r, c, radius: t.spec.revealRadius);
     _stepEffects(t);
-    // Fogger blooms smoke on landing (one cloud per life); AI path is a no-op after.
-    if (t.type == TroopType.fogger) dropSmoke(t);
     log.add(AttackEvent('${t.spec.emoji} ${t.spec.name} deployed', at: Cell(r, c)));
     return t;
   }
@@ -456,23 +454,43 @@ class AttackState {
     return range;
   }
 
-  /// Fogger drops a one-time smoke cloud (radius 2), then fights normally.
-  bool dropSmoke(Troop t) {
-    if (t.type != TroopType.fogger || t.smokeUsed || !t.alive) return false;
+  /// A fogger BLEEDS smoke — it doesn't light one on arrival. The first wound
+  /// it takes bursts the cloud, and if something one-shots it the corpse lets
+  /// a last, brief puff go. Veterans carry more pitch, so the cloud lingers.
+  bool dropSmoke(Troop t, {bool dying = false}) {
+    if (t.type != TroopType.fogger || t.smokeUsed) return false;
+    if (!dying && !t.alive) return false;
     t.smokeUsed = true;
-    const life = 8;
+    // a dying burst is a puff; a wounded fogger lays a proper screen
+    final life = dying ? 3 + t.level : 6 + t.level * 2;
+    final spread = dying ? 2 : 5; // squared radius
     for (var dr = -2; dr <= 2; dr++) {
       for (var dc = -2; dc <= 2; dc++) {
-        if (dr * dr + dc * dc > 5) continue;
+        if (dr * dr + dc * dc > spread) continue;
         final nr = t.r + dr, nc = t.c + dc;
         if (!base.inBounds(nr, nc)) continue;
         final k = _key(nr, nc);
         smoke[k] = math.max(smoke[k] ?? 0, life);
       }
     }
-    log.add(AttackEvent('🌫️ Smoke blooms', at: Cell(t.r, t.c)));
+    log.add(AttackEvent(
+        dying ? '🌫️ The fogger bursts as it falls' : '🌫️ Smoke blooms',
+        at: Cell(t.r, t.c)));
     _fx(FxEvent(FxKind.trap, Cell(t.r, t.c), bySide: t.side));
     return true;
+  }
+
+  /// Every damage path in the engine funnels through [_cull], so this is the
+  /// one place that can catch "a fogger just got hurt" no matter what hurt it.
+  void _foggersReact() {
+    for (final t in troops) {
+      if (t.type != TroopType.fogger || t.smokeUsed) continue;
+      if (!t.alive) {
+        dropSmoke(t, dying: true);
+      } else if (t.hp < t.maxHp) {
+        dropSmoke(t);
+      }
+    }
   }
 
   void _tickSmoke() {
@@ -690,6 +708,7 @@ class AttackState {
       _cull();
       return false;
     }
+    _foggersReact(); // a mine or tesla on the way in can set one off
     return true;
   }
 
@@ -1305,6 +1324,7 @@ class AttackState {
   }
 
   void _cull() {
+    _foggersReact();
     // the fallen leave tombstones — on the WORLD itself, forever (base.graves
     // persists across raids and saves); the raid copy feeds the replay frames
     for (final t in [...troops, ...garrison]) {

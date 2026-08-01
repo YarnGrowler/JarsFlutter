@@ -512,6 +512,11 @@ class TroopSpec {
   final int moveBudget;
   final double vsStructure; // damage multiplier against structures
   final int revealRadius; // fog cleared around this troop (scouts see farther)
+  /// How big this unit is drawn, relative to a Soldier. A brute towers over
+  /// the line infantry and an elephant towers over the brute — you should be
+  /// able to read an army's composition at a glance, without squinting at
+  /// emoji.
+  final double size;
   final String blurb;
   const TroopSpec(this.type,
       {required this.name,
@@ -522,7 +527,16 @@ class TroopSpec {
       required this.moveBudget,
       required this.vsStructure,
       this.revealRadius = 1,
+      this.size = 1.0,
       this.blurb = ''});
+
+  /// Sprite size for a bare emoji (replay frames only carry the glyph).
+  static double sizeForEmoji(String emoji) {
+    for (final s in kTroopSpecs.values) {
+      if (s.emoji == emoji) return s.size;
+    }
+    return 1.0;
+  }
 }
 
 const Map<TroopType, TroopSpec> kTroopSpecs = {
@@ -534,6 +548,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       atk: 22,
       moveBudget: 5,
       vsStructure: 1.0,
+      size: 1.0, // the yardstick every other unit is measured against
       blurb: 'The all-rounder. Decent everywhere, weak nowhere.'),
   TroopType.runner: TroopSpec(TroopType.runner,
       name: 'Scout',
@@ -544,6 +559,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       moveBudget: 8,
       vsStructure: 0.8,
       revealRadius: 2,
+      size: 0.85, // small and quick
       blurb:
           'Fast, fragile eyes — reveals a 5×5 area as it moves. Send it first.'),
   TroopType.brute: TroopSpec(TroopType.brute,
@@ -554,6 +570,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       atk: 26,
       moveBudget: 3,
       vsStructure: 1.2,
+      size: 1.45, // head and shoulders over the line infantry
       blurb:
           'A lumbering wall of meat. Slow, but it soaks tower fire so the others can work.'),
   TroopType.sapper: TroopSpec(TroopType.sapper,
@@ -564,6 +581,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       atk: 12,
       moveBudget: 6,
       vsStructure: 1.0,
+      size: 0.8, // a little fellow carrying a very large bomb
       blurb:
           'One boom, one wall. Cheap and fast, sprints at the nearest wall and '
           'blows it sky-high — splash tears at everything beside it.'),
@@ -575,6 +593,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       atk: 14,
       moveBudget: 5,
       vsStructure: 0.9,
+      size: 0.9,
       blurb:
           'Arrows over the walls from 2 tiles out. Fragile — keep a brute '
           'between her and the guns.'),
@@ -586,6 +605,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       atk: 0,
       moveBudget: 5,
       vsStructure: 0,
+      size: 0.9,
       blurb:
           'Mends the most-wounded ally nearby every beat. Never fights. '
           'Protect her and the push never stops.'),
@@ -597,6 +617,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       atk: 16,
       moveBudget: 5,
       vsStructure: 0.85,
+      size: 0.95,
       blurb:
           'Mid-range spears. Bonus damage vs garrison defenders and Generals.'),
   TroopType.fogger: TroopSpec(TroopType.fogger,
@@ -607,9 +628,11 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       atk: 12,
       moveBudget: 5,
       vsStructure: 0.9,
+      size: 0.95,
       blurb:
-          'Drops ONE smoke cloud (towers spot like forest — short range only), '
-          'then fights as a light skirmisher.'),
+          'Bleeds smoke: the first hit it takes bursts a cloud (towers spot '
+          'like forest — short range only), and it lets one last burst go when '
+          'it dies. Higher levels smoke for longer.'),
   TroopType.elephant: TroopSpec(TroopType.elephant,
       name: 'War Elephant',
       emoji: '🐘',
@@ -618,6 +641,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       atk: 20,
       moveBudget: 2,
       vsStructure: 1.1,
+      size: 2.1, // it should DWARF everything else on the field
       blurb:
           'A walking fortress. Slow, enormous, shrugs barbed wire, soaks '
           'tower fire so the crew can work.'),
@@ -629,6 +653,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       atk: 28,
       moveBudget: 4,
       vsStructure: 0.9,
+      size: 1.2, // an officer, visibly a cut above the rank and file
       blurb:
           'Elite ranged defender from a Command Tent. Long reach, tough hide.'),
 };

@@ -2074,7 +2074,8 @@ class WarBoardPainter extends CustomPainter {
         .translate(0, bob);
     _sprite(canvas, center, tr.spec.emoji, tr.side, tr.hp / tr.maxHp,
         selected: selected != null && selected!.r == tr.r && selected!.c == tr.c,
-        level: tr.level);
+        level: tr.level,
+        sizeMul: tr.spec.size);
     // ON FIRE: clinging pitch — a flame tag until it gutters out
     if (tr.burnRounds > 0) {
       _emojiAt(
@@ -2175,7 +2176,8 @@ class WarBoardPainter extends CustomPainter {
         rr = p.r + (s.r - p.r) * replayBlend;
         cc = p.c + (s.c - p.c) * replayBlend;
       }
-      _sprite(canvas, _center(rr, cc), s.emoji, s.side, s.hpFrac);
+      _sprite(canvas, _center(rr, cc), s.emoji, s.side, s.hpFrac,
+          sizeMul: TroopSpec.sizeForEmoji(s.emoji));
     }
     for (final flash in f.flashes) {
       // subtle impact ring — the real spectacle comes from the FX overlay
@@ -3388,8 +3390,8 @@ class WarBoardPainter extends CustomPainter {
   }
 
   void _sprite(Canvas canvas, Offset center, String emoji, WarSide side, double hpFrac,
-      {bool selected = false, int level = 1}) {
-    final s = tile * 0.32 * troopScale;
+      {bool selected = false, int level = 1, double sizeMul = 1}) {
+    final s = tile * 0.32 * troopScale * sizeMul;
     final col = side == WarSide.you ? _you : _enemy;
     if (selected) {
       canvas.drawCircle(

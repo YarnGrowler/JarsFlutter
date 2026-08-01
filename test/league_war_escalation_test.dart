@@ -262,8 +262,9 @@ void main() {
           pools: MapPools({'me': 999, 'def': 999}));
       final fogger =
           st.spawn(TroopType.fogger, 'me', Base.defaultSize - 1, 3)!;
-      expect(fogger.smokeUsed, isTrue);
-      expect(st.smoke, isNotEmpty);
+      // it lands DRY — the cloud is a reaction to being hit, not to arriving
+      expect(fogger.smokeUsed, isFalse);
+      expect(st.smoke, isEmpty);
 
       // Walk into smoke at range 3 from the tower.
       fogger.r = Base.defaultSize - 3;
@@ -277,6 +278,77 @@ void main() {
       st.smoke[fogger.r * base.cols + fogger.c] = 8;
       st.defendersReact();
       expect(fogger.hp, lessThan(hp0), reason: 'spotted inside short range');
+    });
+
+    test('a fogger smokes when it is WOUNDED, not when it lands', () {
+      final base = Base(WarSide.enemy, 7);
+      flatten(base, [
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
+      ]);
+      base.placeCastle('def', 2, 3);
+      final st = AttackState(
+          base: base,
+          attacker: WarSide.you,
+          attackerName: 'Me',
+          pools: MapPools({'me': 999, 'def': 999}));
+      final fogger =
+          st.spawn(TroopType.fogger, 'me', Base.defaultSize - 1, 3)!;
+      expect(st.smoke, isEmpty, reason: 'it lands dry');
+
+      fogger.hp -= 5; // first blood, from anywhere
+      st.defendersReact(); // any beat funnels through the cull
+      expect(fogger.smokeUsed, isTrue);
+      expect(st.smoke, isNotEmpty, reason: 'the wound bursts the cloud');
+    });
+
+    test('a fogger bursts one last cloud when it is one-shot', () {
+      final base = Base(WarSide.enemy, 7);
+      flatten(base, [
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
+      ]);
+      base.placeCastle('def', 2, 3);
+      final st = AttackState(
+          base: base,
+          attacker: WarSide.you,
+          attackerName: 'Me',
+          pools: MapPools({'me': 999, 'def': 999}));
+      final fogger =
+          st.spawn(TroopType.fogger, 'me', Base.defaultSize - 1, 3)!;
+      expect(st.smoke, isEmpty);
+
+      fogger.hp = 0; // a bomb deletes it outright — no wound beforehand
+      st.defendersReact();
+      expect(st.smoke, isNotEmpty, reason: 'the corpse still puffs');
+    });
+
+    test('a veteran fogger smokes for longer than a rookie', () {
+      Base yard() {
+        final b = Base(WarSide.enemy, 7);
+        flatten(b, [
+          for (var r = 0; r < Base.defaultSize; r++) [r, 3]
+        ]);
+        b.placeCastle('def', 2, 3);
+        return b;
+      }
+
+      int lifeAt({required int xp, required bool dying}) {
+        final st = AttackState(
+            base: yard(),
+            attacker: WarSide.you,
+            attackerName: 'Me',
+            pools: MapPools({'me': 999, 'def': 999}));
+        final f = st.spawn(TroopType.fogger, 'me', Base.defaultSize - 1, 3)!;
+        f.gainXp(xp.toDouble());
+        st.dropSmoke(f, dying: dying);
+        return st.smoke.values.reduce((a, b) => a > b ? a : b);
+      }
+
+      expect(lifeAt(xp: Xp.perLevel * 3, dying: false),
+          greaterThan(lifeAt(xp: 0, dying: false)),
+          reason: 'veterans carry more pitch');
+      // and a death burst is only a puff next to a proper screen
+      expect(lifeAt(xp: 0, dying: true),
+          lessThan(lifeAt(xp: 0, dying: false)));
     });
 
     test('L5 wall survives L1 sapper bomb', () {

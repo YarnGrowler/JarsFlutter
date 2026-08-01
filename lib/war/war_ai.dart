@@ -1532,10 +1532,8 @@ class WarAi {
     if (!t.alive) return false;
     t.done = false;
 
-    // Fogger blooms smoke once, then fights.
-    if (t.type == TroopType.fogger && !t.smokeUsed) {
-      st.dropSmoke(t);
-    }
+    // (a fogger's cloud is triggered by DAMAGE now, not by acting — the
+    // engine bursts it from _cull wherever the wound came from)
 
     // HEALERS have one job — mend the wounded, follow the push
     if (t.type == TroopType.healer) return _healerStep(st, t);
