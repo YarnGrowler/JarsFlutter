@@ -265,14 +265,16 @@ void main() {
       expect(w1.meleeChip, 0);
       // L4 leash ≈ base 4 + 2*(4-1) = 10
       expect(AttackState.garrisonLeash + (4 - 1) * 2, 10);
-      expect(kDefSpecs[DefType.guardPost]!.maxLevel, 4);
+      expect(kDefSpecs[DefType.guardPost]!.maxLevel, 5);
       expect(kDefSpecs[DefType.wall]!.maxLevel, 5);
+      expect(kDefSpecs[DefType.archerTower]!.maxLevel, 5);
+      expect(kDefSpecs[DefType.cannon]!.maxLevel, 5);
     });
   });
 
   group('climbing the ladder builds a BIGGER, meaner enemy', () {
     /// Drive the real prep→war path at max difficulty for [div].
-    ({int structures, int maxWall, int size}) buildAt(int div) {
+    ({int structures, int maxWall, int maxTower, int size}) buildAt(int div) {
       final g = WarGame.fresh();
       g.divisionIndex = div;
       g.startPrep();
@@ -280,17 +282,23 @@ void main() {
       g.startWar();
       var structures = 0;
       var maxWall = 0;
+      var maxTower = 0;
       for (var r = 0; r < g.enemyBase.rows; r++) {
         for (var c = 0; c < g.enemyBase.cols; c++) {
           final s = g.enemyBase.structAt(r, c);
           if (s == null) continue;
           structures++;
           if (s.type == DefType.wall && s.level > maxWall) maxWall = s.level;
+          if ((s.spec.isShooter || s.type == DefType.guardPost) &&
+              s.level > maxTower) {
+            maxTower = s.level;
+          }
         }
       }
       return (
         structures: structures,
         maxWall: maxWall,
+        maxTower: maxTower,
         size: g.enemyBase.rows
       );
     }
@@ -309,6 +317,8 @@ void main() {
       expect(radiant.maxWall, greaterThan(bronze.maxWall),
           reason: 'the curtain wall has to visibly climb with the league');
       expect(radiant.maxWall, greaterThanOrEqualTo(4));
+      expect(radiant.maxTower, greaterThanOrEqualTo(4),
+          reason: 'Radiant guns should be forged past Bronze L3');
     });
 
     test('the ladder tops out at a 64x64 board', () {

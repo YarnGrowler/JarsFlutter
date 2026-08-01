@@ -96,6 +96,12 @@ class WarBoardPainter extends CustomPainter {
 
   // visible cell range (viewport culling for the scrolling camera)
   int _r0 = 0, _r1 = 0, _c0 = 0, _c1 = 0;
+
+  /// Ambient motion clock — frozen when zoomed out so tents/people/flags
+  /// don't keep thrashing the GPU after terrain has already LODed.
+  double _at = 0;
+  bool _hiDetail = true;
+
   void _cull(Size size) {
     _r0 = math.max(0, ((-gy) / tile).floor() - 1);
     _r1 = math.min(base.rows - 1, ((size.height - gy) / tile).ceil() + 1);
@@ -129,6 +135,11 @@ class WarBoardPainter extends CustomPainter {
     canvas.save();
     canvas.clipRRect(RRect.fromRectAndRadius(board, const Radius.circular(16)));
 
+    // Zoom LOD: terrain already dumps detail under ~18px; freeze ambient
+    // motion and skip people/dressing so a 64² Radiant board stays playable
+    // when fitted to the screen.
+    _hiDetail = tile >= 20;
+    _at = _hiDetail ? t : 0;
     _cull(size);
     _groundPass(canvas);
     if (showTerritory) _territoryPass(canvas);
@@ -143,7 +154,7 @@ class WarBoardPainter extends CustomPainter {
     if (showDropLane) _ringPass(canvas);
     if (replayFrame == null) {
       _structurePass(canvas);
-      _dressingPass(canvas);
+      if (_hiDetail) _dressingPass(canvas);
     }
     _gravesPass(canvas, replayFrame?.graves ?? base.graves);
     _rangeRingPass(canvas);
@@ -218,7 +229,7 @@ class WarBoardPainter extends CustomPainter {
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2
-            ..color = Colors.white.withValues(alpha: 0.4 + 0.15 * math.sin(t * 3)));
+            ..color = Colors.white.withValues(alpha: 0.4 + 0.15 * math.sin(_at * 3)));
       // artillery blind spot: the zone this defense CANNOT hit
       if (inner > 0) {
         final ir = (inner - 0.5) * tile;
@@ -527,7 +538,7 @@ class WarBoardPainter extends CustomPainter {
     // drifting sparkle instead of stripey waves
     final glint = Paint()..color = biome.waterFoam.withValues(alpha: 0.55);
     for (var i = 0; i < 2; i++) {
-      final phase = (t * 0.6 + _hash(r, c, 40 + i)) % 1.0;
+      final phase = (_at * 0.6 + _hash(r, c, 40 + i)) % 1.0;
       final gx0 = rect.left + rect.width * ((_hash(r, c, 42 + i) + phase) % 1.0);
       final gy0 = rect.top + rect.height * (0.25 + 0.5 * _hash(r, c, 44 + i));
       canvas.drawCircle(Offset(gx0, gy0), tile * 0.035, glint);
@@ -581,7 +592,7 @@ class WarBoardPainter extends CustomPainter {
       if (r < _r0 || r > _r1 || c < _c0 || c > _c1) continue;
       if (!_revealed(r, c)) continue;
       final rect = _rect(r, c);
-      final pulse = 0.22 + 0.06 * math.sin(t * 2.4 + r * 0.3 + c * 0.17);
+      final pulse = 0.22 + 0.06 * math.sin(_at * 2.4 + r * 0.3 + c * 0.17);
       canvas.drawCircle(
           rect.center,
           tile * 0.55,
@@ -599,7 +610,7 @@ class WarBoardPainter extends CustomPainter {
   /// chevrons on every side.
   void _ringPass(Canvas canvas) {
     final glow =
-        Paint()..color = JarsColors.gold.withValues(alpha: 0.05 + 0.03 * math.sin(t * 3));
+        Paint()..color = JarsColors.gold.withValues(alpha: 0.05 + 0.03 * math.sin(_at * 3));
     canvas.drawRect(Rect.fromLTWH(gx, gy, tile * base.cols, tile), glow);
     canvas.drawRect(
         Rect.fromLTWH(gx, gy + (base.rows - 1) * tile, tile * base.cols, tile), glow);
@@ -974,7 +985,7 @@ class WarBoardPainter extends CustomPainter {
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1
-            ..color = Colors.white.withValues(alpha: 0.14 + 0.1 * math.sin(t * 3)));
+            ..color = Colors.white.withValues(alpha: 0.14 + 0.1 * math.sin(_at * 3)));
     }
     // a badly wounded building BURNS
     if (s.hp / s.maxHp < 0.4 &&
@@ -1038,7 +1049,7 @@ class WarBoardPainter extends CustomPainter {
         Paint()
           ..color = Colors.white70
           ..strokeWidth = 1.6);
-    final sway = math.sin(t * 4) * w * 0.05;
+    final sway = math.sin(_at * 4) * w * 0.05;
     final flag = Path()
       ..moveTo(poleTop.dx, poleTop.dy)
       ..quadraticBezierTo(poleTop.dx + w * 0.14 + sway, poleTop.dy + h * 0.04,
@@ -1056,47 +1067,80 @@ class WarBoardPainter extends CustomPainter {
     final cx = rect.center.dx;
     final up = level >= 2;
     final elite = level >= 3;
-    // veterans hold a TALLER tower of darker cut stone; the L3 is near-black
-    final stone = elite
-        ? const Color(0xFF59626F)
-        : up
-            ? const Color(0xFF6B7688)
-            : const Color(0xFF7E8798);
-    final trim = up ? const Color(0xFF565F6E) : const Color(0xFF69707E);
-    final topY = rect.top + (up ? h * 0.24 : h * 0.3);
+    final apex = level >= 4;
+    final mythic = level >= 5;
+    // veterans hold a TALLER tower of darker cut stone; L5 is near-obsidian
+    final stone = mythic
+        ? const Color(0xFF1A1018)
+        : apex
+            ? const Color(0xFF2A3040)
+            : elite
+                ? const Color(0xFF59626F)
+                : up
+                    ? const Color(0xFF6B7688)
+                    : const Color(0xFF7E8798);
+    final trim = mythic
+        ? const Color(0xFF7B5CFF)
+        : apex
+            ? const Color(0xFF9AA6B8)
+            : up
+                ? const Color(0xFF565F6E)
+                : const Color(0xFF69707E);
+    final topY = rect.top + (mythic
+        ? h * 0.16
+        : apex
+            ? h * 0.2
+            : up
+                ? h * 0.24
+                : h * 0.3);
     final body = Path()
-      ..moveTo(cx - w * 0.2, rect.top + h * 0.82)
-      ..lineTo(cx - w * 0.14, topY)
-      ..lineTo(cx + w * 0.14, topY)
-      ..lineTo(cx + w * 0.2, rect.top + h * 0.82)
+      ..moveTo(cx - w * (apex ? 0.22 : 0.2), rect.top + h * 0.82)
+      ..lineTo(cx - w * (apex ? 0.15 : 0.14), topY)
+      ..lineTo(cx + w * (apex ? 0.15 : 0.14), topY)
+      ..lineTo(cx + w * (apex ? 0.22 : 0.2), rect.top + h * 0.82)
       ..close();
     canvas.drawPath(body, Paint()..color = stone);
     if (up) {
       // banded masonry — the upgrade is in the STONEWORK
       final bandP = Paint()
-        ..color = const Color(0xFF59626F)
+        ..color = mythic ? const Color(0xFF4A3A6A) : const Color(0xFF59626F)
         ..strokeWidth = 1.3;
-      for (var i = 1; i <= 2; i++) {
-        final y = rect.top + h * (0.4 + i * 0.14);
+      for (var i = 1; i <= (apex ? 3 : 2); i++) {
+        final y = rect.top + h * (0.38 + i * 0.12);
         canvas.drawLine(Offset(cx - w * 0.165, y), Offset(cx + w * 0.165, y), bandP);
       }
     }
     final plat = Rect.fromCenter(
-        center: Offset(cx, topY - h * 0.02), width: w * (up ? 0.48 : 0.42), height: h * 0.1);
+        center: Offset(cx, topY - h * 0.02),
+        width: w * (apex ? 0.54 : (up ? 0.48 : 0.42)),
+        height: h * 0.1);
     canvas.drawRect(plat, Paint()..color = trim);
-    final merlons = up ? 4 : 3;
+    final merlons = apex ? 5 : (up ? 4 : 3);
     for (var i = 0; i < merlons; i++) {
       canvas.drawRect(
           Rect.fromLTWH(plat.left + i * plat.width / merlons * 1.06,
               plat.top - h * 0.06, plat.width / merlons * 0.62, h * 0.06),
           Paint()..color = trim);
       if (elite) {
-        // gilded merlon caps — the L3 crown
+        // gilded / violet merlon caps
         canvas.drawRect(
             Rect.fromLTWH(plat.left + i * plat.width / merlons * 1.06,
                 plat.top - h * 0.075, plat.width / merlons * 0.62, h * 0.02),
-            Paint()..color = const Color(0xFFB08D3E));
+            Paint()
+              ..color = mythic
+                  ? const Color(0xFFE8DEFF)
+                  : const Color(0xFFB08D3E));
       }
+    }
+    if (mythic) {
+      // obsidian halo — reads across the map
+      canvas.drawCircle(
+          Offset(cx, topY),
+          w * 0.28,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.6
+            ..color = const Color(0xFF7B5CFF).withValues(alpha: 0.55));
     }
     if (up) {
       // a red war pennant flies from the parapet
@@ -1106,20 +1150,24 @@ class WarBoardPainter extends CustomPainter {
           Paint()
             ..color = const Color(0xFF8F6B42)
             ..strokeWidth = 1.4);
-      final flap = math.sin(t * 5 + poleX) * w * 0.02;
+      final flap = math.sin(_at * 5 + poleX) * w * 0.02;
       canvas.drawPath(
           Path()
             ..moveTo(poleX, plat.top - h * 0.2)
             ..lineTo(poleX + w * 0.12, plat.top - h * 0.17 + flap)
             ..lineTo(poleX, plat.top - h * 0.13)
             ..close(),
-          Paint()..color = const Color(0xFFB8443C));
+          Paint()
+            ..color = mythic
+                ? const Color(0xFFB07BFF)
+                : const Color(0xFFB8443C));
     }
     canvas.drawRect(
         Rect.fromCenter(
             center: Offset(cx, rect.top + h * 0.55), width: w * 0.045, height: h * 0.2),
         Paint()..color = const Color(0xFF1C212B));
-    // the archer on the platform: hooded figure with a drawn bow
+    // the archer on the platform — skip when zoomed out (LOD)
+    if (!_hiDetail) return;
     final headC = Offset(cx - w * 0.03, plat.top - h * 0.1);
     canvas.drawRRect(
         RRect.fromRectAndRadius(
@@ -1153,19 +1201,31 @@ class WarBoardPainter extends CustomPainter {
     final w = rect.width;
     final c = rect.center;
     final up = level >= 2;
+    final apex = level >= 4;
+    final mythic = level >= 5;
     // base plate — the veteran gun sits on a heavier, darker mount
-    canvas.drawCircle(c, w * (up ? 0.33 : 0.3),
-        Paint()..color = up ? const Color(0xFF31363F) : const Color(0xFF3A3F49));
+    final plate = mythic
+        ? const Color(0xFF1A1018)
+        : apex
+            ? const Color(0xFF252A35)
+            : up
+                ? const Color(0xFF31363F)
+                : const Color(0xFF3A3F49);
+    canvas.drawCircle(c, w * (mythic ? 0.36 : (up ? 0.33 : 0.3)),
+        Paint()..color = plate);
     canvas.drawCircle(
         c,
-        w * (up ? 0.33 : 0.3),
+        w * (mythic ? 0.36 : (up ? 0.33 : 0.3)),
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = up ? 2.2 : 1.6
-          ..color = const Color(0xFF1E232B));
+          ..strokeWidth = mythic ? 2.6 : (up ? 2.2 : 1.6)
+          ..color = mythic
+              ? const Color(0xFF7B5CFF)
+              : const Color(0xFF1E232B));
     // bolts (rivets double up on the reinforced mount)
-    final bolt = Paint()..color = const Color(0xFF6B7482);
-    final nBolts = up ? 8 : 6;
+    final bolt = Paint()
+      ..color = mythic ? const Color(0xFFE8DEFF) : const Color(0xFF6B7482);
+    final nBolts = mythic ? 10 : (up ? 8 : 6);
     for (var i = 0; i < nBolts; i++) {
       final a = i * math.pi * 2 / nBolts;
       canvas.drawCircle(
@@ -1174,11 +1234,12 @@ class WarBoardPainter extends CustomPainter {
           bolt);
     }
     // the barrel FACES its last target; with no target it idly scans
-    final ang = aim ?? math.pi / 2 + math.sin(t * 0.8 + c.dx * 0.01) * 0.7;
+    final ang = aim ??
+        math.pi / 2 + math.sin(_at * 0.8 + c.dx * 0.01) * (_hiDetail ? 0.7 : 0);
     canvas.save();
     canvas.translate(c.dx, c.dy);
     canvas.rotate(ang);
-    final barLen = w * (up ? 0.43 : 0.4);
+    final barLen = w * (mythic ? 0.5 : (apex ? 0.46 : (up ? 0.43 : 0.4)));
     final barrel = RRect.fromRectAndRadius(
         Rect.fromLTWH(-w * 0.07, -w * 0.06, barLen, w * 0.12),
         Radius.circular(w * 0.05));
@@ -1188,16 +1249,18 @@ class WarBoardPainter extends CustomPainter {
           ..shader = LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: up
-                ? const [Color(0xFF3A4450), Color(0xFF161B22)]
-                : const [Color(0xFF454D58), Color(0xFF20262E)],
+            colors: mythic
+                ? const [Color(0xFF3A2A55), Color(0xFF120818)]
+                : up
+                    ? const [Color(0xFF3A4450), Color(0xFF161B22)]
+                    : const [Color(0xFF454D58), Color(0xFF20262E)],
           ).createShader(barrel.outerRect));
     if (up) {
-      // brass reinforcing rings along the tube — forged, not painted
+      // brass / violet reinforcing rings along the tube
       final brass = Paint()
-        ..color = const Color(0xFFB08D3E)
+        ..color = mythic ? const Color(0xFFB07BFF) : const Color(0xFFB08D3E)
         ..strokeWidth = w * 0.028;
-      for (final fx in const [0.12, 0.24]) {
+      for (final fx in (apex ? const [0.1, 0.2, 0.3] : const [0.12, 0.24])) {
         canvas.drawLine(Offset(w * fx, -w * 0.06), Offset(w * fx, w * 0.06), brass);
       }
     }
@@ -1211,13 +1274,20 @@ class WarBoardPainter extends CustomPainter {
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.4
-            ..color = const Color(0xFFB08D3E));
+            ..color = mythic
+                ? const Color(0xFFE8DEFF)
+                : const Color(0xFFB08D3E));
     }
     canvas.restore();
     // pivot cap
     canvas.drawCircle(c, w * 0.1, Paint()..color = const Color(0xFF262C35));
     canvas.drawCircle(c, w * 0.05,
-        Paint()..color = up ? const Color(0xFFB08D3E) : const Color(0xFF6B7482));
+        Paint()
+          ..color = mythic
+              ? const Color(0xFF7B5CFF)
+              : up
+                  ? const Color(0xFFB08D3E)
+                  : const Color(0xFF6B7482));
   }
 
   void _teslaArt(Canvas canvas, Rect rect, [int level = 1]) {
@@ -1251,7 +1321,7 @@ class WarBoardPainter extends CustomPainter {
       }
     }
     final orb = Offset(cx, mastTop - h * 0.06);
-    final pulse = 0.75 + 0.25 * math.sin(t * 6);
+    final pulse = 0.75 + 0.25 * math.sin(_at * 6);
     canvas.drawCircle(
         orb,
         w * (up ? 0.26 : 0.2),
@@ -1261,7 +1331,7 @@ class WarBoardPainter extends CustomPainter {
     canvas.drawCircle(orb, w * (up ? 0.13 : 0.1),
         Paint()..color = const Color(0xFFB9EFFF).withValues(alpha: pulse));
     final arc = Paint()
-      ..color = const Color(0xFF7FE3FF).withValues(alpha: 0.5 + 0.4 * math.sin(t * 9))
+      ..color = const Color(0xFF7FE3FF).withValues(alpha: 0.5 + 0.4 * math.sin(_at * 9))
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
     for (var k = 0; k < (up ? 3 : 2); k++) {
@@ -1270,7 +1340,7 @@ class WarBoardPainter extends CustomPainter {
       var p = orb;
       for (var i = 1; i <= 3; i++) {
         p = Offset(
-            orb.dx + dir * w * 0.09 * i + math.sin(t * 11 + i + k * 3) * w * 0.05,
+            orb.dx + dir * w * 0.09 * i + math.sin(_at * 11 + i + k * 3) * w * 0.05,
             orb.dy + h * 0.07 * i);
         path.lineTo(p.dx, p.dy);
       }
@@ -1328,9 +1398,9 @@ class WarBoardPainter extends CustomPainter {
         Rect.fromLTWH(cx + w * 0.14, rect.top + h * 0.22, w * 0.07, h * 0.14),
         Paint()..color = const Color(0xFF565E6A));
     for (var i = 0; i < 2; i++) {
-      final ph = (t * 0.3 + i * 0.5) % 1.0;
+      final ph = (_at * 0.3 + i * 0.5) % 1.0;
       canvas.drawCircle(
-          Offset(cx + w * 0.18 + math.sin(t + i * 2) * w * 0.03,
+          Offset(cx + w * 0.18 + math.sin(_at + i * 2) * w * 0.03,
               rect.top + h * 0.18 - ph * h * 0.3),
           w * (0.03 + ph * 0.035),
           Paint()
@@ -1387,22 +1457,36 @@ class WarBoardPainter extends CustomPainter {
     if (level >= 3) {
       // the WATCH CAMP: a ring of sharpened palisade stakes
       final stake = Paint()
-        ..color = const Color(0xFF6B4E2E)
-        ..strokeWidth = w * 0.045
+        ..color = level >= 5
+            ? const Color(0xFF2A1830)
+            : const Color(0xFF6B4E2E)
+        ..strokeWidth = w * (level >= 4 ? 0.055 : 0.045)
         ..strokeCap = StrokeCap.round;
-      for (var i = 0; i < 6; i++) {
-        final a = i * math.pi / 3 + 0.3;
+      for (var i = 0; i < (level >= 4 ? 8 : 6); i++) {
+        final a = i * math.pi / (level >= 4 ? 4 : 3) + 0.3;
         final sx = cx + math.cos(a) * w * 0.4;
         final sy = rect.top + h * 0.55 + math.sin(a) * h * 0.28;
         canvas.drawLine(
             Offset(sx, sy + h * 0.08), Offset(sx, sy - h * 0.06), stake);
         canvas.drawCircle(Offset(sx, sy - h * 0.07), w * 0.02,
-            Paint()..color = const Color(0xFF4E3920));
+            Paint()
+              ..color = level >= 5
+                  ? const Color(0xFF7B5CFF)
+                  : const Color(0xFF4E3920));
       }
+    }
+    if (level >= 5) {
+      // command pavilion glow
+      canvas.drawCircle(
+          Offset(cx, rect.top + h * peak),
+          w * 0.22,
+          Paint()
+            ..color = const Color(0xFF7B5CFF).withValues(alpha: 0.25)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
     }
     if (up) {
       // snapping pennant
-      final flap = math.sin(t * 6) * w * 0.03;
+      final flap = math.sin(_at * 6) * w * 0.03;
       canvas.drawPath(
           Path()
             ..moveTo(cx, rect.top + h * (peak - 0.1))
@@ -1412,7 +1496,7 @@ class WarBoardPainter extends CustomPainter {
           Paint()..color = const Color(0xFFFFD34D));
     }
     final fire = Offset(cx + w * 0.3, rect.top + h * 0.8);
-    final flick = 0.7 + 0.3 * math.sin(t * 12);
+    final flick = 0.7 + 0.3 * math.sin(_at * 12);
     canvas.drawCircle(fire, w * 0.07,
         Paint()..color = const Color(0xFFFF8A3D).withValues(alpha: flick));
     canvas.drawCircle(fire.translate(0, -h * 0.03), w * 0.04,
@@ -1435,7 +1519,7 @@ class WarBoardPainter extends CustomPainter {
       ..strokeWidth = 1;
     canvas.drawLine(c - Offset(w * 0.14, 0), c + Offset(w * 0.14, 0), seam);
     canvas.drawLine(c - Offset(0, w * 0.14), c + Offset(0, w * 0.14), seam);
-    final blink = 0.25 + 0.75 * (0.5 + 0.5 * math.sin(t * 5)).clamp(0.0, 1.0);
+    final blink = 0.25 + 0.75 * (0.5 + 0.5 * math.sin(_at * 5)).clamp(0.0, 1.0);
     canvas.drawCircle(c, w * 0.045,
         Paint()..color = const Color(0xFFFF3D55).withValues(alpha: blink));
   }
@@ -1638,7 +1722,7 @@ class WarBoardPainter extends CustomPainter {
     canvas.drawLine(c.translate(w * 0.16, w * 0.12),
         c.translate(w * 0.07, -w * 0.05), yokeP);
     // the WIDE stubby tube, angled skyward — recoil-breathes on reload
-    final breathe = 1 + math.sin(t * 2.2) * 0.025;
+    final breathe = 1 + math.sin(_at * 2.2) * 0.025;
     canvas.save();
     canvas.translate(c.dx, c.dy + w * 0.02);
     canvas.rotate(-0.34);
@@ -1723,21 +1807,21 @@ class WarBoardPainter extends CustomPainter {
     for (var i = 0; i < 2; i++) {
       final ex = rect.left + rect.width * (0.35 + _hash(r, c, 40 + i) * 0.3);
       final ey = rect.top + rect.height * (0.45 + _hash(r, c, 50 + i) * 0.25);
-      final glow = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(t * 3 + i * 2.4 + r));
+      final glow = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(_at * 3 + i * 2.4 + r));
       canvas.drawCircle(Offset(ex, ey), rect.width * 0.035,
           Paint()..color = const Color(0xFFFF6A2D).withValues(alpha: glow));
     }
-    final drift = (t * 0.18 + _hash(r, c, 55)) % 1.0;
+    final drift = (_at * 0.18 + _hash(r, c, 55)) % 1.0;
     canvas.drawCircle(
-        Offset(rect.center.dx + math.sin(t * 1.5) * rect.width * 0.05,
+        Offset(rect.center.dx + math.sin(_at * 1.5) * rect.width * 0.05,
             rect.center.dy - drift * rect.height * 0.6),
         rect.width * (0.04 + drift * 0.05),
         Paint()
           ..color = const Color(0xFF6B7482).withValues(alpha: 0.3 * (1 - drift)));
     // smoke wisp
     final smoke = Paint()
-      ..color = Colors.white.withValues(alpha: 0.06 + 0.03 * math.sin(t * 2 + r + c));
-    canvas.drawCircle(rect.center.translate(0, -rect.height * 0.18 - (t * 6 % 8)),
+      ..color = Colors.white.withValues(alpha: 0.06 + 0.03 * math.sin(_at * 2 + r + c));
+    canvas.drawCircle(rect.center.translate(0, -rect.height * 0.18 - (_at * 6 % 8)),
         rect.width * 0.12, smoke);
   }
 
@@ -1778,7 +1862,7 @@ class WarBoardPainter extends CustomPainter {
             JarsColors.gold);
       }
     }
-    final pulse = 0.55 + 0.45 * math.sin(t * 4);
+    final pulse = 0.55 + 0.45 * math.sin(_at * 4);
     for (final tg in targets) {
       _cellGlow(canvas, tg.r, tg.c, _enemy.withValues(alpha: 0.35 + 0.55 * pulse),
           fill: _enemy.withValues(alpha: 0.24));
@@ -1851,7 +1935,7 @@ class WarBoardPainter extends CustomPainter {
     for (var i = 0; i < 10; i++) {
       final baseR = _hash(i, 7) * base.rows;
       final baseC = _hash(i, 13) * base.cols;
-      final drift = math.sin(t * 0.25 + i * 1.7) * 1.6;
+      final drift = math.sin(_at * 0.25 + i * 1.7) * 1.6;
       final r = baseR.round(), c = (baseC + drift).round();
       if (!base.inBounds(r, c) || _revealed(r, c)) continue;
       canvas.drawCircle(_center(r.toDouble(), baseC + drift),
@@ -1861,7 +1945,7 @@ class WarBoardPainter extends CustomPainter {
 
   // ── units ───────────────────────────────────────────────────────────────────
   void _troop(Canvas canvas, Troop tr) {
-    final bob = math.sin(t * 3.2 + (tr.id.hashCode % 7)) * tile * 0.03;
+    final bob = math.sin(_at * 3.2 + (tr.id.hashCode % 7)) * tile * 0.03;
     // glide: draw at the animated position when the screen provides one
     final pos = troopPositions[tr.id];
     final center = (pos != null
@@ -2236,7 +2320,7 @@ class WarBoardPainter extends CustomPainter {
             center: cB.translate(0, -h * 0.02), width: w * 0.44, height: h * 0.12),
         Paint()..color = const Color(0xFF14181E));
     // the burning pitch
-    final flick = 0.6 + 0.4 * math.sin(t * 8 + cB.dx * 0.1);
+    final flick = 0.6 + 0.4 * math.sin(_at * 8 + cB.dx * 0.1);
     canvas.drawOval(
         Rect.fromCenter(
             center: cB.translate(0, -h * 0.02), width: w * 0.34, height: h * 0.08),
@@ -2249,9 +2333,9 @@ class WarBoardPainter extends CustomPainter {
           Paint()..color = const Color(0xFFFFD34D).withValues(alpha: 0.85));
     }
     // drifting smoke
-    final ph = (t * 0.3) % 1.0;
+    final ph = (_at * 0.3) % 1.0;
     canvas.drawCircle(
-        Offset(cB.dx + math.sin(t * 1.6) * w * 0.05,
+        Offset(cB.dx + math.sin(_at * 1.6) * w * 0.05,
             cB.dy - h * 0.2 - ph * h * 0.4),
         w * (0.05 + ph * 0.04),
         Paint()..color = const Color(0xFF6B7482).withValues(alpha: 0.35 * (1 - ph)));
@@ -2278,7 +2362,7 @@ class WarBoardPainter extends CustomPainter {
           ..color = const Color(0xFF6B4E2E)
           ..strokeWidth = w * 0.05);
     // the streaming colors (two-tail banner)
-    final flap = math.sin(t * 4 + x * 0.05) * w * 0.05;
+    final flap = math.sin(_at * 4 + x * 0.05) * w * 0.05;
     canvas.drawPath(
         Path()
           ..moveTo(x, rect.top + h * 0.16)
@@ -2303,7 +2387,7 @@ class WarBoardPainter extends CustomPainter {
             Rect.fromCenter(center: c.translate(0, w * 0.08), width: w * 0.5, height: w * 0.3),
             Radius.circular(w * 0.05)),
         Paint()..color = const Color(0xFF6B4E2E));
-    final ang = aim ?? -math.pi / 2 + math.sin(t * 0.6 + c.dx * 0.01) * 0.5;
+    final ang = aim ?? -math.pi / 2 + math.sin(_at * 0.6 + c.dx * 0.01) * 0.5;
     canvas.save();
     canvas.translate(c.dx, c.dy);
     canvas.rotate(ang);
@@ -2367,7 +2451,7 @@ class WarBoardPainter extends CustomPainter {
           ..close(),
         Paint()..color = const Color(0xFF5E4430));
     // the WATCHING lantern (slow pulse)
-    final glow = 0.55 + 0.45 * math.sin(t * 2.2);
+    final glow = 0.55 + 0.45 * math.sin(_at * 2.2);
     canvas.drawCircle(Offset(cx, rect.top + h * 0.26), w * 0.05,
         Paint()..color = const Color(0xFFFFD34D).withValues(alpha: glow));
     canvas.drawCircle(
@@ -2532,7 +2616,7 @@ class WarBoardPainter extends CustomPainter {
       final a = i * math.pi / 2 + 0.4;
       final fx = cB.dx + math.cos(a) * w * 0.2;
       final fy = cB.dy + math.sin(a) * w * 0.14;
-      final flick = 0.5 + 0.5 * math.sin(t * (6 + i * 1.7) + i * 2.1);
+      final flick = 0.5 + 0.5 * math.sin(_at * (6 + i * 1.7) + i * 2.1);
       canvas.drawCircle(Offset(fx, fy), w * (0.07 + 0.04 * flick),
           Paint()..color = const Color(0xFFFF8A3D).withValues(alpha: 0.7));
       canvas.drawCircle(Offset(fx, fy - w * 0.04 * flick), w * 0.04 * flick,
@@ -2549,9 +2633,9 @@ class WarBoardPainter extends CustomPainter {
     }
     // the smoke column
     for (var i = 0; i < 3; i++) {
-      final ph = (t * 0.22 + i * 0.33) % 1.0;
+      final ph = (_at * 0.22 + i * 0.33) % 1.0;
       canvas.drawCircle(
-          Offset(cB.dx + math.sin(t + i * 2) * w * 0.08,
+          Offset(cB.dx + math.sin(_at + i * 2) * w * 0.08,
               cB.dy - w * 0.15 - ph * w * 0.8),
           w * (0.08 + ph * 0.1),
           Paint()
@@ -2588,8 +2672,8 @@ class WarBoardPainter extends CustomPainter {
         }
       }
     }
-    // and the guards PACE — a base that breathes
-    if (ownBase) _patrolPass(canvas);
+    // and the guards PACE — a base that breathes (hi-detail only)
+    if (ownBase && _hiDetail) _patrolPass(canvas);
   }
 
   /// A little farm plot: tilled soil rows with green sprouts — the base FEEDS
@@ -2611,7 +2695,7 @@ class WarBoardPainter extends CustomPainter {
       for (var k = 0; k < 4; k++) {
         if (_hash(r, c, 76 + i * 4 + k) < 0.35) continue;
         final x = soil.left + soil.width * (0.15 + k * 0.24);
-        final sway = math.sin(t * 2 + x * 0.2) * w * 0.01;
+        final sway = math.sin(_at * 2 + x * 0.2) * w * 0.01;
         canvas.drawCircle(Offset(x + sway, y - w * 0.045), w * 0.032,
             Paint()..color = const Color(0xFF5FA054));
       }
@@ -2683,7 +2767,7 @@ class WarBoardPainter extends CustomPainter {
         Paint()
           ..color = const Color(0xFF6B4E2E)
           ..strokeWidth = 2);
-    final flap = math.sin(t * 5 + x * 0.03) * w * 0.04;
+    final flap = math.sin(_at * 5 + x * 0.03) * w * 0.04;
     canvas.drawPath(
         Path()
           ..moveTo(x, y0)
@@ -2746,7 +2830,7 @@ class WarBoardPainter extends CustomPainter {
         if (s == null || !s.alive || s.type != DefType.guardPost) continue;
         final rect = _rect(r, c);
         final phase = _hash(r, c, 75) * math.pi * 2;
-        final a = t * 0.9 + phase;
+        final a = _at * 0.9 + phase;
         final rad = rect.width * (s.level >= 2 ? 0.85 : 0.7);
         final px = rect.center.dx + math.cos(a) * rad;
         final py = rect.center.dy +
@@ -2768,12 +2852,20 @@ class WarBoardPainter extends CustomPainter {
 
   // ── fire & smoke on wounded buildings, embers on rubble ─────────────────────
   void _burnFx(Canvas canvas, Rect rect, int r, int c, double hpFrac) {
+    if (!_hiDetail) {
+      // zoomed out: a single static ember, no smoke particles
+      canvas.drawCircle(
+          rect.center,
+          rect.width * 0.12,
+          Paint()..color = const Color(0xFFFF8A3D).withValues(alpha: 0.35));
+      return;
+    }
     final w = rect.width;
     final n = hpFrac < 0.18 ? 3 : 2;
     for (var i = 0; i < n; i++) {
       final fx = rect.left + w * (0.3 + _hash(r, c, 80 + i) * 0.4);
       final fy = rect.top + rect.height * (0.35 + _hash(r, c, 90 + i) * 0.3);
-      final flick = 0.5 + 0.5 * math.sin(t * (7 + i * 2.3) + i * 2 + r + c);
+      final flick = 0.5 + 0.5 * math.sin(_at * (7 + i * 2.3) + i * 2 + r + c);
       canvas.drawCircle(
           Offset(fx, fy),
           w * (0.05 + 0.03 * flick),
@@ -2783,9 +2875,9 @@ class WarBoardPainter extends CustomPainter {
       canvas.drawCircle(Offset(fx, fy - w * 0.03), w * 0.03 * flick,
           Paint()..color = const Color(0xFFFFD34D).withValues(alpha: 0.7));
       // smoke drifting up
-      final drift = (t * 0.25 + _hash(r, c, 100 + i)) % 1.0;
+      final drift = (_at * 0.25 + _hash(r, c, 100 + i)) % 1.0;
       canvas.drawCircle(
-          Offset(fx + math.sin(t * 2 + i) * w * 0.04,
+          Offset(fx + math.sin(_at * 2 + i) * w * 0.04,
               fy - drift * rect.height * 0.7),
           w * (0.05 + drift * 0.06),
           Paint()

@@ -673,13 +673,19 @@ class WarGame extends ChangeNotifier {
       enemyDifficulty = tier;
       final perFoeFloor = crewTotal / foes.length;
       // A bigger board needs a bigger war chest or the fortress spreads thin
-      // and every promotion feels like a WEAKER enemy.
+      // and every promotion feels like a WEAKER enemy. Radiant-band boards
+      // get an extra forge budget so L4/L5 steel actually gets paid for.
       final areaMul = (mapSize * mapSize) /
           (Base.defaultSize * Base.defaultSize).toDouble();
+      final forgeMul = mapSize >= 60
+          ? areaMul * 2.6
+          : mapSize >= 52
+              ? areaMul * 1.7
+              : areaMul;
       for (final p in foes) {
         p.ai = tier;
         p.skillMul = effSkill / AiData.skill(tier);
-        p.resources = perFoeFloor + WarCosts.prepBudgetFor(p.skill) * areaMul;
+        p.resources = perFoeFloor + WarCosts.prepBudgetFor(p.skill) * forgeMul;
       }
       // Wards raise the FLOOR under the citadel plan — they never cap it, or
       // climbing the ladder would shrink the enemy's city.

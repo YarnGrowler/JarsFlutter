@@ -188,7 +188,7 @@ const Map<DefType, DefSpec> kDefSpecs = {
       hp: 110,
       blocks: true,
       upgradeCost: 50,
-      maxLevel: 3,
+      maxLevel: 5,
       range: 6,
       minRange: 2,
       damage: 24, // center hit; splash deals half to everything adjacent
@@ -213,7 +213,7 @@ const Map<DefType, DefSpec> kDefSpecs = {
       hp: 95,
       blocks: true,
       upgradeCost: 25,
-      maxLevel: 3,
+      maxLevel: 5,
       range: 3,
       damage: 12,
       fireEveryTicks: 1,
@@ -226,6 +226,7 @@ const Map<DefType, DefSpec> kDefSpecs = {
       hp: 150,
       blocks: true,
       upgradeCost: 40,
+      maxLevel: 5,
       range: 4,
       damage: 30,
       fireEveryTicks: 2,
@@ -239,6 +240,7 @@ const Map<DefType, DefSpec> kDefSpecs = {
       blocks: true,
       hidden: true,
       upgradeCost: 45,
+      maxLevel: 5,
       range: 2,
       damage: 22,
       fireEveryTicks: 1,
@@ -252,7 +254,7 @@ const Map<DefType, DefSpec> kDefSpecs = {
       cost: 35,
       hp: 60,
       upgradeCost: 30,
-      maxLevel: 4,
+      maxLevel: 5,
       blurb:
           'Stations a live defender at the start of every raid — upgrades '
           'widen the patrol leash across big boards.'),
@@ -265,6 +267,7 @@ const Map<DefType, DefSpec> kDefSpecs = {
       blocks: true,
       defBuffAdj: 0.1,
       upgradeCost: 15,
+      maxLevel: 4,
       blurb:
           'The fort\'s doorway: YOUR defenders march through it, attackers cannot. '
           'Weaker than a wall — guard it well.'),
@@ -275,6 +278,8 @@ const Map<DefType, DefSpec> kDefSpecs = {
       cost: 45,
       hp: 90,
       blocks: true,
+      upgradeCost: 35,
+      maxLevel: 3,
       blurb:
           'Barracks quarters: every Guard Post within 2 tiles fields a SECOND '
           'defender each raid.'),
@@ -285,6 +290,8 @@ const Map<DefType, DefSpec> kDefSpecs = {
       cost: 55,
       hp: 100,
       blocks: true,
+      upgradeCost: 35,
+      maxLevel: 4,
       range: 1,
       damage: 9,
       fireEveryTicks: 1,
@@ -298,6 +305,8 @@ const Map<DefType, DefSpec> kDefSpecs = {
       cost: 40,
       hp: 70,
       blocks: true,
+      upgradeCost: 30,
+      maxLevel: 3,
       blurb:
           'The colors fly and the guns work FASTER: defenses within 2 tiles '
           'reload quicker while it stands.'),
@@ -308,6 +317,8 @@ const Map<DefType, DefSpec> kDefSpecs = {
       cost: 95,
       hp: 85,
       blocks: true,
+      upgradeCost: 55,
+      maxLevel: 4,
       range: 7,
       minRange: 2,
       damage: 55,
@@ -322,6 +333,8 @@ const Map<DefType, DefSpec> kDefSpecs = {
       cost: 50,
       hp: 80,
       blocks: true,
+      upgradeCost: 40,
+      maxLevel: 3,
       blurb:
           'No gun — EYES. Within 3 tiles: forests hide nothing from your '
           'towers, and guards patrol 2 tiles farther.'),
@@ -332,6 +345,8 @@ const Map<DefType, DefSpec> kDefSpecs = {
       cost: 60,
       hp: 110,
       blocks: true,
+      upgradeCost: 40,
+      maxLevel: 3,
       blurb:
           'War provisions: guard posts within 3 tiles field VETERAN '
           'defenders — a level stronger, full of stew. Raiders LOVE burning '
@@ -387,11 +402,11 @@ const Map<DefType, DefSpec> kDefSpecs = {
       hp: 90,
       blocks: true,
       upgradeCost: 30,
-      maxLevel: 2,
+      maxLevel: 3,
       blurb:
-          'War-day elixir pump. L1 drips 6⚡/hr; L2 pumps 15⚡/hr. Accrues '
-          'whenever anyone in the room opens the war — until the day ends '
-          'or the pump is smashed.'),
+          'War-day elixir pump. L1 drips 6⚡/hr; L2 pumps 15⚡/hr; L3 floods '
+          '28⚡/hr. Accrues whenever anyone in the room opens the war — until '
+          'the day ends or the pump is smashed.'),
 };
 
 /// The palette a player can place (castle is placed separately, one per player).
@@ -426,9 +441,12 @@ const Set<DefType> kLeagueGatedDefs = {
   DefType.citadelCore,
 };
 
-/// War-day ⚡/hour by generator level (L1 = 6, L2 = 15).
-double warGeneratorRatePerHour(int level) =>
-    level >= 2 ? 15.0 : 6.0;
+/// War-day ⚡/hour by generator level (L1 = 6, L2 = 15, L3 = 28).
+double warGeneratorRatePerHour(int level) {
+  if (level >= 3) return 28.0;
+  if (level >= 2) return 15.0;
+  return 6.0;
+}
 
 String defUnlockKey(DefType t) {
   switch (t) {

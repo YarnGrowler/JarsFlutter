@@ -127,7 +127,12 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
     // preview is honest about how full a big board actually gets.
     final areaMul = (_mapSize * _mapSize) /
         (Base.defaultSize * Base.defaultSize).toDouble();
-    final budget = WarCosts.prepBudgetFor(s) * areaMul;
+    final forgeMul = _mapSize >= 60
+        ? areaMul * 2.6
+        : _mapSize >= 52
+            ? areaMul * 1.7
+            : areaMul;
+    final budget = WarCosts.prepBudgetFor(s) * forgeMul;
     final castleN = _castles.round().clamp(1, 6);
     final crew = [
       for (var i = 0; i < castleN; i++)

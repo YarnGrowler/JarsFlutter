@@ -1091,7 +1091,8 @@ class WarAi {
     if (citadel) {
       final lvlCap = _towerLevelCap(skill, base.rows);
       final wallCap = _wallLevelCap(skill, base.rows);
-      const reserve = 400.0; // the leftovers loop still gets its minefields
+      // Big boards spend MORE of the chest on steel — leave a thinner reserve.
+      final reserve = base.rows >= 60 ? 120.0 : (base.rows >= 52 ? 220.0 : 400.0);
       bool forge(Structure st, int cap) {
         if (st.spec.upgradeCost <= 0) return false;
         final hardCap = math.min(cap, st.spec.maxLevel);
@@ -1116,20 +1117,35 @@ class WarAi {
         return did;
       }
 
-      for (final pass in const [0, 1, 2]) {
+      // Phase the forge so guns aren't starved by a 700-wall curtain:
+      // 1) raise the WHOLE curtain to a sturdy mid tier
+      // 2) gild every battery to the tower cap
+      // 3) push the curtain the rest of the way
+      // 4) doors + support buildings
+      final wallMid = math.min(3, wallCap);
+      for (final pass in const [0, 1, 2, 3, 4]) {
         for (var r = 0; r < base.rows; r++) {
           for (var c = 0; c < base.cols; c++) {
             final st = base.structAt(r, c);
             if (st == null || st.isCastle) continue;
             final wants = switch (pass) {
-              0 => st.spec.isShooter || st.type == DefType.guardPost,
-              1 => st.type == DefType.gate,
-              _ => st.type == DefType.wall,
+              0 => st.type == DefType.wall,
+              1 => st.spec.isShooter || st.type == DefType.guardPost,
+              2 => st.type == DefType.wall,
+              3 => st.type == DefType.gate,
+              _ => st.type == DefType.banner ||
+                  st.type == DefType.storehouse ||
+                  st.type == DefType.watchtower ||
+                  st.type == DefType.housing,
             };
             if (!wants) continue;
-            // walls climb as a UNIFORM curtain — spiked crest, rampart,
-            // obsidian bastion — never a top-down gradient
-            forge(st, pass == 2 ? wallCap : lvlCap);
+            final cap = switch (pass) {
+              0 => wallMid,
+              1 => lvlCap,
+              2 => wallCap,
+              _ => lvlCap,
+            };
+            forge(st, cap);
           }
         }
       }
@@ -1252,16 +1268,24 @@ class WarAi {
 
   /// How far a clan gilds its guns. Climbs with the dial AND the rung, so a
   /// higher league is visibly meaner even at the same difficulty.
-  static int _towerLevelCap(double skill, int rows) =>
-      (2 + (skill >= 1.2 ? 1 : 0) + (_sizeBand(rows) >= 2 ? 1 : 0)).clamp(2, 4);
+  static int _towerLevelCap(double skill, int rows) {
+    var cap = 2;
+    if (skill >= 0.9) cap++;
+    if (skill >= 1.15) cap++;
+    if (skill >= 1.35 || _sizeBand(rows) >= 2) cap++;
+    if (rows >= 60 && skill >= 1.2) cap++; // Radiant-band batteries
+    return cap.clamp(2, 5);
+  }
 
   /// Curtain walls climb further — spiked crests, ramparts, and at the very
   /// top an obsidian bastion no L1 sapper charge can crack open.
-  static int _wallLevelCap(double skill, int rows) => (2 +
-          _sizeBand(rows) +
-          (skill >= 1.2 ? 1 : 0) +
-          (skill >= 1.35 ? 1 : 0))
-      .clamp(2, 5);
+  static int _wallLevelCap(double skill, int rows) {
+    var cap = 2 + _sizeBand(rows);
+    if (skill >= 1.1) cap++;
+    if (skill >= 1.3) cap++;
+    if (rows >= 60) cap++; // Radiant curtain is fully forged
+    return cap.clamp(2, 5);
+  }
 
   // ── WAR: fog-honest objectives + CoC targeting discipline ───────────────────
   /// Revealed structures beat garrison beat fog — DISTANCE discounts all, and
