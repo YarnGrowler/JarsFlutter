@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
 import '../../providers/war_providers.dart';
+import '../../war/free_move_battle.dart';
 import '../../war/live_battle.dart';
 import '../../war/war_engine.dart';
 import '../../war/war_game.dart';
@@ -60,6 +63,9 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
 
   // clash state
   LiveBattle? _battle;
+  /// Drill only: the continuous (Clash-style) simulator. When this is running
+  /// [_battle] is null — the two engines never share a board.
+  FreeMoveBattle? _free;
   int _drillDiff = 50; // difficulty of SUMMONED sandbox waves
   bool _freeFlowDrill = false;
   bool _clashBanked = false;
@@ -67,6 +73,22 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
 
   // smooth troop glide: animated display positions in cell-space (x=col, y=row)
   final Map<String, Offset> _animPos = {};
+
+  bool get _freeMode => _mode == 'practice' && _freeFlowDrill;
+
+  // ── engine facade: the drill can be running either simulator ────────────────
+  bool get _battleOver => _free?.over ?? _battle?.over ?? false;
+  double get _battleElapsed => _free?.elapsed ?? _battle?.elapsed ?? 0;
+  int get _battleTroopsAlive => _free?.troopsAlive ?? _battle?.troopsAlive ?? 0;
+  void _battleExtend() {
+    _free?.extend();
+    _battle?.extend();
+  }
+
+  void _battleNotifyDeploy() {
+    _free?.notifyDeploy();
+    _battle?.notifyDeploy();
+  }
 
   /// Open a full-screen replay list for [side]'s raids.
   void _openRaidList(WarSide side) {
@@ -156,7 +178,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
       // a DRILL on a clone of your own base — unlimited troops, zero stakes
       final st = WarGame.instance.startPracticeBattle();
       _mode = 'practice';
-      _battle = _newDrillBattle(st);
+      _armDrill(st);
       _clashBanked = false;
       _deploy = TroopType.soldier;
     } else {
@@ -202,32 +224,26 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   Map<String, String> get _badges =>
       {for (final p in WarGame.instance.players) p.id: p.emoji};
 
-  LiveBattle _newDrillBattle(AttackState st) => LiveBattle(st,
-      canDeploy: () => true,
-      // Preserve the proven combat cadence. Free Flow changes presentation,
-      // formation spacing, and interpolation without multiplying expensive
-      // 64² objective scans.
-      roundPeriod: LiveBattle.stepPeriod,
-      defenseEveryRounds: 1);
+  /// Point the drill at whichever engine the switch is on.
+  void _armDrill(AttackState st) {
+    if (_freeFlowDrill) {
+      _battle = null;
+      _free = FreeMoveBattle(st, canDeploy: () => true);
+    } else {
+      _free = null;
+      _battle = LiveBattle(st, canDeploy: () => true);
+    }
+  }
 
   void _resetDrill(WarGame g, {bool clean = true}) {
     final st = g.startPracticeBattle(clean: clean);
-    _battle = _newDrillBattle(st);
+    _armDrill(st);
     _animPos.clear();
     _fx.clear();
     _drillOverShown = false;
     _selected = null;
     _reachInfo = {};
     _targets = [];
-  }
-
-  Offset _freeFlowOffset(String id) {
-    // Deterministic sub-cell formation: quarter-size units spread instead of
-    // stacking visually at cell centers. No per-frame allocation/cache.
-    final h = id.hashCode & 0x7fffffff;
-    final x = (((h & 0xff) / 255.0) - 0.5) * 0.58;
-    final y = ((((h >> 8) & 0xff) / 255.0) - 0.5) * 0.58;
-    return Offset(x, y);
   }
 
   void _refreshSel() {
@@ -244,20 +260,27 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   }
 
   /// Glide each troop's display position toward its true tile (~5.5 cells/s).
+  /// In Free Move there is nothing to interpolate — the simulator already owns
+  /// every unit's exact sub-tile position, so we copy it straight across.
   void _tickGlide(double dt) {
     final atk = _atk;
     if (atk == null) {
       _animPos.clear();
       return;
     }
+    final free = _free;
+    if (free != null) {
+      _animPos.clear();
+      free.positions.forEach((id, p) {
+        _animPos[id] = Offset(p.col, p.row);
+      });
+      return;
+    }
     final liveIds = <String>{};
     for (final tr in [...atk.troops, ...atk.garrison]) {
       if (!tr.alive) continue;
       liveIds.add(tr.id);
-      final target = Offset(tr.c.toDouble(), tr.r.toDouble()) +
-          (_mode == 'practice' && _freeFlowDrill
-              ? _freeFlowOffset(tr.id)
-              : Offset.zero);
+      final target = Offset(tr.c.toDouble(), tr.r.toDouble());
       final cur = _animPos[tr.id];
       if (cur == null) {
         _animPos[tr.id] = target;
@@ -270,8 +293,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
       } else {
         // Deliberately slower than the classic snap-glide, so each route reads
         // as continuous travel between combat decisions.
-        final speed = _mode == 'practice' && _freeFlowDrill ? 2.4 : 5.5;
-        final step = (speed * dt).clamp(0.0, dist);
+        final step = (5.5 * dt).clamp(0.0, dist);
         _animPos[tr.id] = cur + delta / dist * step;
       }
     }
@@ -280,13 +302,16 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
 
   void _onTick(double dt) {
     _fx.tick(dt);
-    _tickGlide(dt);
     _sinceKick += dt;
+    final free = _free;
     final battle = _battle;
     if ((_mode == 'clash' || _mode == 'practice') &&
-        battle != null &&
+        (battle != null || free != null) &&
         !_clashBanked) {
-      battle.tick(dt);
+      // step the sim BEFORE reading positions, so the board never paints a
+      // frame of stale sub-tile coordinates
+      free?.tick(dt);
+      battle?.tick(dt);
       final st = _atk;
       if (st != null) _ingest(st.takeFx());
       _uiThrottle += dt;
@@ -294,7 +319,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
         _uiThrottle = 0;
         if (mounted) setState(() {});
       }
-      if (battle.over) {
+      if (_battleOver) {
         if (_mode == 'clash') {
           _onClashOver();
         } else if (_mode == 'practice') {
@@ -302,6 +327,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
         }
       }
     }
+    _tickGlide(dt);
   }
 
   // ── clash flow ──────────────────────────────────────────────────────────────
@@ -386,9 +412,11 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   }
 
   String _clockSuffix() {
+    final free = _free;
     final b = _battle;
-    if (b == null || !b.clockRunning) return '';
-    final s = b.timeLeft.ceil();
+    final running = free?.clockRunning ?? b?.clockRunning ?? false;
+    if (!running) return '';
+    final s = (free?.timeLeft ?? b!.timeLeft).ceil();
     return ' · ⏱ ${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
   }
 
@@ -417,7 +445,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
             Text(
               '${(st?.base.destructionPercent ?? 0).round()}% razed'
               ' · ⚔ ${st?.troopsSent ?? 0} sent · 💀 ${st?.troopsLost ?? 0} lost'
-              ' · ⏱ ${_fmtDur(_battle?.elapsed ?? 0)}',
+              ' · ⏱ ${_fmtDur(_battleElapsed)}',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                   fontSize: 12.5, color: JarsColors.textSecondary),
@@ -439,7 +467,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
               onPressed: () {
                 Navigator.pop(dCtx);
                 setState(() {
-                  _battle?.extend();
+                  _battleExtend();
                   _drillOverShown = false;
                 });
               },
@@ -454,8 +482,9 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   void _onPracticeTap(Cell cell) {
     final g = WarGame.instance;
     final st = g.practiceState;
+    final free = _free;
     final battle = _battle;
-    if (st == null || battle == null) return;
+    if (st == null || (free == null && battle == null)) return;
     final type = _deploy;
     if (type == null) return;
     if (!st.base.isRing(cell.r, cell.c)) {
@@ -465,31 +494,24 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
           duration: Duration(milliseconds: 1100)));
       return;
     }
-    Troop? t = st.spawn(type, 'drill', cell.r, cell.c);
-    // Free-flow units are tiny, so make rapid formation deployment forgiving:
-    // if the tapped ring cell is occupied, use the nearest open ring slot.
-    if (t == null && _freeFlowDrill) {
-      for (var radius = 1; radius <= 4 && t == null; radius++) {
-        for (var dr = -radius; dr <= radius && t == null; dr++) {
-          for (var dc = -radius; dc <= radius && t == null; dc++) {
-            if (dr.abs() != radius && dc.abs() != radius) continue;
-            final rr = cell.r + dr, cc = cell.c + dc;
-            if (!st.base.inBounds(rr, cc) || !st.base.isRing(rr, cc)) {
-              continue;
-            }
-            t = st.spawn(type, 'drill', rr, cc);
-          }
-        }
-      }
-    }
+    // Free Move has no tile slots: tap-and-hold pours a whole squad onto the
+    // same spot and the crowd sorts itself out.
+    final t = st.spawn(type, 'drill', cell.r, cell.c, allowStack: free != null);
     if (t == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('That landing spot is blocked.')));
     } else {
+      if (free != null) {
+        // land them fanned around the tap instead of dead-centre
+        final n = st.troopsSent;
+        final a = n * 2.399963;
+        final rad = 0.16 * math.sqrt(n % 9);
+        free.placeAt(t, cell.c + math.cos(a) * rad, cell.r + math.sin(a) * rad);
+      }
       HapticFeedback.selectionClick();
-      if (battle.over) battle.extend(); // the sandbox never says no
+      if (_battleOver) _battleExtend(); // the sandbox never says no
       _drillOverShown = false;
-      battle.notifyDeploy();
+      _battleNotifyDeploy();
       _ingest(st.takeFx());
       setState(() {});
     }
@@ -627,11 +649,10 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                 startFocus: _mode == 'attack'
                     ? Cell(base.rows - 1, base.cols ~/ 2)
                     : null,
-                // Smooth enough to read movement, capped hard so 64² drills
-                // never repaint at an unnecessary 60 fps.
-                animationFps: _mode == 'practice' && _freeFlowDrill
-                    ? (base.rows >= 52 ? 16 : 24)
-                    : null,
+                // Free Move integrates at a fixed 30 Hz, so painting faster
+                // than that buys nothing — and big yards drop to 24.
+                animationFps:
+                    _freeMode ? (base.rows >= 52 ? 24 : 30) : null,
                 onTick: _onTick,
                 onCellTap: switch (_mode) {
                   'attack' => (cell) => _onCommanderTap(cell, g),
@@ -666,8 +687,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                       _selected == null ? null : Cell(_selected!.r, _selected!.c),
                   ownerBadges: _mode == 'defense' ? const {} : _badges,
                   troopPositions: _mode == 'defense' ? const {} : _animPos,
-                  troopScale:
-                      _mode == 'practice' && _freeFlowDrill ? 0.45 : 1,
+                  troopScale: _freeMode ? 0.45 : 1,
                   // on defense, show where the ENEMY has eyes (their scouting),
                   // not the marched trail; on attack the fog is the signal
                   showTerritory: _mode == 'defense',
@@ -701,11 +721,11 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
     switch (_mode) {
       case 'clash':
         status =
-            '💥 ${g.youDestruction.round()}% razed · ${_battle?.troopsAlive ?? 0} troops fighting${_clockSuffix()}';
+            '💥 ${g.youDestruction.round()}% razed · $_battleTroopsAlive troops fighting${_clockSuffix()}';
         break;
       case 'practice':
         status =
-            '🎯 ${_freeFlowDrill ? 'FREE FLOW' : 'CLASSIC'} — '
+            '🎯 ${_freeFlowDrill ? 'FREE MOVE' : 'CLASSIC'} — '
             '${(_atk?.base.destructionPercent ?? 0).round()}% razed${_clockSuffix()}';
         break;
       case 'attack':
@@ -783,6 +803,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
             setState(() {
               _mode = 'defense';
               _battle = null;
+              _free = null;
               _selected = null;
               _reachInfo = {};
               _targets = [];
@@ -987,7 +1008,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
             Expanded(
               child: Text(
                   _freeFlowDrill
-                      ? 'FREE FLOW PREVIEW — quarter-size troops, smooth formations.'
+                      ? 'FREE MOVE — no tiles: troops flow and stack like CoC.'
                       : 'CLASSIC DRILL — original tile combat.',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -995,7 +1016,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                       fontSize: 11, color: JarsColors.textSecondary)),
             ),
             _sandChip(
-                _freeFlowDrill ? '◉ FREE FLOW' : '▦ CLASSIC',
+                _freeFlowDrill ? '◉ FREE MOVE' : '▦ CLASSIC',
                 _freeFlowDrill ? JarsColors.green : JarsColors.textSecondary,
                 () {
               setState(() {
@@ -1013,9 +1034,9 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
             const SizedBox(width: 6),
             _sandChip('⚔ AI WAVE', JarsColors.gold, () {
               g.summonDrillWave(_drillDiff);
-              if (_battle?.over ?? false) _battle?.extend();
+              if (_battleOver) _battleExtend();
               _drillOverShown = false;
-              _battle?.notifyDeploy();
+              _battleNotifyDeploy();
               final st = g.practiceState;
               if (st != null) _ingest(st.takeFx());
               setState(() {});

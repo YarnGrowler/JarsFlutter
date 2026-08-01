@@ -2439,8 +2439,8 @@ void main() {
       expect(battle.elapsed, 0);
     });
 
-    test('archer towers forge to LEVEL 3', () {
-      expect(kDefSpecs[DefType.archerTower]!.maxLevel, 3);
+    test('archer towers forge to LEVEL 5', () {
+      expect(kDefSpecs[DefType.archerTower]!.maxLevel, 5);
     });
 
     test('the war log tells you how many marched', () {

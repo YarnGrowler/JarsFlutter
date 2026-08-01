@@ -385,7 +385,7 @@ const Map<DefType, DefSpec> kDefSpecs = {
           'across a small radius. Elephant-proofing.'),
   DefType.citadelCore: DefSpec(DefType.citadelCore,
       name: 'Citadel Core',
-      emoji: '🧿',
+      emoji: '💠',
       category: DefCategory.hq,
       cost: 200,
       hp: 480,

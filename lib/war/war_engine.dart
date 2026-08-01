@@ -360,9 +360,13 @@ class AttackState {
   // ── spawning ────────────────────────────────────────────────────────────────
   /// Deploy on the landing ring. [prepaid] troops come from a trained army —
   /// their ⚡ was spent at the Training Grounds.
+  /// [allowStack] lets several units share a tile — only the continuous
+  /// free-move simulator, which owns sub-tile positions, may ask for this.
   Troop? spawn(TroopType type, String ownerId, int r, int c,
-      {bool prepaid = false}) {
-    if (troopAt(r, c) != null || !base.passable(r, c)) return null;
+      {bool prepaid = false, bool allowStack = false}) {
+    if ((!allowStack && troopAt(r, c) != null) || !base.passable(r, c)) {
+      return null;
+    }
     if (!base.isRing(r, c)) return null;
     if (!prepaid) {
       final cost = kTroopSpecs[type]!.cost.toDouble();
@@ -651,6 +655,41 @@ class AttackState {
     }
     troops.removeWhere((x) => !x.alive);
     t.hasMoved = true;
+    return true;
+  }
+
+  /// Cross [t] into (r,c) — capture, reveal, traps and teslas fire exactly
+  /// once, as they do for a normal step. Returns false if the crossing killed
+  /// it. Used by the continuous free-move simulator, which owns its own
+  /// pathing but still needs every discrete tile effect to land.
+  bool stepInto(Troop t, int r, int c) {
+    if (!base.inBounds(r, c)) return false;
+    final prevR = t.r, prevC = t.c;
+    t.r = r;
+    t.c = c;
+    if (base.at(r, c)!.owner != attacker &&
+        _payAction(t.ownerId, WarCosts.capture)) {
+      base.at(r, c)!.owner = attacker;
+    }
+    _reveal(r, c, radius: t.spec.revealRadius);
+    if (t.type == TroopType.runner) {
+      final dr = (r - prevR).sign, dc = (c - prevC).sign;
+      final ar = r + dr * (t.spec.revealRadius + 1);
+      final ac = c + dc * (t.spec.revealRadius + 1);
+      for (var k = -1; k <= 1; k++) {
+        final rr = ar + (dr == 0 ? k : 0), cc = ac + (dc == 0 ? k : 0);
+        if (base.inBounds(rr, cc)) revealed.add(_key(rr, cc));
+      }
+    }
+    _stepEffects(t);
+    if (t.alive) _teslaZap(t);
+    if (!t.alive) {
+      troopsLost++;
+      _fx(FxEvent(FxKind.death, Cell(t.r, t.c),
+          bySide: defender, emoji: t.spec.emoji));
+      _cull();
+      return false;
+    }
     return true;
   }
 
