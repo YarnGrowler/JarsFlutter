@@ -1227,12 +1227,13 @@ class WarGame extends ChangeNotifier {
 
   /// Sandbox: hurl an AI wave at the drill base at the chosen difficulty —
   /// same doctrine the real enemy uses (comp, veterans, one anchor flank).
+  /// Returns the troops that actually landed (so Free Move can seat them).
   int _drillWaveSeq = 0;
-  void summonDrillWave(int difficulty) {
+  List<Troop> summonDrillWave(int difficulty) {
     final st = practiceState;
-    if (st == null) return;
+    if (st == null) return const [];
     final drops = st.base.dropCells.toList();
-    if (drops.isEmpty) return;
+    if (drops.isEmpty) return const [];
     final skill = skillFor(difficulty);
     final rng =
         SeededRng(seedFromParts([warSeed, 'drillwave', _drillWaveSeq++]));
@@ -1243,6 +1244,7 @@ class WarGame extends ChangeNotifier {
       return da.compareTo(db);
     });
     final cap = 3 + (skill * 7).round();
+    final spawned = <Troop>[];
     var i = 0;
     var dropIdx = 0;
     while (i < cap && dropIdx < drops.length) {
@@ -1251,18 +1253,22 @@ class WarGame extends ChangeNotifier {
           WarAi.waveTroop(i, skill, rng, unlockTroops: unlockedTroopsNow),
           'drill',
           drop.r,
-          drop.c);
+          drop.c,
+          allowStack: true);
       if (t == null) {
         dropIdx++;
         continue;
       }
       if (skill >= 0.9) {
         t.gainXp(Xp.perLevel * (skill >= 1.3 ? 2.0 : 1.0) + 1);
+        t.hp = t.maxHp;
       }
+      spawned.add(t);
       dropIdx++;
       i++;
     }
     notifyListeners();
+    return spawned;
   }
 
   void _absorbClash() {

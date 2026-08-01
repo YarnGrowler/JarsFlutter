@@ -386,6 +386,89 @@ void main() {
             'stood there instead of smashing through');
   });
 
+  test('stranded wave troops wander instead of idling on the drop ring', () {
+    // Wall-sealed yard with the ONLY gap far to the side: units that never
+    // get a full road must still leave the landing ring on their own.
+    final base = Base(WarSide.enemy, 11);
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        base.grid[r][c].terrain = Terrain.plains;
+      }
+    }
+    final wallRow = base.rows - 4;
+    for (var c = 1; c < base.cols - 1; c++) {
+      if (c == 2) continue; // one distant gate-gap
+      base.place(wallRow, c, DefType.wall, 'def');
+    }
+    base.placeCastle('def', wallRow - 3, base.cols ~/ 2);
+    final st = AttackState(
+      base: base,
+      attacker: WarSide.you,
+      attackerName: 'Drill',
+      pools: MapPools({'drill': 1e9}),
+      freeActions: true,
+      intel: {for (var k = 0; k < base.rows * base.cols; k++) k},
+    );
+    final b = armed(st);
+    final drop = base.rows - 1;
+    final mid = base.cols ~/ 2;
+    for (var i = 0; i < 12; i++) {
+      final t =
+          st.spawn(TroopType.soldier, 'drill', drop, mid, allowStack: true);
+      expect(t, isNotNull);
+      b.placeAt(t!, mid.toDouble(), drop.toDouble());
+    }
+    run(b, 4);
+    final stillOnDrop =
+        st.troops.where((t) => t.alive && t.r == drop).length;
+    expect(stillOnDrop, lessThan(4),
+        reason: 'most of the wave stayed planted on the landing tile');
+  });
+
+  test('free-move troops never step onto river tiles — they use bridges', () {
+    final base = Base(WarSide.enemy, 13);
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        base.grid[r][c].terrain = Terrain.plains;
+      }
+    }
+    // a river band across the approach with a single bridge in the middle
+    final riverRow = base.rows - 6;
+    for (var c = 0; c < base.cols; c++) {
+      base.grid[riverRow][c].terrain = Terrain.river;
+    }
+    final bridgeC = base.cols ~/ 2;
+    base.grid[riverRow][bridgeC].terrain = Terrain.bridge;
+    base.placeCastle('def', 8, bridgeC);
+    final st = AttackState(
+      base: base,
+      attacker: WarSide.you,
+      attackerName: 'Drill',
+      pools: MapPools({'drill': 1e9}),
+      freeActions: true,
+      intel: {for (var k = 0; k < base.rows * base.cols; k++) k},
+    );
+    final b = armed(st);
+    final drop = base.rows - 1;
+    for (var i = 0; i < 8; i++) {
+      final c = bridgeC - 2 + (i % 5);
+      final t = st.spawn(TroopType.soldier, 'drill', drop, c, allowStack: true);
+      if (t != null) b.placeAt(t, c.toDouble(), drop.toDouble());
+    }
+    for (var i = 0; i < 30 * 25; i++) {
+      b.tick(FreeMoveBattle.simStep);
+      for (final t in st.troops) {
+        if (!t.alive) continue;
+        expect(base.grid[t.r][t.c].terrain, isNot(Terrain.river),
+            reason: '${t.id} walked onto river at (${t.r},${t.c})');
+      }
+      if (b.over) break;
+    }
+    // at least someone should have used the bridge (stood on it or past it)
+    final crossed = st.troops.any((t) => t.alive && t.r < riverRow);
+    expect(crossed, isTrue, reason: 'nobody crossed via the bridge');
+  });
+
   test('classic drill still runs the tile engine untouched', () {
     final st = drill();
     final classic = LiveBattle(st, canDeploy: () => true);

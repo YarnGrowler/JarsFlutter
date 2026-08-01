@@ -1054,7 +1054,17 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
             }),
             const SizedBox(width: 6),
             _sandChip('⚔ AI WAVE', JarsColors.gold, () {
-              g.summonDrillWave(_drillDiff);
+              final wave = g.summonDrillWave(_drillDiff);
+              final free = _free;
+              if (free != null) {
+                for (var i = 0; i < wave.length; i++) {
+                  final t = wave[i];
+                  final a = i * 2.399963;
+                  final rad = 0.18 * math.sqrt((i % 9) + 1);
+                  free.placeAt(t, t.c + math.cos(a) * rad,
+                      t.r + math.sin(a) * rad);
+                }
+              }
               if (_battleOver) _battleExtend();
               _drillOverShown = false;
               _battleNotifyDeploy();

@@ -128,10 +128,18 @@ class FreeMoveBattle {
   // ── one simulation step ─────────────────────────────────────────────────────
   void _step(double h) {
     _sync();
-    _thinkBudget = 4; // cap the expensive route/objective scans per step
+    // Cap expensive route scans, but prefer units with nowhere to go so a
+    // big wave doesn't freeze on the drop ring while veterans keep re-planning.
+    _thinkBudget = 12;
     _bin();
-    for (final u in _units.values) {
-      if (!u.t.alive) continue;
+    final order = _units.values.where((u) => u.t.alive).toList()
+      ..sort((a, b) {
+        final ae = a.route.isEmpty ? 0 : 1;
+        final be = b.route.isEmpty ? 0 : 1;
+        if (ae != be) return ae - be;
+        return a.think.compareTo(b.think);
+      });
+    for (final u in order) {
       _advance(u, h);
     }
     _beat += h;
@@ -379,28 +387,78 @@ class FreeMoveBattle {
       _thinkBudget--;
       _replan(u);
     }
-    double tx, ty;
+    // Still nowhere to go after a plan attempt — scout locally instead of
+    // planting on the drop ring until someone else opens a road. Toward a
+    // breach mark we still only step on walkable tiles (bridges, not water).
     if (u.route.isEmpty || u.leg >= u.route.length) {
-      // No road left — but a wall marked for breaching IS a destination. A
-      // route that stops one step short of it leaves the unit adrift, so it
-      // walks itself onto the wall's face until the swing connects.
-      final bk = u.blockKey;
-      if (bk == null) return;
-      tx = (bk % st.base.cols).toDouble();
-      ty = (bk ~/ st.base.cols).toDouble();
-    } else {
-      var wp = u.route[u.leg];
-      if ((wp[1] - u.x).abs() < 0.2 && (wp[0] - u.y).abs() < 0.2) {
-        u.leg++;
-        if (u.leg >= u.route.length) {
-          u.think = 0;
-          return;
-        }
-        wp = u.route[u.leg];
+      Cell? toward;
+      if (u.blockKey != null) {
+        toward = Cell(
+            u.blockKey! ~/ st.base.cols, u.blockKey! % st.base.cols);
       }
-      tx = wp[1].toDouble();
-      ty = wp[0].toDouble();
+      _wander(u, h, toward: toward);
+      return;
     }
+    var wp = u.route[u.leg];
+    if ((wp[1] - u.x).abs() < 0.2 && (wp[0] - u.y).abs() < 0.2) {
+      u.leg++;
+      if (u.leg >= u.route.length) {
+        u.think = 0;
+        return;
+      }
+      wp = u.route[u.leg];
+    }
+    final tx = wp[1].toDouble();
+    final ty = wp[0].toDouble();
+    _steer(u, h, tx, ty);
+  }
+
+  /// Greedy step toward [toward] (or the current objective / map centre) on
+  /// walkable neighbours — keeps stranded units moving and probing for a road.
+  void _wander(_Unit u, double h, {Cell? toward}) {
+    final t = u.t;
+    final goal = toward ??
+        _pickObjective(u) ??
+        Cell(st.base.rows ~/ 2, st.base.cols ~/ 2);
+    var bestR = t.r, bestC = t.c;
+    var best = (t.r - goal.r).abs() + (t.c - goal.c).abs();
+    // slight personal bias so a stuck pack fans out instead of oscillating
+    final rot = t.id.hashCode & 3;
+    for (var di = 0; di < 4; di++) {
+      final d = _orth[(di + rot) & 3];
+      final nr = t.r + d[0], nc = t.c + d[1];
+      if (!_walkable(nr, nc, t)) continue;
+      final dist = (nr - goal.r).abs() + (nc - goal.c).abs();
+      if (dist < best) {
+        best = dist;
+        bestR = nr;
+        bestC = nc;
+      }
+    }
+    if (bestR == t.r && bestC == t.c) {
+      // every step closer is sealed — take ANY walkable neighbour to unstick
+      for (var di = 0; di < 4; di++) {
+        final d = _orth[(di + rot) & 3];
+        final nr = t.r + d[0], nc = t.c + d[1];
+        if (!_walkable(nr, nc, t)) continue;
+        bestR = nr;
+        bestC = nc;
+        break;
+      }
+    }
+    if (bestR == t.r && bestC == t.c) {
+      u.stuck += h;
+      if (u.stuck > 0.5) {
+        u.stuck = 0;
+        u.think = 0;
+      }
+      return;
+    }
+    _steer(u, h, bestC.toDouble(), bestR.toDouble());
+  }
+
+  void _steer(_Unit u, double h, double tx, double ty) {
+    final t = u.t;
     final dx = tx - u.x, dy = ty - u.y;
     final d = math.sqrt(dx * dx + dy * dy);
     if (d < 1e-4) return;
@@ -420,7 +478,7 @@ class FreeMoveBattle {
     if (terr == Terrain.forest || terr == Terrain.hill) spd *= 0.55;
     final dist = spd * h;
 
-    // one axis at a time: a unit can never clip a wall's corner
+    // one axis at a time: a unit can never clip a wall's (or river's) corner
     final movedX = _tryMove(u, u.x + ux * dist, u.y);
     if (!u.t.alive) return;
     final movedY = _tryMove(u, u.x, u.y + uy * dist);
@@ -503,18 +561,22 @@ class FreeMoveBattle {
     u.blockKey = null;
     u.leg = 0;
 
+    final yard = Cell(st.base.rows ~/ 2, st.base.cols ~/ 2);
     final obj = _pickObjective(u);
     u.route = obj == null ? const [] : _routeToward(u, obj);
     if (u.route.isEmpty) {
       // Nothing reachable from here — a raider still never just stands there.
       // March for the middle of the yard; a new objective almost always opens
       // up on the way in.
-      u.route = _routeToward(
-          u, Cell(st.base.rows ~/ 2, st.base.cols ~/ 2),
-          plain: true);
+      u.route = _routeToward(u, yard, plain: true);
+    }
+    if (u.route.isEmpty) {
+      // Fully sealed (or river-cut): smash toward the objective / yard so this
+      // unit opens its OWN road instead of waiting for someone else to.
+      u.route = _routeToward(u, obj ?? yard);
     }
     // A failed plan retries soon, but never every step — see _walk.
-    u.think = u.route.isEmpty ? 0.6 : 1.4 + (t.id.hashCode & 7) * 0.08;
+    u.think = u.route.isEmpty ? 0.35 : 1.4 + (t.id.hashCode & 7) * 0.08;
   }
 
   /// Best road to [obj]: around the walls if there is one, through them if the

@@ -2994,7 +2994,7 @@ class WarBoardPainter extends CustomPainter {
 
   /// War Generator: Clash-style elixir pump matching the ⚗️ menu chip —
   /// glass flask of pink elixir on a wooden/metal stand, with a spouted neck.
-  /// L2 grows a side tank; L3 becomes a tall twin-chamber gold-fitted pump.
+  /// L2 is a fatter banded flask; L3 becomes a tall twin-chamber gold pump.
   void _warGeneratorArt(Canvas canvas, Rect rect, [int level = 1]) {
     _shadow(canvas, rect, w: 0.7, y: 0.88);
     final w = rect.width, h = rect.height;
@@ -3173,28 +3173,6 @@ class WarBoardPainter extends CustomPainter {
         Offset(cx, neckBot),
         neckW * 0.85,
         Paint()..color = metalDark);
-
-    // L2: side catch-flask
-    if (l2) {
-      final side = Offset(cx - w * 0.34, rect.top + h * 0.58);
-      final sr = w * 0.1;
-      canvas.drawCircle(side, sr * 1.1, Paint()..color = const Color(0xFFD8E4F0));
-      canvas.drawCircle(
-          side,
-          sr,
-          Paint()
-            ..shader = RadialGradient(
-              colors: [Color.lerp(elixir, Colors.white, 0.25)!, elixirDeep],
-            ).createShader(Rect.fromCircle(center: side, radius: sr)));
-      // feed pipe from main bulb
-      canvas.drawLine(
-          Offset(bulbC.dx - bulbR * 0.7, bulbC.dy + bulbR * 0.1),
-          side.translate(sr * 0.6, -sr * 0.2),
-          Paint()
-            ..color = metal
-            ..strokeWidth = w * 0.035
-            ..strokeCap = StrokeCap.round);
-    }
 
     // L3: upper twin chamber + crank wheel
     if (l3) {
