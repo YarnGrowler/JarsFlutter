@@ -271,12 +271,14 @@ class _WarBoardViewState extends State<WarBoardView>
                         _tile,
                         -_offset.dx + _shakeAmp * math.sin(_t * 71),
                         -_offset.dy + _shakeAmp * math.cos(_t * 63),
-                        _t),
+                        // When ambient motion is frozen in the painter, keep
+                        // the clock stable so shouldRepaint can skip idle frames.
+                        (_tile < 22 && _shakeAmp <= 0) ? 0.0 : _t),
                     foregroundPainter: widget.overlayBuilder?.call(
                         _tile,
                         -_offset.dx + _shakeAmp * math.sin(_t * 71),
                         -_offset.dy + _shakeAmp * math.cos(_t * 63),
-                        _t),
+                        (_tile < 22 && _shakeAmp <= 0) ? 0.0 : _t),
                   ),
                 ),
                 // camera controls

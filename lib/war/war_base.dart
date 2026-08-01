@@ -118,6 +118,10 @@ class Base {
   final List<List<int>> graves = []; // [r, c, slot] — the war's fallen, forever
   final Map<int, int> scorch = {}; // cellKey → hit count (mortar-torn ground)
 
+  /// Bumped when terrain permanently changes (forest clear, etc.) so the
+  /// board painter can drop its cached ground/terrain picture.
+  int visualEpoch = 0;
+
   Base(
     this.side,
     this.seed, {
@@ -464,6 +468,7 @@ class Base {
     if (grid[r][c].terrain != Terrain.forest) return false;
     grid[r][c].terrain = Terrain.plains;
     cleared.add(r * cols + c);
+    visualEpoch++;
     return true;
   }
 

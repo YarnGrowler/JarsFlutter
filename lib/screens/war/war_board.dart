@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -93,9 +94,13 @@ class WarBoardPainter extends CustomPainter {
 
   int _key(int r, int c) => r * base.cols + c;
   bool _revealed(int r, int c) => fog == null || fog!.contains(_key(r, c));
-  Rect _rect(int r, int c) => Rect.fromLTWH(gx + c * tile, gy + r * tile, tile, tile);
+
+  // Draw-space (may differ from [tile]/[gx]/[gy] while baking the static cache)
+  double _dt = 1, _dx = 0, _dy = 0;
+  Rect _rect(int r, int c) =>
+      Rect.fromLTWH(_dx + c * _dt, _dy + r * _dt, _dt, _dt);
   Offset _center(num r, num c) =>
-      Offset(gx + (c + 0.5) * tile, gy + (r + 0.5) * tile);
+      Offset(_dx + (c + 0.5) * _dt, _dy + (r + 0.5) * _dt);
 
   // visible cell range (viewport culling for the scrolling camera)
   int _r0 = 0, _r1 = 0, _c0 = 0, _c1 = 0;
@@ -105,11 +110,58 @@ class WarBoardPainter extends CustomPainter {
   double _at = 0;
   bool _hiDetail = true;
 
+  // ── quality-preserving caches (shared across painter instances) ─────────────
+  static ui.Picture? _staticPic;
+  static int _staticKey = 0;
+  static const double _staticTile = 40;
+  static final Map<String, TextPainter> _glyphCache = {};
+  static final Paint _fill = Paint();
+  static final Paint _stroke = Paint()..style = PaintingStyle.stroke;
+
   void _cull(Size size) {
-    _r0 = math.max(0, ((-gy) / tile).floor() - 1);
-    _r1 = math.min(base.rows - 1, ((size.height - gy) / tile).ceil() + 1);
-    _c0 = math.max(0, ((-gx) / tile).floor() - 1);
-    _c1 = math.min(base.cols - 1, ((size.width - gx) / tile).ceil() + 1);
+    _r0 = math.max(0, ((-_dy) / _dt).floor() - 1);
+    _r1 = math.min(base.rows - 1, ((size.height - _dy) / _dt).ceil() + 1);
+    _c0 = math.max(0, ((-_dx) / _dt).floor() - 1);
+    _c1 = math.min(base.cols - 1, ((size.width - _dx) / _dt).ceil() + 1);
+  }
+
+  int _cacheKey() => Object.hash(
+        base.seed,
+        base.rows,
+        base.cols,
+        base.visualEpoch,
+        base.cleared.length,
+        biome.name,
+      );
+
+  void _bakeStaticLayer() {
+    final key = _cacheKey();
+    if (_staticPic != null && key == _staticKey) return;
+    _staticPic?.dispose();
+    final recorder = ui.PictureRecorder();
+    final c = Canvas(recorder);
+    final prevDt = _dt, prevDx = _dx, prevDy = _dy, prevAt = _at;
+    final prevR0 = _r0, prevR1 = _r1, prevC0 = _c0, prevC1 = _c1;
+    _dt = _staticTile;
+    _dx = 0;
+    _dy = 0;
+    _at = 0;
+    _r0 = 0;
+    _r1 = base.rows - 1;
+    _c0 = 0;
+    _c1 = base.cols - 1;
+    _groundPass(c);
+    _terrainPass(c);
+    _staticPic = recorder.endRecording();
+    _staticKey = key;
+    _dt = prevDt;
+    _dx = prevDx;
+    _dy = prevDy;
+    _at = prevAt;
+    _r0 = prevR0;
+    _r1 = prevR1;
+    _c0 = prevC0;
+    _c1 = prevC1;
   }
 
   /// Deterministic per-cell jitter (0..1) so grass/trees vary but never flicker.
@@ -121,6 +173,9 @@ class WarBoardPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    _dt = tile;
+    _dx = gx;
+    _dy = gy;
     final board = Rect.fromLTWH(
         gx - 8, gy - 8, tile * base.cols + 16, tile * base.rows + 16);
     _skirtPass(canvas, size, board);
@@ -144,9 +199,21 @@ class WarBoardPainter extends CustomPainter {
     _hiDetail = tile >= 22;
     _at = _hiDetail ? t : 0;
     _cull(size);
-    _groundPass(canvas);
+    _bakeStaticLayer();
+    // Replay the cached ground+terrain (full quality, recorded at 40px/tile)
+    // then only paint the live animated layers on top.
+    if (_staticPic != null) {
+      canvas.save();
+      canvas.translate(gx, gy);
+      canvas.scale(tile / _staticTile);
+      canvas.drawPicture(_staticPic!);
+      canvas.restore();
+    } else {
+      _groundPass(canvas);
+      _terrainPass(canvas);
+    }
+    if (_hiDetail) _riverSparklePass(canvas);
     if (showTerritory && _hiDetail) _territoryPass(canvas);
-    _terrainPass(canvas);
     if (_hiDetail) _smokePass(canvas);
     if (replayFrame == null) {
       if (_hiDetail || tile >= 14) {
@@ -298,41 +365,42 @@ class WarBoardPainter extends CustomPainter {
           col = Color.lerp(grassA, Color.lerp(grassA, Colors.black, 0.12)!,
               h * 0.5)!;
         }
-        canvas.drawRect(rect, Paint()..color = col);
+        _fill.color = col;
+        canvas.drawRect(rect, _fill);
         // sparse decoration: tufts, pebbles, the odd flower (zoomed in only)
-        if (!isLane && h > 0.55 && tile >= 18) {
-          final tx = rect.left + tile * (0.2 + _hash(r, c, 1) * 0.6);
-          final ty = rect.top + tile * (0.2 + _hash(r, c, 2) * 0.6);
+        if (!isLane && h > 0.55 && _dt >= 18) {
+          final tx = rect.left + _dt * (0.2 + _hash(r, c, 1) * 0.6);
+          final ty = rect.top + _dt * (0.2 + _hash(r, c, 2) * 0.6);
           final d = _hash(r, c, 5);
           if (d > 0.93) {
-            canvas.drawCircle(Offset(tx, ty), tile * 0.045,
-                Paint()..color = const Color(0xFFE8D06A).withValues(alpha: 0.75));
-            canvas.drawCircle(Offset(tx, ty), tile * 0.02,
-                Paint()..color = const Color(0xFFB4462F));
+            _fill.color = const Color(0xFFE8D06A).withValues(alpha: 0.75);
+            canvas.drawCircle(Offset(tx, ty), _dt * 0.045, _fill);
+            _fill.color = const Color(0xFFB4462F);
+            canvas.drawCircle(Offset(tx, ty), _dt * 0.02, _fill);
           } else {
-            canvas.drawCircle(Offset(tx, ty), tile * 0.035,
-                Paint()..color = Colors.white.withValues(alpha: 0.05));
+            _fill.color = Colors.white.withValues(alpha: 0.05);
+            canvas.drawCircle(Offset(tx, ty), _dt * 0.035, _fill);
           }
         }
         if (isLane && h > 0.5) {
-          final p = Paint()..color = Colors.black.withValues(alpha: 0.12);
-          final tx = rect.left + tile * (0.15 + _hash(r, c, 3) * 0.7);
-          final ty = rect.top + tile * (0.15 + _hash(r, c, 4) * 0.7);
-          canvas.drawCircle(Offset(tx, ty), tile * 0.05, p);
+          _fill.color = Colors.black.withValues(alpha: 0.12);
+          final tx = rect.left + _dt * (0.15 + _hash(r, c, 3) * 0.7);
+          final ty = rect.top + _dt * (0.15 + _hash(r, c, 4) * 0.7);
+          canvas.drawCircle(Offset(tx, ty), _dt * 0.05, _fill);
         }
       }
     }
     // whisper-subtle grid so placement still reads
-    final grid = Paint()
+    _stroke
       ..color = Colors.black.withValues(alpha: 0.06)
       ..strokeWidth = 1;
     for (var r = math.max(1, _r0); r <= _r1; r++) {
-      canvas.drawLine(Offset(gx + _c0 * tile, gy + r * tile),
-          Offset(gx + (_c1 + 1) * tile, gy + r * tile), grid);
+      canvas.drawLine(Offset(_dx + _c0 * _dt, _dy + r * _dt),
+          Offset(_dx + (_c1 + 1) * _dt, _dy + r * _dt), _stroke);
     }
     for (var c = math.max(1, _c0); c <= _c1; c++) {
-      canvas.drawLine(Offset(gx + c * tile, gy + _r0 * tile),
-          Offset(gx + c * tile, gy + (_r1 + 1) * tile), grid);
+      canvas.drawLine(Offset(_dx + c * _dt, _dy + _r0 * _dt),
+          Offset(_dx + c * _dt, _dy + (_r1 + 1) * _dt), _stroke);
     }
   }
 
@@ -426,7 +494,7 @@ class WarBoardPainter extends CustomPainter {
     if (!_terr(r, c + 1, Terrain.forest)) {
       canvas.drawLine(rect.topRight, rect.bottomRight, rim);
     }
-    if (tile < 18) return; // zoomed out: the mass alone reads as a grove
+    if (_dt < 18) return; // zoomed out: the mass alone reads as a grove
 
     void pine(double fx, double fy, double s) {
       final bx = rect.left + rect.width * fx;
@@ -450,7 +518,7 @@ class WarBoardPainter extends CustomPainter {
     final n = 1 + (_hash(r, c, 6) * 2.4).floor();
     for (var i = 0; i < n; i++) {
       pine(0.2 + _hash(r, c, 7 + i) * 0.6, 0.45 + _hash(r, c, 17 + i) * 0.4,
-          tile * (0.3 + _hash(r, c, 27 + i) * 0.22));
+          _dt * (0.3 + _hash(r, c, 27 + i) * 0.22));
     }
     if (_hash(r, c, 9) > 0.8) {
       // the odd broadleaf for texture
@@ -495,7 +563,7 @@ class WarBoardPainter extends CustomPainter {
     if (!_terr(r, c + 1, Terrain.mountain)) {
       canvas.drawLine(rect.topRight, rect.bottomRight, rim);
     }
-    if (tile < 18) return; // zoomed out: the mass IS the range
+    if (_dt < 18) return; // zoomed out: the mass IS the range
 
     // rocky texture streaks everywhere
     final streak = Paint()
@@ -559,18 +627,34 @@ class WarBoardPainter extends CustomPainter {
     if (!_water(r, c + 1)) {
       canvas.drawLine(rect.topRight, rect.bottomRight, bank);
     }
-    if (tile < 16) return;
-    // drifting sparkle instead of stripey waves
+    // Sparkles live in [_riverSparklePass] so the static terrain cache stays
+    // timeless without freezing the water.
+  }
+
+  /// Live water sparkles on top of the cached river tiles — same look as before,
+  /// just not baked into the static picture so the cache stays timeless.
+  void _riverSparklePass(Canvas canvas) {
+    if (_dt < 16) return;
     final glint = Paint()..color = biome.waterFoam.withValues(alpha: 0.55);
-    for (var i = 0; i < 2; i++) {
-      final phase = (_at * 0.6 + _hash(r, c, 40 + i)) % 1.0;
-      final gx0 = rect.left + rect.width * ((_hash(r, c, 42 + i) + phase) % 1.0);
-      final gy0 = rect.top + rect.height * (0.25 + 0.5 * _hash(r, c, 44 + i));
-      canvas.drawCircle(Offset(gx0, gy0), tile * 0.035, glint);
-      canvas.drawLine(Offset(gx0 - tile * 0.08, gy0), Offset(gx0 + tile * 0.08, gy0),
-          Paint()
-            ..color = biome.waterFoam.withValues(alpha: 0.25)
-            ..strokeWidth = 1.2);
+    final streak = Paint()
+      ..color = biome.waterFoam.withValues(alpha: 0.25)
+      ..strokeWidth = 1.2;
+    for (var r = _r0; r <= _r1; r++) {
+      for (var c = _c0; c <= _c1; c++) {
+        final terr = base.grid[r][c].terrain;
+        if (terr != Terrain.river && terr != Terrain.bridge) continue;
+        final rect = _rect(r, c);
+        for (var i = 0; i < 2; i++) {
+          final phase = (_at * 0.6 + _hash(r, c, 40 + i)) % 1.0;
+          final gx0 =
+              rect.left + rect.width * ((_hash(r, c, 42 + i) + phase) % 1.0);
+          final gy0 =
+              rect.top + rect.height * (0.25 + 0.5 * _hash(r, c, 44 + i));
+          canvas.drawCircle(Offset(gx0, gy0), _dt * 0.035, glint);
+          canvas.drawLine(Offset(gx0 - _dt * 0.08, gy0),
+              Offset(gx0 + _dt * 0.08, gy0), streak);
+        }
+      }
     }
   }
 
@@ -3441,30 +3525,88 @@ class WarBoardPainter extends CustomPainter {
   }
 
   void _emojiAt(Canvas canvas, Offset center, String e, double size, {double a = 1}) {
-    final tp = TextPainter(
-      text: TextSpan(
-          text: e, style: TextStyle(fontSize: size, color: Colors.white.withValues(alpha: a))),
-      textDirection: TextDirection.ltr,
-    )..layout();
+    final key = 'e|$e|${size.toStringAsFixed(1)}|${a.toStringAsFixed(2)}';
+    var tp = _glyphCache[key];
+    if (tp == null) {
+      tp = TextPainter(
+        text: TextSpan(
+            text: e,
+            style: TextStyle(
+                fontSize: size, color: Colors.white.withValues(alpha: a))),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      if (_glyphCache.length > 160) _glyphCache.clear();
+      _glyphCache[key] = tp;
+    }
     tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
   }
 
   void _textAt(Canvas canvas, Offset center, String s, double size, Color c) {
-    final tp = TextPainter(
-      text: TextSpan(
-          text: s,
-          style: GoogleFonts.spaceGrotesk(
-              fontSize: size,
-              fontWeight: FontWeight.w800,
-              color: c,
-              shadows: const [Shadow(color: Colors.black, blurRadius: 2)])),
-      textDirection: TextDirection.ltr,
-    )..layout();
+    final key = 't|$s|${size.toStringAsFixed(1)}|${c.toARGB32()}';
+    var tp = _glyphCache[key];
+    if (tp == null) {
+      tp = TextPainter(
+        text: TextSpan(
+            text: s,
+            style: GoogleFonts.spaceGrotesk(
+                fontSize: size,
+                fontWeight: FontWeight.w800,
+                color: c,
+                shadows: const [Shadow(color: Colors.black, blurRadius: 2)])),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      if (_glyphCache.length > 160) _glyphCache.clear();
+      _glyphCache[key] = tp;
+    }
     tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
   }
 
   @override
-  bool shouldRepaint(WarBoardPainter old) => true;
+  bool shouldRepaint(WarBoardPainter old) {
+    if (!identical(old.base, base) ||
+        old.base.visualEpoch != base.visualEpoch ||
+        old.biome.name != biome.name) {
+      return true;
+    }
+    if (old.tile != tile || old.gx != gx || old.gy != gy) return true;
+    if (old.ownBase != ownBase ||
+        old.showDropLane != showDropLane ||
+        old.showTerritory != showTerritory ||
+        old.troopScale != troopScale) {
+      return true;
+    }
+    if (old.fog != fog ||
+        old.enemyEyes != enemyEyes ||
+        old.smokeCells != smokeCells ||
+        old.reachable != reachable ||
+        old.reachCosts != reachCosts ||
+        old.targets != targets ||
+        old.selected != selected ||
+        old.buildable != buildable ||
+        old.rangeRings != rangeRings ||
+        old.graves != graves ||
+        old.ownerBadges != ownerBadges ||
+        old.replayFrame != replayFrame ||
+        old.replayPrev != replayPrev ||
+        old.replayBlend != replayBlend) {
+      return true;
+    }
+    if (old.troops != troops || old.troopPositions != troopPositions) {
+      return true;
+    }
+    // Shared maps (troopPositions, smoke) mutate in place across frames —
+    // when anything animated is on the board, trust the view's setState cadence.
+    if (troops.isNotEmpty ||
+        smokeCells.isNotEmpty ||
+        replayFrame != null ||
+        base.scorch.isNotEmpty) {
+      return true;
+    }
+    // Ambient motion only matters when detail is on. Zoomed-out / LOD views
+    // freeze _at, so a ticking clock alone must not force a full redraw.
+    if (tile >= 22 && old.t != t) return true;
+    return false;
+  }
 }
 
 /// Geometry helper so screens size the board and map taps consistently.
