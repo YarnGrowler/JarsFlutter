@@ -52,7 +52,7 @@ class TrainingScreen extends ConsumerWidget {
                               letterSpacing: 0.8,
                               color: JarsColors.textPrimary)),
                       Text(
-                          '${p.emoji} ${p.name}\'s army · ${p.armyTotal} trained · deploys are free',
+                          '${p.emoji} ${p.name}\'s army · ${p.armyTotal} trained · doctrine survives wars',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.inter(
@@ -108,6 +108,13 @@ class TrainingScreen extends ConsumerWidget {
     final unlockAt = g.troopUnlockDivision(type);
     final lockLabel =
         unlockAt >= 0 ? _leagueNames[unlockAt.clamp(0, 6)] : '';
+    final doctrine = g.active.doctrineLevel(type);
+    final cap = g.troopDoctrineCap;
+    final nextCost = doctrine < Xp.maxLevel
+        ? WarCosts.troopDoctrineCost(type, doctrine + 1)
+        : 0.0;
+    final canBuyNext = unlocked && doctrine < cap;
+    final nextNeedsLeague = unlocked && doctrine >= cap && doctrine < Xp.maxLevel;
 
     Widget stat(String label, String value) => Container(
           margin: const EdgeInsets.only(right: 6, top: 6),
@@ -146,6 +153,19 @@ class TrainingScreen extends ConsumerWidget {
             .showSnackBar(SnackBar(content: Text(err)));
       }
     }
+
+    void upgrade() {
+      final err = g.upgradeTroopDoctrine(type);
+      if (err != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(err)));
+      } else {
+        HapticFeedback.mediumImpact();
+      }
+    }
+
+    final hpShown = (spec.hp * Xp.bonus(doctrine)).round();
+    final atkShown = (spec.atk * Xp.bonus(doctrine)).round();
 
     return Opacity(
       opacity: unlocked ? 1 : 0.55,
@@ -187,7 +207,7 @@ class TrainingScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(spec.name.toUpperCase(),
+                    Text('${spec.name.toUpperCase()} · L$doctrine',
                         style: GoogleFonts.spaceGrotesk(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
@@ -221,11 +241,11 @@ class TrainingScreen extends ConsumerWidget {
               ]),
             ]),
             Wrap(children: [
-              stat('Health', '${spec.hp}'),
-              stat('Damage', '${spec.atk}'),
+              stat('Health', '$hpShown'),
+              stat('Damage', '$atkShown'),
               stat('Speed', '${spec.moveBudget}'),
               stat('Vs buildings', '×${spec.vsStructure}'),
-              stat('Max level', 'L${Xp.maxLevel}'),
+              stat('League cap', 'L$cap'),
             ]),
             const SizedBox(height: 10),
             Row(children: [
@@ -243,6 +263,20 @@ class TrainingScreen extends ConsumerWidget {
                     () => train(5)),
               ),
             ]),
+            const SizedBox(height: 8),
+            _btn(
+              !unlocked
+                  ? 'DOCTRINE LOCKED'
+                  : doctrine >= Xp.maxLevel
+                      ? 'DOCTRINE MAX · L$doctrine'
+                      : canBuyNext
+                          ? 'UNLOCK L${doctrine + 1} · ⚡${nextCost.round()}'
+                          : nextNeedsLeague
+                              ? 'L${doctrine + 1} NEEDS HIGHER LEAGUE'
+                              : 'DOCTRINE L$doctrine',
+              canBuyNext && g.active.resources >= nextCost,
+              upgrade,
+            ),
           ],
         ),
       ),

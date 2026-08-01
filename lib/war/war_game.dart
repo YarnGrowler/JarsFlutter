@@ -215,6 +215,14 @@ class WarGame extends ChangeNotifier {
     };
   }
 
+  /// Max permanent troop doctrine level purchasable at the current rung.
+  /// Bronze → L2, Silver → L3, … Diamond+ → L6.
+  int get troopDoctrineCap =>
+      (2 + divisionIndex).clamp(2, Xp.maxLevel);
+
+  int troopDoctrineCapFor(int divIndex) =>
+      (2 + divIndex).clamp(2, Xp.maxLevel);
+
   // ── rosters ─────────────────────────────────────────────────────────────────
   // The solo/offline fallback crew — used only when no real room is wired in
   // (fresh installs before onboarding, the practice sandbox, and every
@@ -409,6 +417,7 @@ class WarGame extends ChangeNotifier {
       if (old == null) return fresh;
       fresh.resources = old.resources;
       fresh.army = old.army;
+      fresh.troopDoctrine = old.troopDoctrine;
       fresh.ready = old.ready;
       fresh.troopsLost = old.troopsLost;
       fresh.resourcesSpent = old.resourcesSpent;
@@ -488,20 +497,17 @@ class WarGame extends ChangeNotifier {
     enemyIntel = {};
     for (final p in players) {
       p.ready = false;
-      p.resetWarTallies(); // zeroes prepEarned too — a clean slate to build up
-      // Real players get a small headstart — the rest has to come from a
-      // logged workout, tracked in prepEarned from here. Bots (solo/offline
-      // crew) need their full budget now since they build immediately below.
-      // Enemies get NOTHING yet — their war chest isn't decided until
-      // startWar(), once it's clear what your crew actually earned this
-      // prep (see the comment there).
+      p.resetWarTallies(); // zeroes prepEarned — fresh ledger for THIS prep
+      // Real players KEEP leftover ⚡ from the last war and get a small
+      // prep stipend on top. Bots still get a flat build chest. Enemies
+      // get nothing until startWar sizes their fort budget.
       if (p.side == WarSide.enemy) {
         p.resources = 0;
       } else if (p.isBot) {
         p.resources = WarCosts.prepBudget;
       } else {
-        p.resources = WarCosts.realPlayerPrepStipend;
-        p.prepEarned = p.resources;
+        p.resources += WarCosts.realPlayerPrepStipend;
+        p.prepEarned = WarCosts.realPlayerPrepStipend;
       }
     }
     // Your BOT crewmates' share of the base builds immediately (solo/offline
@@ -724,16 +730,16 @@ class WarGame extends ChangeNotifier {
     lastGeneratorAccrueMin = 0;
     warStartedAtMs = nowMs(); // the wall clock starts ticking now
     for (final p in players) {
-      // hard enemies march to war RICH — their raids come big and often.
-      // Bots (solo/offline crew) get the same flat bot chest as before. Real
-      // players get a modest stipend, not a free bot-sized war chest — the
-      // rest of their war-day budget comes from raids won and workouts
-      // logged, same principle as the prep-day stipend.
-      p.resources = p.side == WarSide.enemy
-          ? WarCosts.warStartResources * (0.75 + p.skill)
-          : (p.isBot
-              ? WarCosts.warStartResources
-              : WarCosts.realPlayerWarStipend);
+      // Enemies and bots get a fresh war-day raid chest. Real players KEEP
+      // whatever they didn't spend in prep and receive a small war stipend
+      // on top — leftover ⚡ is never wiped at the phase change.
+      if (p.side == WarSide.enemy) {
+        p.resources = WarCosts.warStartResources * (0.75 + p.skill);
+      } else if (p.isBot) {
+        p.resources = WarCosts.warStartResources;
+      } else {
+        p.resources += WarCosts.realPlayerWarStipend;
+      }
       p.resetWarTallies();
     }
     feed.clear();
@@ -783,13 +789,54 @@ class WarGame extends ChangeNotifier {
     return null;
   }
 
+  /// Buy the next permanent doctrine level for [type] (one-time, personal).
+  /// League caps how high you can go (Bronze max L2, … Diamond+ max L6).
+  String? upgradeTroopDoctrine(TroopType type) {
+    if (type == TroopType.general) {
+      return 'Generals aren\'t trained — Command Tents field them.';
+    }
+    if (!troopUnlocked(type)) {
+      final div = _lcfg.divisionByIndex(troopUnlockDivision(type));
+      return '${kTroopSpecs[type]!.name} unlocks in ${div.metalName}.';
+    }
+    final cur = active.doctrineLevel(type);
+    final cap = troopDoctrineCap;
+    if (cur >= cap) {
+      if (cur >= Xp.maxLevel) {
+        return '${kTroopSpecs[type]!.name} is already maxed (L$cur).';
+      }
+      final nextDiv = _lcfg.divisions
+          .where((d) => troopDoctrineCapFor(d.index) > cur)
+          .toList();
+      final name = nextDiv.isEmpty
+          ? 'a higher league'
+          : nextDiv.first.metalName;
+      return 'L${cur + 1} needs $name.';
+    }
+    final next = cur + 1;
+    final cost = WarCosts.troopDoctrineCost(type, next);
+    if (active.resources < cost) {
+      return 'Need ${cost.round()} ⚡ to unlock L$next.';
+    }
+    active.resources -= cost;
+    if (phase == WarPhase.war) active.resourcesSpent += cost;
+    active.troopDoctrine[type] = next;
+    _save();
+    notifyListeners();
+    return null;
+  }
+
   /// Deploy a trained troop from the active player's army (no ⚡ charge — it
-  /// was paid at the Training Grounds). Returns null if blocked or untrained.
+  /// was paid at the Training Grounds). Lands at the player's doctrine level.
   Troop? deployTrained(AttackState st, TroopType type, int r, int c) {
     if (knockedOut(active)) return null; // the fallen only spectate
     if ((active.army[type] ?? 0) <= 0) return null;
     final t = st.spawn(type, active.id, r, c, prepaid: true);
     if (t != null) {
+      final doctrine = active.doctrineLevel(type);
+      if (doctrine > 1) {
+        t.gainXp(Xp.perLevel * (doctrine - 1) + 1.0);
+      }
       active.army[type] = active.army[type]! - 1;
       _save();
       notifyListeners();
@@ -1356,6 +1403,34 @@ class WarGame extends ChangeNotifier {
     if (phase == WarPhase.prep) active.prepEarned += points;
     _save();
     notifyListeners();
+  }
+
+  /// Gift live ⚡ from the player you're controlling to a teammate.
+  /// Does NOT rewrite [WarPlayer.prepEarned] either way — workout effort
+  /// already counted for the enemy floor, and donated coin shouldn't inflate
+  /// (or erase) that ledger. Returns an error string, or null on success.
+  String? donateResources(String toId, double amount) {
+    final amt = amount.floorToDouble();
+    if (amt < 1) return 'Pick at least 1⚡.';
+    final from = active;
+    if (from.id == toId) return 'Can\'t donate to yourself.';
+    WarPlayer? to;
+    for (final p in youClan) {
+      if (p.id == toId) {
+        to = p;
+        break;
+      }
+    }
+    if (to == null) return 'Teammate not found.';
+    if (knockedOut(from)) return 'You\'re knocked out — no ⚡ left to give.';
+    if (from.resources < amt) {
+      return 'Only ${from.resources.floor()}⚡ on hand.';
+    }
+    from.resources -= amt;
+    to.resources += amt;
+    _save();
+    notifyListeners();
+    return null;
   }
 
   // ── leaderboard (reuse LeagueSimulator) ─────────────────────────────────────

@@ -717,4 +717,24 @@ class WarCosts {
   static const double realPlayerWarStipend = 32;
   static const double clearForest = 20; // 🪓 clear a forest tile in the builder
   static const double upgradeGuardPost = 30; // ⛺ → wider patrol + fresh skin
+
+  /// One-time cost to unlock doctrine [toLevel] for [t] (must already own
+  /// toLevel-1). Soldier baseline: L2 250, L3 400, L4 750, L5 1000,
+  /// L6 1500. Other troops scale by their training cost, rounded to 25⚡.
+  /// Sapper is deliberately exempt: permanent upgrades to its wall-breaching
+  /// kit are premium doctrine despite the disposable unit being cheap.
+  static double troopDoctrineCost(TroopType t, int toLevel) {
+    final lv = toLevel.clamp(2, Xp.maxLevel);
+    const soldierCurve = <int, double>{
+      2: 250,
+      3: 400,
+      4: 750,
+      5: 1000,
+      6: 1500,
+    };
+    final troopScale = t == TroopType.sapper
+        ? 2.0
+        : kTroopSpecs[t]!.cost / kTroopSpecs[TroopType.soldier]!.cost;
+    return (soldierCurve[lv]! * troopScale / 25).round() * 25.0;
+  }
 }

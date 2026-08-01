@@ -396,8 +396,8 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
           const Spacer(),
           Text(
               g.roomId != null
-                  ? 'your crew — everyone plays their own raids'
-                  : 'tap a crewmate to control them',
+                  ? 'long-press a crewmate to donate ⚡'
+                  : 'tap to control · long-press to donate ⚡',
               style: GoogleFonts.inter(fontSize: 10, color: JarsColors.textTertiary)),
         ]),
         const SizedBox(height: 8),
@@ -410,8 +410,14 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
             itemBuilder: (_, i) {
               final p = g.youClan[i];
               final active = p.id == g.activePlayerId;
+              final canGift = p.id != g.activePlayerId &&
+                  !g.knockedOut(g.active) &&
+                  g.resourcesOf(g.activePlayerId) >= 1;
               return GestureDetector(
                 onTap: () => g.switchActive(p.id),
+                onLongPress: canGift
+                    ? () => _showDonateSheet(context, g, p)
+                    : null,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
@@ -451,6 +457,98 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _showDonateSheet(
+      BuildContext context, WarGame g, dynamic teammate) async {
+    final maxAmt = g.resourcesOf(g.activePlayerId).floor();
+    if (maxAmt < 1) return;
+    var amount = (maxAmt / 4).clamp(1, maxAmt).floor().toDouble();
+    final err = await showModalBottomSheet<String?>(
+      context: context,
+      backgroundColor: JarsColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setLocal) {
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+                20, 16, 20, 20 + MediaQuery.of(ctx).padding.bottom),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Donate ⚡ to ${teammate.name}',
+                    style: GoogleFonts.spaceGrotesk(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: JarsColors.textPrimary)),
+                const SizedBox(height: 4),
+                Text('From ${g.active.name} · you have $maxAmt⚡',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: JarsColors.textTertiary)),
+                const SizedBox(height: 16),
+                Row(children: [
+                  Text('${amount.round()}⚡',
+                      style: GoogleFonts.spaceMono(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          color: JarsColors.gold)),
+                  const Spacer(),
+                  TextButton(
+                      onPressed: () => setLocal(() => amount = 1),
+                      child: const Text('Min')),
+                  TextButton(
+                      onPressed: () =>
+                          setLocal(() => amount = (maxAmt / 2).floorToDouble()),
+                      child: const Text('Half')),
+                  TextButton(
+                      onPressed: () =>
+                          setLocal(() => amount = maxAmt.toDouble()),
+                      child: const Text('All')),
+                ]),
+                Slider(
+                  value: amount.clamp(1, maxAmt.toDouble()),
+                  min: 1,
+                  max: maxAmt.toDouble(),
+                  divisions: maxAmt > 1 ? maxAmt - 1 : null,
+                  activeColor: JarsColors.gold,
+                  onChanged: (v) => setLocal(() => amount = v.roundToDouble()),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: JarsColors.gold,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () {
+                      final e =
+                          g.donateResources(teammate.id as String, amount);
+                      Navigator.pop(ctx, e ?? 'ok');
+                    },
+                    child: Text('Send ${amount.round()}⚡',
+                        style: GoogleFonts.spaceGrotesk(
+                            fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+    );
+    if (!context.mounted || err == null) return;
+    if (err == 'ok') {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sent ⚡ to ${teammate.name}')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
   }
 
   Widget _controls(BuildContext context, WarGame g) {

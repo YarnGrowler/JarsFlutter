@@ -1073,11 +1073,19 @@ class WarBoardPainter extends CustomPainter {
         _storehouseArt(canvas, rect);
         break;
       case DefType.tributeChest:
+        _tributeChestArt(canvas, rect);
+        break;
       case DefType.commandTent:
+        _commandTentArt(canvas, rect);
+        break;
       case DefType.pitchPot:
+        _pitchPotArt(canvas, rect);
+        break;
       case DefType.citadelCore:
+        _citadelCoreArt(canvas, rect);
+        break;
       case DefType.warGenerator:
-        _emojiAt(canvas, rect.center, s.spec.emoji, tile * 0.55);
+        _warGeneratorArt(canvas, rect, s.level);
         break;
       case DefType.wall:
         break; // painted in the wall pass
@@ -2219,11 +2227,19 @@ class WarBoardPainter extends CustomPainter {
         _storehouseArt(canvas, rect);
         break;
       case DefType.tributeChest:
+        _tributeChestArt(canvas, rect);
+        break;
       case DefType.commandTent:
+        _commandTentArt(canvas, rect);
+        break;
       case DefType.pitchPot:
+        _pitchPotArt(canvas, rect);
+        break;
       case DefType.citadelCore:
+        _citadelCoreArt(canvas, rect);
+        break;
       case DefType.warGenerator:
-        _emojiAt(canvas, rect.center, kDefSpecs[type]!.emoji, tile * 0.55);
+        _warGeneratorArt(canvas, rect, 1);
         break;
       case DefType.wall:
         break; // walls are painted connected in _drawReplay's wall pass
@@ -2653,6 +2669,320 @@ class WarBoardPainter extends CustomPainter {
         Paint()..color = const Color(0xFFB08D3E));
   }
 
+  /// Tribute Chest: a banded oak coffer, lid cracked open, coin spilling.
+  void _tributeChestArt(Canvas canvas, Rect rect) {
+    _shadow(canvas, rect, w: 0.6, y: 0.82);
+    final w = rect.width, h = rect.height;
+    final cx = rect.center.dx;
+    final body = Rect.fromLTWH(cx - w * 0.27, rect.top + h * 0.46, w * 0.54, h * 0.3);
+    // coin glow spilling from the seam
+    final glow = 0.5 + 0.5 * math.sin(_at * 1.8 + cx * 0.02);
+    canvas.drawCircle(
+        Offset(cx, body.top),
+        w * 0.3,
+        Paint()
+          ..color = const Color(0xFFFFD34D).withValues(alpha: 0.16 * glow)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    // coffer body
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(body, Radius.circular(w * 0.04)),
+        Paint()..color = const Color(0xFF7A5632));
+    // domed lid, tilted ajar
+    final lid = Rect.fromLTWH(
+        cx - w * 0.29, rect.top + h * 0.32, w * 0.58, h * 0.2);
+    canvas.drawArc(
+        Rect.fromCenter(
+            center: Offset(cx, lid.bottom), width: lid.width, height: lid.height * 2),
+        math.pi,
+        math.pi,
+        true,
+        Paint()..color = const Color(0xFF976C3E));
+    // iron bands
+    final band = Paint()
+      ..color = const Color(0xFF3A3F48)
+      ..strokeWidth = w * 0.045;
+    canvas.drawLine(Offset(cx - w * 0.14, body.top),
+        Offset(cx - w * 0.14, body.bottom), band);
+    canvas.drawLine(Offset(cx + w * 0.14, body.top),
+        Offset(cx + w * 0.14, body.bottom), band);
+    canvas.drawLine(
+        Offset(body.left, body.top + body.height * 0.5),
+        Offset(body.right, body.top + body.height * 0.5),
+        Paint()
+          ..color = const Color(0xFF3A3F48)
+          ..strokeWidth = w * 0.03);
+    // brass lock
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: Offset(cx, body.top + body.height * 0.28),
+                width: w * 0.12,
+                height: h * 0.1),
+            Radius.circular(w * 0.02)),
+        Paint()..color = const Color(0xFFD8A63C));
+    // stacked coins beside it
+    final coin = Paint()..color = const Color(0xFFFFD34D);
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(cx + w * 0.33, body.bottom - h * 0.02),
+            width: w * 0.14,
+            height: h * 0.05),
+        coin);
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(cx + w * 0.33, body.bottom - h * 0.06),
+            width: w * 0.12,
+            height: h * 0.045),
+        coin);
+  }
+
+  /// Command Tent: a war pavilion — peaked canvas, guy ropes, map table
+  /// glowing inside, the crew's standard flying off the ridge pole.
+  void _commandTentArt(Canvas canvas, Rect rect) {
+    _shadow(canvas, rect, w: 0.72, y: 0.84);
+    final w = rect.width, h = rect.height;
+    final cx = rect.center.dx;
+    final baseY = rect.top + h * 0.78;
+    final peak = Offset(cx, rect.top + h * 0.22);
+    // canvas body: a broad ridge tent
+    canvas.drawPath(
+        Path()
+          ..moveTo(peak.dx, peak.dy)
+          ..lineTo(cx + w * 0.36, baseY)
+          ..lineTo(cx - w * 0.36, baseY)
+          ..close(),
+        Paint()..color = const Color(0xFFCBBBA0));
+    // shaded right face so it reads 3D
+    canvas.drawPath(
+        Path()
+          ..moveTo(peak.dx, peak.dy)
+          ..lineTo(cx + w * 0.36, baseY)
+          ..lineTo(cx, baseY)
+          ..close(),
+        Paint()..color = const Color(0xFFA8977E));
+    // doorway flap, with lamplight from the map table inside
+    final door = Path()
+      ..moveTo(cx - w * 0.1, baseY)
+      ..lineTo(cx, rect.top + h * 0.45)
+      ..lineTo(cx + w * 0.1, baseY)
+      ..close();
+    canvas.drawPath(door, Paint()..color = const Color(0xFF3A3226));
+    final lamp = 0.55 + 0.45 * math.sin(_at * 2.1 + cx * 0.01);
+    canvas.drawPath(
+        door,
+        Paint()
+          ..color = const Color(0xFFFFB74D).withValues(alpha: 0.4 * lamp));
+    // guy ropes + pegs
+    final rope = Paint()
+      ..color = const Color(0xFF6B5B44)
+      ..strokeWidth = 1.2;
+    canvas.drawLine(Offset(cx - w * 0.36, baseY),
+        Offset(cx - w * 0.46, baseY + h * 0.06), rope);
+    canvas.drawLine(Offset(cx + w * 0.36, baseY),
+        Offset(cx + w * 0.46, baseY + h * 0.06), rope);
+    // ridge pole + the General's standard
+    canvas.drawLine(
+        peak,
+        Offset(peak.dx, rect.top + h * 0.04),
+        Paint()
+          ..color = const Color(0xFF5E4430)
+          ..strokeWidth = w * 0.035);
+    final wave = math.sin(_at * 3 + cx * 0.02) * w * 0.03;
+    canvas.drawPath(
+        Path()
+          ..moveTo(peak.dx, rect.top + h * 0.05)
+          ..lineTo(peak.dx + w * 0.2 + wave, rect.top + h * 0.1)
+          ..lineTo(peak.dx, rect.top + h * 0.17)
+          ..close(),
+        Paint()..color = const Color(0xFFD84C4C));
+  }
+
+  /// Pitch Pot: a squat tar cauldron half-sunk in the dirt, slick black
+  /// surface, a bubble breaking now and then. Concealed until it blows.
+  void _pitchPotArt(Canvas canvas, Rect rect) {
+    final w = rect.width, h = rect.height;
+    final cx = rect.center.dx, cy = rect.top + h * 0.6;
+    // scraped dirt collar
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy + h * 0.1), width: w * 0.62, height: h * 0.24),
+        Paint()..color = const Color(0xFF4E3B24));
+    // the pot
+    canvas.drawArc(
+        Rect.fromCenter(center: Offset(cx, cy), width: w * 0.5, height: h * 0.44),
+        0,
+        math.pi,
+        true,
+        Paint()..color = const Color(0xFF2B2622));
+    // tar surface
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy), width: w * 0.5, height: h * 0.16),
+        Paint()..color = const Color(0xFF14110F));
+    // rim
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy), width: w * 0.5, height: h * 0.16),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4
+          ..color = const Color(0xFF554A3C));
+    // a slow bubble
+    final b = (math.sin(_at * 1.3 + cx * 0.03) + 1) / 2;
+    canvas.drawCircle(
+        Offset(cx - w * 0.06, cy - h * 0.005),
+        w * 0.05 * b,
+        Paint()..color = const Color(0xFF3E3630));
+  }
+
+  /// Citadel Core: a monolith of dark stone with a lit crystal seam — a
+  /// landmark, not a gun. Slow aura ring pulses out from the base.
+  void _citadelCoreArt(Canvas canvas, Rect rect) {
+    _shadow(canvas, rect, w: 0.6, y: 0.88);
+    final w = rect.width, h = rect.height;
+    final cx = rect.center.dx;
+    final pulse = 0.5 + 0.5 * math.sin(_at * 1.4 + cx * 0.01);
+    // aura ring on the ground
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(cx, rect.top + h * 0.84),
+            width: w * (0.72 + 0.12 * pulse),
+            height: h * (0.22 + 0.04 * pulse)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6
+          ..color = const Color(0xFF6FE3FF).withValues(alpha: 0.16 + 0.2 * pulse));
+    // stepped plinth
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: Offset(cx, rect.top + h * 0.78),
+                width: w * 0.52,
+                height: h * 0.12),
+            Radius.circular(w * 0.03)),
+        Paint()..color = const Color(0xFF3A4150));
+    // the monolith
+    final shaft = Path()
+      ..moveTo(cx - w * 0.16, rect.top + h * 0.74)
+      ..lineTo(cx - w * 0.1, rect.top + h * 0.16)
+      ..lineTo(cx, rect.top + h * 0.06)
+      ..lineTo(cx + w * 0.1, rect.top + h * 0.16)
+      ..lineTo(cx + w * 0.16, rect.top + h * 0.74)
+      ..close();
+    canvas.drawPath(shaft, Paint()..color = const Color(0xFF2B3040));
+    // lit face
+    canvas.drawPath(
+        Path()
+          ..moveTo(cx, rect.top + h * 0.06)
+          ..lineTo(cx + w * 0.1, rect.top + h * 0.16)
+          ..lineTo(cx + w * 0.16, rect.top + h * 0.74)
+          ..lineTo(cx, rect.top + h * 0.74)
+          ..close(),
+        Paint()..color = const Color(0xFF1E2230));
+    // the crystal seam
+    canvas.drawLine(
+        Offset(cx, rect.top + h * 0.16),
+        Offset(cx, rect.top + h * 0.7),
+        Paint()
+          ..color = const Color(0xFF6FE3FF).withValues(alpha: 0.55 + 0.4 * pulse)
+          ..strokeWidth = w * 0.05
+          ..strokeCap = StrokeCap.round);
+    canvas.drawCircle(
+        Offset(cx, rect.top + h * 0.36),
+        w * 0.16,
+        Paint()
+          ..color = const Color(0xFF6FE3FF).withValues(alpha: 0.16 * pulse)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+  }
+
+  /// War Generator: an elixir still — copper boiler, coiled pipe, a glowing
+  /// vat, and steam puffing off the top. Levels add tanks and brighten it.
+  void _warGeneratorArt(Canvas canvas, Rect rect, [int level = 1]) {
+    _shadow(canvas, rect, w: 0.66, y: 0.86);
+    final w = rect.width, h = rect.height;
+    final cx = rect.center.dx;
+    final up = level >= 2, maxed = level >= 3;
+    // brick footing
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: Offset(cx, rect.top + h * 0.76),
+                width: w * 0.62,
+                height: h * 0.14),
+            Radius.circular(w * 0.03)),
+        Paint()..color = const Color(0xFF54423A));
+    // the boiler
+    final boiler =
+        Rect.fromLTWH(cx - w * 0.22, rect.top + h * 0.38, w * 0.44, h * 0.32);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(boiler, Radius.circular(w * 0.09)),
+        Paint()..color = maxed
+            ? const Color(0xFFB9762E)
+            : const Color(0xFF9A6634));
+    // glowing sight-glass
+    final glow = 0.5 + 0.5 * math.sin(_at * 2.6 + cx * 0.02);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: boiler.center,
+                width: w * 0.2,
+                height: h * 0.14),
+            Radius.circular(w * 0.03)),
+        Paint()
+          ..color = const Color(0xFF7CE6A8)
+              .withValues(alpha: 0.55 + 0.35 * glow));
+    canvas.drawCircle(
+        boiler.center,
+        w * 0.2,
+        Paint()
+          ..color = const Color(0xFF7CE6A8).withValues(alpha: 0.14 * glow)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    // iron hoops
+    final hoop = Paint()
+      ..color = const Color(0xFF3A3F48)
+      ..strokeWidth = w * 0.03;
+    canvas.drawLine(Offset(boiler.left, boiler.top + boiler.height * 0.22),
+        Offset(boiler.right, boiler.top + boiler.height * 0.22), hoop);
+    canvas.drawLine(Offset(boiler.left, boiler.bottom - boiler.height * 0.18),
+        Offset(boiler.right, boiler.bottom - boiler.height * 0.18), hoop);
+    // coiled condenser pipe up the side
+    final pipe = Paint()
+      ..color = const Color(0xFFC98B3E)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.045
+      ..strokeCap = StrokeCap.round;
+    final coil = Path()..moveTo(boiler.right, boiler.top + h * 0.06);
+    for (var i = 0; i < 3; i++) {
+      final y = boiler.top + h * 0.06 + i * h * 0.07;
+      coil.quadraticBezierTo(
+          boiler.right + w * 0.16, y + h * 0.035, boiler.right, y + h * 0.07);
+    }
+    canvas.drawPath(coil, pipe);
+    // chimney + steam
+    canvas.drawRect(
+        Rect.fromLTWH(cx - w * 0.06, rect.top + h * 0.24, w * 0.12, h * 0.16),
+        Paint()..color = const Color(0xFF6B5B44));
+    for (var i = 0; i < (maxed ? 3 : 2); i++) {
+      final t = (_at * 0.6 + i * 0.34) % 1.0;
+      canvas.drawCircle(
+          Offset(cx + math.sin(_at * 1.6 + i) * w * 0.05,
+              rect.top + h * 0.24 - t * h * 0.2),
+          w * (0.05 + t * 0.06),
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.22 * (1 - t)));
+    }
+    // extra holding tank once upgraded
+    if (up) {
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              Rect.fromLTWH(
+                  cx - w * 0.42, rect.top + h * 0.52, w * 0.16, h * 0.2),
+              Radius.circular(w * 0.04)),
+          Paint()..color = const Color(0xFF7A5632));
+      canvas.drawCircle(
+          Offset(cx - w * 0.34, rect.top + h * 0.58),
+          w * 0.035,
+          Paint()..color = const Color(0xFF7CE6A8).withValues(alpha: 0.8));
+    }
+  }
+
   // ── tombstones: the fallen rest where they fell (up to 4 per tile);
   // heavier losses become burial mounds, and true massacres leave a
   // bone-pile memorial the whole map can see ──────────────────────────────────
@@ -2830,8 +3160,9 @@ class WarBoardPainter extends CustomPainter {
         }
       }
     }
-    // and the guards PACE — a base that breathes (hi-detail only)
-    if (ownBase && _hiDetail) _patrolPass(canvas);
+    // and the guards PACE — a base that breathes. Big boards never pace at
+    // any zoom: a 60²+ city has too many tents to walk a figure around each.
+    if (ownBase && _hiDetail && base.rows < 52) _patrolPass(canvas);
   }
 
   /// A little farm plot: tilled soil rows with green sprouts — the base FEEDS

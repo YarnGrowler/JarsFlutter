@@ -41,6 +41,11 @@ class WarPlayer {
   /// from here — the ⚡ was paid at training time.
   Map<TroopType, int> army = {};
 
+  /// Permanent per-type doctrine level (1 = base). Paid once; every future
+  /// train/deploy of that type for THIS player lands at this level. Survives
+  /// wars — death doesn't erase the purchase.
+  Map<TroopType, int> troopDoctrine = {};
+
   // per-war tallies (reset each war)
   int troopsLost = 0;
   double resourcesSpent = 0;
@@ -72,6 +77,9 @@ class WarPlayer {
   int armyCount(TroopType t) => army[t] ?? 0;
   int get armyTotal => army.values.fold(0, (a, b) => a + b);
 
+  /// Current unlocked doctrine level for [t] (at least 1).
+  int doctrineLevel(TroopType t) => (troopDoctrine[t] ?? 1).clamp(1, Xp.maxLevel);
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -86,6 +94,9 @@ class WarPlayer {
         'prepEarned': prepEarned,
         'ready': ready,
         'army': {for (final e in army.entries) '${e.key.index}': e.value},
+        'doctrine': {
+          for (final e in troopDoctrine.entries) '${e.key.index}': e.value
+        },
       };
 
   /// [roomSeated]: for saves from before `isBot` existed, we have to guess —
@@ -114,6 +125,14 @@ class WarPlayer {
       final idx = int.tryParse(k);
       if (idx != null && idx >= 0 && idx < TroopType.values.length) {
         p.army[TroopType.values[idx]] = (v as num).toInt();
+      }
+    });
+    final dj = j['doctrine'] as Map<String, dynamic>? ?? {};
+    dj.forEach((k, v) {
+      final idx = int.tryParse(k);
+      if (idx != null && idx >= 0 && idx < TroopType.values.length) {
+        p.troopDoctrine[TroopType.values[idx]] =
+            (v as num).toInt().clamp(1, Xp.maxLevel);
       }
     });
     return p;

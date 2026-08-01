@@ -371,10 +371,9 @@ void main() {
       expect(g.seasonIndex, seasonBefore, reason: 'non-admin cannot reset the season');
     });
 
-    // Structure value actually BUILT into a base — p.resources itself gets
-    // overwritten right after by startWar()'s war-day (raiding) allowance, so
-    // the built base is the only honest way to see what the prep budget
-    // bought.
+    // Structure value actually BUILT into a base — leftover player ⚡ now
+    // carries into war day (plus a small stipend), so the built base is still
+    // the cleanest way to see what the prep budget bought.
     double structureValue(Base b) {
       var v = 0.0;
       for (var r = 0; r < Base.defaultSize; r++) {
@@ -662,8 +661,8 @@ void main() {
     });
 
     test(
-        'REGRESSION: real players get a modest war-day stipend, not a bot '
-        'war chest', () {
+        'REGRESSION: real players keep leftover ⚡ and gain a modest war stipend',
+        () {
       final g = WarGame.fresh();
       g.startPrep();
       g.applyRoomRoster(
@@ -673,13 +672,27 @@ void main() {
           members: friends([
             ['f0', 'A']
           ]));
-      g.startWar();
-      expect(g.active.resources, WarCosts.realPlayerWarStipend,
-          reason: 'a real player starts war day with a modest stipend, not '
-              'the bot-sized war chest');
+      // Seat is a new id — seed leftover prep ⚡ explicitly, then prove war
+      // day ADDS the stipend instead of wiping the pool.
+      g.active.resources = 80;
       final teammate = g.youClan.firstWhere((p) => p.id == 'f0');
-      expect(teammate.resources, WarCosts.realPlayerWarStipend,
-          reason: 'every real teammate gets the same modest stipend');
+      teammate.resources = 55;
+      g.startWar();
+      expect(g.active.resources, 80 + WarCosts.realPlayerWarStipend,
+          reason: 'leftover prep ⚡ must survive into war, plus a small stipend');
+      expect(teammate.resources, 55 + WarCosts.realPlayerWarStipend);
+    });
+
+    test('leftover ⚡ survives into the next war\'s prep', () {
+      final g = WarGame.fresh()..startPrep();
+      g.active.resources = 400;
+      g.startWar();
+      expect(g.active.resources, 400 + WarCosts.realPlayerWarStipend);
+      g.endWar();
+      final carried = g.active.resources;
+      g.nextWar();
+      expect(g.active.resources, carried + WarCosts.realPlayerPrepStipend,
+          reason: 'next prep adds a stipend on top of leftover war ⚡');
     });
 
     test(

@@ -18,6 +18,54 @@ void main() {
     }
   }
 
+  group('donate energy', () {
+    test('moves ⚡ to a teammate without rewriting prepEarned', () {
+      final g = WarGame.fresh()..startPrep();
+      final a = g.active;
+      final b = g.youClan.firstWhere((p) => p.id != a.id);
+      a.resources = 200;
+      a.prepEarned = 200;
+      b.resources = 10;
+      b.prepEarned = 10;
+      expect(g.donateResources(b.id, 50), isNull);
+      expect(a.resources, 150);
+      expect(b.resources, 60);
+      expect(a.prepEarned, 200);
+      expect(b.prepEarned, 10);
+      expect(g.donateResources(a.id, 10), contains('yourself'));
+      expect(g.donateResources(b.id, 9999), contains('Only'));
+    });
+  });
+
+  group('troop doctrine', () {
+    test('Bronze caps at L2; upgrade is permanent and expensive', () {
+      final g = WarGame.fresh()..startPrep();
+      g.divisionIndex = 0; // Bronze
+      expect(g.troopDoctrineCap, 2);
+      g.active.resources = 9999;
+      expect(g.active.doctrineLevel(TroopType.soldier), 1);
+      final cost = WarCosts.troopDoctrineCost(TroopType.soldier, 2);
+      expect(cost, 250);
+      expect(WarCosts.troopDoctrineCost(TroopType.soldier, 3), 400);
+      expect(WarCosts.troopDoctrineCost(TroopType.soldier, 4), 750);
+      expect(WarCosts.troopDoctrineCost(TroopType.soldier, 5), 1000);
+      expect(WarCosts.troopDoctrineCost(TroopType.soldier, 6), 1500);
+      expect(WarCosts.troopDoctrineCost(TroopType.brute, 2), 550,
+          reason: 'expensive troops must have pricier doctrine');
+      expect(WarCosts.troopDoctrineCost(TroopType.sapper, 2), 500,
+          reason: 'permanent wall-breaching upgrades are premium doctrine');
+      expect(WarCosts.troopDoctrineCost(TroopType.sapper, 6), 3000);
+      expect(g.upgradeTroopDoctrine(TroopType.soldier), isNull);
+      expect(g.active.doctrineLevel(TroopType.soldier), 2);
+      expect(g.upgradeTroopDoctrine(TroopType.soldier), contains('League'));
+      // Gold unlocks higher doctrine
+      g.divisionIndex = 2;
+      expect(g.troopDoctrineCap, 4);
+      expect(g.upgradeTroopDoctrine(TroopType.soldier), isNull);
+      expect(g.active.doctrineLevel(TroopType.soldier), 3);
+    });
+  });
+
   group('map size / expand', () {
     test('expandTo pads and preserves relative structure positions', () {
       final base = Base(WarSide.you, 42, size: 40);
