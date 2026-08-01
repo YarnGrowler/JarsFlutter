@@ -270,6 +270,58 @@ void main() {
     });
   });
 
+  group('climbing the ladder builds a BIGGER, meaner enemy', () {
+    /// Drive the real prep→war path at max difficulty for [div].
+    ({int structures, int maxWall, int size}) buildAt(int div) {
+      final g = WarGame.fresh();
+      g.divisionIndex = div;
+      g.startPrep();
+      g.setDifficulty(100);
+      g.startWar();
+      var structures = 0;
+      var maxWall = 0;
+      for (var r = 0; r < g.enemyBase.rows; r++) {
+        for (var c = 0; c < g.enemyBase.cols; c++) {
+          final s = g.enemyBase.structAt(r, c);
+          if (s == null) continue;
+          structures++;
+          if (s.type == DefType.wall && s.level > maxWall) maxWall = s.level;
+        }
+      }
+      return (
+        structures: structures,
+        maxWall: maxWall,
+        size: g.enemyBase.rows
+      );
+    }
+
+    test('REGRESSION: a higher rung never builds a SMALLER fortress', () {
+      final bronze = buildAt(0);
+      final radiant = buildAt(cfg.divisions.length - 1);
+      expect(radiant.size, greaterThan(bronze.size));
+      expect(radiant.structures, greaterThan(bronze.structures),
+          reason: 'wards must FLOOR the citadel plan, never cap it');
+    });
+
+    test('top rung forges deeper walls than Bronze', () {
+      final bronze = buildAt(0);
+      final radiant = buildAt(cfg.divisions.length - 1);
+      expect(radiant.maxWall, greaterThan(bronze.maxWall),
+          reason: 'the curtain wall has to visibly climb with the league');
+      expect(radiant.maxWall, greaterThanOrEqualTo(4));
+    });
+
+    test('the ladder tops out at a 64x64 board', () {
+      expect(cfg.divisions.last.mapSize, 64);
+      final g = WarGame.fresh();
+      g.divisionIndex = cfg.divisions.length - 1;
+      g.startPrep();
+      expect(g.mapSize, 64);
+      expect(g.youBase.rows, 64);
+      expect(g.enemyBase.cols, 64);
+    });
+  });
+
   group('war generators', () {
     int? findSpot(WarGame g) {
       for (var r = 5; r < g.youBase.rows - 5; r++) {

@@ -323,7 +323,7 @@ class LeagueConfig {
           difficulty: 1.40,
           aiAbilityMin: 1.25,
           aiAbilityMax: 1.6,
-          mapSize: 56,
+          mapSize: 60,
           biome: 'nightglass',
           wards: 3),
       LeagueDivision(
@@ -336,7 +336,7 @@ class LeagueConfig {
           difficulty: 1.55,
           aiAbilityMin: 1.4,
           aiAbilityMax: 1.8,
-          mapSize: 60,
+          mapSize: 64,
           biome: 'ashfall',
           unlockDefs: ['citadelCore'],
           wards: 3),

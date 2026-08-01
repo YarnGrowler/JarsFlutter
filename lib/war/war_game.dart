@@ -672,19 +672,24 @@ class WarGame extends ChangeNotifier {
       final tier = _tierForSkill(effSkill);
       enemyDifficulty = tier;
       final perFoeFloor = crewTotal / foes.length;
+      // A bigger board needs a bigger war chest or the fortress spreads thin
+      // and every promotion feels like a WEAKER enemy.
+      final areaMul = (mapSize * mapSize) /
+          (Base.defaultSize * Base.defaultSize).toDouble();
       for (final p in foes) {
         p.ai = tier;
         p.skillMul = effSkill / AiData.skill(tier);
-        p.resources = perFoeFloor + WarCosts.prepBudgetFor(p.skill);
+        p.resources = perFoeFloor + WarCosts.prepBudgetFor(p.skill) * areaMul;
       }
-      // Scale ward/citadel count with league size band + skill.
+      // Wards raise the FLOOR under the citadel plan — they never cap it, or
+      // climbing the ladder would shrink the enemy's city.
       final wards = currentDivision.wards;
       WarAi.designBase(
         enemyBase,
         foes,
         SeededRng(seedFromParts([warSeed, 'enemyDesign'])),
         style: StrongholdStyle(
-          rooms: wards >= 2 ? wards + (mapSize >= 56 ? 1 : 0) : null,
+          minRooms: wards >= 2 ? 8 + wards * 6 : null,
         ),
       );
     }

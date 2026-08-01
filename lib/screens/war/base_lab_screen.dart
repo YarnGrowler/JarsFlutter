@@ -45,6 +45,7 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
   double _spacing = 0; // 0 = auto, 2..6 forced
   double _layers = -1; // -1 = auto, 0..8 forced ward partitions
   double _rooms = -1; // -1 = auto, 2..40 forced CITADEL room target
+  int _minRooms = 0; // league floor under the citadel plan (0 = none)
   int _innerKeep = -1; // -1 auto, 0 off, 1 on
   int _seed = 1337;
   bool _dials = true; // dials drawer open?
@@ -91,12 +92,12 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
       _rivers = 1;
       _lakes = 1;
     }
-    // Match production: wards drive citadel rooms on big boards.
+    // Match production: wards raise the FLOOR under the citadel plan, they
+    // never cap it — the room target itself stays skill/area driven.
     final wards = div.wards;
-    _rooms = wards >= 2
-        ? (wards + (_mapSize >= 56 ? 1 : 0)).toDouble()
-        : -1;
-    _layers = wards >= 2 ? wards.toDouble() : -1;
+    _minRooms = wards >= 2 ? 8 + wards * 6 : 0;
+    _rooms = -1;
+    _layers = -1;
     // Nudge difficulty toward the rung's feel.
     _difficulty = (30 + div.difficulty * 55).clamp(1, 100);
     _generate();
@@ -122,8 +123,11 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
     // the difficulty dial drives both the WAR CHEST and the plan depth —
     // and the CONTINUOUS skill (past master → citadels), same as a real war
     final s = WarGame.skillFor(_difficulty.round());
-    final budget = WarCosts.prepBudgetFor(s);
-    // Bigger boards need more builders so the fortress fills the canvas.
+    // Same area-scaled war chest the real war hands the enemy, so the
+    // preview is honest about how full a big board actually gets.
+    final areaMul = (_mapSize * _mapSize) /
+        (Base.defaultSize * Base.defaultSize).toDouble();
+    final budget = WarCosts.prepBudgetFor(s) * areaMul;
     final castleN = _castles.round().clamp(1, 6);
     final crew = [
       for (var i = 0; i < castleN; i++)
@@ -134,7 +138,7 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
             colorValue: 0xFFE6483F,
             side: WarSide.enemy,
             ai: _ai,
-            resources: budget * (1 + (_mapSize - Base.defaultSize) / 40))
+            resources: budget)
           ..skillMul = s / AiData.skill(_ai)
     ];
     WarAi.designBase(
@@ -148,6 +152,7 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
           innerKeep: _innerKeep < 0 ? null : _innerKeep == 1,
           layers: _layers.round() < 0 ? null : _layers.round(),
           rooms: _rooms.round() < 0 ? null : _rooms.round().clamp(2, 40),
+          minRooms: _minRooms > 1 ? _minRooms : null,
         ));
     setState(() => _base = base);
   }
@@ -253,7 +258,7 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
                       _leaguePreset = null;
                       _difficulty = v;
                     }),
-                    _dial('MAP SIZE', _mapSize.toDouble(), 40, 60,
+                    _dial('MAP SIZE', _mapSize.toDouble(), 40, 64,
                         '${_mapSize}x$_mapSize', (v) {
                       _leaguePreset = null;
                       _mapSize = v.round();

@@ -18,6 +18,11 @@ class StrongholdStyle {
   final bool? innerKeep; // null=auto (wards replaced it; force via Lab)
   final int? layers; // interior WARD partitions (null = skill-seeded, up to 8)
   final int? rooms; // CITADEL room target (null = auto past skill 1.0)
+
+  /// FLOOR under the citadel room target — raises the auto plan without
+  /// capping it. Leagues use this so a bigger rung never builds a smaller
+  /// city than the difficulty dial already earns.
+  final int? minRooms;
   const StrongholdStyle(
       {this.archetype,
       this.gates,
@@ -26,7 +31,8 @@ class StrongholdStyle {
       this.towerSpacing,
       this.innerKeep,
       this.layers,
-      this.rooms});
+      this.rooms,
+      this.minRooms});
 }
 
 /// What the generator actually built — read by the Lab readout and the tests.
@@ -49,8 +55,9 @@ class WarAi {
         : players.map((p) => p.skill).reduce((a, b) => a + b) / players.length;
     // CITADEL: past master skill the core stops being a fort and becomes a
     // walled CITY of wards. Auto past skill 1.0; the Lab can force a target.
-    final citadel =
-        (style.rooms ?? 0) > 1 || (style.rooms == null && avgSkill > 1.0);
+    final citadel = (style.rooms ?? 0) > 1 ||
+        (style.minRooms ?? 0) > 1 ||
+        (style.rooms == null && avgSkill > 1.0);
     // every war a different fortress: a seeded archetype shapes the whole
     // base, and the keep is never pinned to dead-center (a citadel never
     // splits into twins — the city IS the map)
@@ -165,14 +172,31 @@ class WarAi {
         players.map((p) => p.skill).reduce((a, b) => a + b) / players.length;
     final depth = (skill * 10).round(); // rookie ~2, seasoned 5, master 10
 
+    // A bigger board has to be FILLED — the same city on a 64² map would
+    // rattle around inside it, so the plan grows with the canvas.
+    final areaMul = 1 +
+        ((base.rows * base.cols) / (Base.defaultSize * Base.defaultSize) - 1) *
+            0.6;
+
     // CITADEL room budget: auto ramps from ~10 rooms just past master to
     // ~35 at the nightmare end of the dial; the Lab can force any target.
-    final int? roomTarget = (style.rooms != null && style.rooms! > 1)
-        ? style.rooms!.clamp(2, 40)
+    final autoTarget = (style.rooms != null && style.rooms! > 1)
+        ? style.rooms!.clamp(2, 72)
         : (style.rooms == null && skill > 1.0)
-            ? ((10 + (skill - 1.0) / 0.5 * 24).round() + rng.intRange(-3, 4))
-                .clamp(6, 40)
+            ? (((10 + (skill - 1.0) / 0.5 * 24) * areaMul).round() +
+                    rng.intRange(-3, 4))
+                .clamp(6, 72)
             : null;
+    // A league FLOOR only ever raises the plan — never shrinks what the
+    // difficulty dial already bought.
+    final floorTarget = (style.minRooms != null && style.minRooms! > 1)
+        ? (style.minRooms! * areaMul).round().clamp(2, 72)
+        : null;
+    final int? roomTarget = autoTarget == null
+        ? floorTarget
+        : (floorTarget == null
+            ? autoTarget
+            : math.max(autoTarget, floorTarget));
     final citadel = roomTarget != null;
 
     // spacing discipline: towers keep their distance so the base BREATHES —
@@ -262,7 +286,7 @@ class WarAi {
           return ((style.pad ??
                       (4 + (roomTarget! * 0.3).round() + rng.intRange(0, 2))) +
                   group.length ~/ 2)
-              .clamp(2, 14);
+              .clamp(2, math.max(14, base.rows ~/ 3));
         }
         return ((style.pad ?? 2 + rng.intRange(0, 2)) +
                 rng.intRange(0, archetype == 1 ? 3 : 2) +
@@ -1065,7 +1089,8 @@ class WarAi {
     // stone — every shooter and tent to the cap, then the doors, then the
     // walls themselves turn to slate ──
     if (citadel) {
-      final lvlCap = skill >= 1.2 ? 3 : 2;
+      final lvlCap = _towerLevelCap(skill, base.rows);
+      final wallCap = _wallLevelCap(skill, base.rows);
       const reserve = 400.0; // the leftovers loop still gets its minefields
       bool forge(Structure st, int cap) {
         if (st.spec.upgradeCost <= 0) return false;
@@ -1102,8 +1127,9 @@ class WarAi {
               _ => st.type == DefType.wall,
             };
             if (!wants) continue;
-            // walls stop at L2 — uniform slate, no top-down gradient
-            forge(st, pass == 2 ? 2 : lvlCap);
+            // walls climb as a UNIFORM curtain — spiked crest, rampart,
+            // obsidian bastion — never a top-down gradient
+            forge(st, pass == 2 ? wallCap : lvlCap);
           }
         }
       }
@@ -1124,8 +1150,8 @@ class WarAi {
         // masters GILD their batteries: leftovers buy upgrades
         final spot = towerSpots[rng.intRange(0, towerSpots.length)];
         final s = base.structAt(spot[0], spot[1]);
-        // brutal clans forge LEVEL 3s; everyone else stops at 2
-        final lvlCap = skill >= 1.2 ? 3 : 2;
+        // brutal clans on big boards forge the deepest batteries
+        final lvlCap = _towerLevelCap(skill, base.rows);
         if (s != null &&
             s.spec.upgradeCost > 0 &&
             s.level < math.min(lvlCap, s.spec.maxLevel)) {
@@ -1220,6 +1246,22 @@ class WarAi {
 
   /// Stats from the most recent [_buildStronghold] run.
   static BuildStats? lastBuildStats;
+
+  /// Board size band: 0 = Bronze-ish, 1 = mid ladder, 2 = the big leagues.
+  static int _sizeBand(int rows) => rows >= 56 ? 2 : (rows >= 48 ? 1 : 0);
+
+  /// How far a clan gilds its guns. Climbs with the dial AND the rung, so a
+  /// higher league is visibly meaner even at the same difficulty.
+  static int _towerLevelCap(double skill, int rows) =>
+      (2 + (skill >= 1.2 ? 1 : 0) + (_sizeBand(rows) >= 2 ? 1 : 0)).clamp(2, 4);
+
+  /// Curtain walls climb further — spiked crests, ramparts, and at the very
+  /// top an obsidian bastion no L1 sapper charge can crack open.
+  static int _wallLevelCap(double skill, int rows) => (2 +
+          _sizeBand(rows) +
+          (skill >= 1.2 ? 1 : 0) +
+          (skill >= 1.35 ? 1 : 0))
+      .clamp(2, 5);
 
   // ── WAR: fog-honest objectives + CoC targeting discipline ───────────────────
   /// Revealed structures beat garrison beat fog — DISTANCE discounts all, and
