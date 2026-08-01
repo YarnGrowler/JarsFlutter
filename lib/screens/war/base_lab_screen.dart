@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,14 +11,18 @@ import '../../core/seeded_rng.dart';
 import '../../core/theme.dart';
 import '../../models/league.dart';
 import '../../providers/war_providers.dart';
+import '../../war/free_move_battle.dart';
 import '../../war/war_ai.dart';
 import '../../war/war_base.dart';
 import '../../war/war_biome.dart';
+import '../../war/war_engine.dart';
 import '../../war/war_game.dart';
 import '../../war/war_player.dart';
 import '../../war/war_types.dart';
+import 'battle_fx.dart';
 import 'war_board.dart';
 import 'war_board_view.dart';
+import 'war_info_cards.dart';
 
 /// 🧪 The BASE LAB — sandbox for stronghold + terrain generators.
 /// Room admins get league presets (size / biome / wards) to preview higher
@@ -51,6 +58,33 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
   bool _dials = true; // dials drawer open?
 
   Base? _base;
+
+  // ── battle sandbox over the generated map ──────────────────────────────────
+  bool _battling = false;
+  AttackState? _raid;
+  FreeMoveBattle? _fight;
+  TroopType _deploy = TroopType.soldier;
+  int _waveDiff = 50;
+  int _waveSeq = 0;
+  bool _overShown = false;
+  double _uiThrottle = 0;
+  final FxLayer _fx = FxLayer();
+  final Map<String, Offset> _animPos = {};
+
+  /// League-gated troops unlocked through the selected rung (empty = Bronze).
+  Set<TroopType> get _unlockTroops {
+    final keys =
+        LeagueConfig.instance.unlockedTroopsThrough(_leaguePreset ?? 0);
+    return {
+      for (final t in kLeagueGatedTroops)
+        if (keys.contains(troopUnlockKey(t))) t,
+    };
+  }
+
+  List<TroopType> get _deployable => [
+        for (final t in TroopType.values)
+          if (t != TroopType.general) t,
+      ];
 
   @override
   void initState() {
@@ -171,6 +205,211 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
     setState(() => _base = base);
   }
 
+  // ── battle sandbox ──────────────────────────────────────────────────────────
+  void _enterBattle() {
+    final design = _base;
+    if (design == null) return;
+    final clone = Base.fromJson(design.toJson());
+    clone.graves.clear();
+    clone.scorch.clear();
+    final st = AttackState(
+      base: clone,
+      attacker: WarSide.you,
+      attackerName: 'Lab Raid',
+      pools: MapPools({'lab': 1e9}),
+      freeActions: true,
+      defenderIq: WarGame.skillFor(_difficulty.round()),
+      // you designed it — every stone is known
+      intel: {for (var k = 0; k < clone.rows * clone.cols; k++) k},
+    );
+    setState(() {
+      _raid = st;
+      _fight = FreeMoveBattle(st, canDeploy: () => true);
+      _battling = true;
+      _dials = false;
+      _animPos.clear();
+      _fx.clear();
+      _overShown = false;
+      _uiThrottle = 0;
+      _deploy = TroopType.soldier;
+    });
+  }
+
+  void _exitBattle() {
+    setState(() {
+      _battling = false;
+      _raid = null;
+      _fight = null;
+      _animPos.clear();
+      _fx.clear();
+      _overShown = false;
+      _dials = true;
+    });
+  }
+
+  /// Fresh clone of the same design — scars swept, same walls.
+  void _resetBattle() {
+    if (_base == null) return;
+    _enterBattle();
+  }
+
+  void _summonWave() {
+    final st = _raid;
+    final fight = _fight;
+    if (st == null || fight == null) return;
+    final drops = st.base.dropCells.toList();
+    if (drops.isEmpty) return;
+    final skill = WarGame.skillFor(_waveDiff);
+    final rng = SeededRng(seedFromParts([_seed, 'labwave', _waveSeq++]));
+    final anchor = drops[rng.intRange(0, drops.length)];
+    drops.sort((a, b) {
+      final da = (a.r - anchor.r).abs() + (a.c - anchor.c).abs();
+      final db = (b.r - anchor.r).abs() + (b.c - anchor.c).abs();
+      return da.compareTo(db);
+    });
+    final cap = 3 + (skill * 7).round();
+    var i = 0;
+    var dropIdx = 0;
+    while (i < cap && dropIdx < drops.length) {
+      final drop = drops[dropIdx];
+      final type =
+          WarAi.waveTroop(i, skill, rng, unlockTroops: _unlockTroops);
+      final t = st.spawn(type, 'lab', drop.r, drop.c, allowStack: true);
+      if (t == null) {
+        dropIdx++;
+        continue;
+      }
+      if (skill >= 0.9) {
+        t.gainXp(Xp.perLevel * (skill >= 1.3 ? 2.0 : 1.0) + 1);
+        t.hp = t.maxHp;
+      }
+      // fan the wave around the drop so they don't stack on a pin
+      final a = i * 2.399963;
+      final rad = 0.18 * math.sqrt((i % 9) + 1);
+      fight.placeAt(
+          t, drop.c + math.cos(a) * rad, drop.r + math.sin(a) * rad);
+      dropIdx++;
+      i++;
+    }
+    if (fight.over) fight.extend();
+    _overShown = false;
+    fight.notifyDeploy();
+    _fx.ingest(st.takeFx());
+    setState(() {});
+  }
+
+  void _onBattleTap(Cell cell) {
+    final st = _raid;
+    final fight = _fight;
+    if (st == null || fight == null) return;
+    if (!st.base.isRing(cell.r, cell.c)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Deploy on the golden landing ring — any of the four sides.'),
+          duration: Duration(milliseconds: 1100)));
+      return;
+    }
+    final t = st.spawn(_deploy, 'lab', cell.r, cell.c, allowStack: true);
+    if (t == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('That landing spot is blocked.')));
+      return;
+    }
+    final n = st.troopsSent;
+    final a = n * 2.399963;
+    final rad = 0.16 * math.sqrt(n % 9);
+    fight.placeAt(t, cell.c + math.cos(a) * rad, cell.r + math.sin(a) * rad);
+    HapticFeedback.selectionClick();
+    if (fight.over) fight.extend();
+    _overShown = false;
+    fight.notifyDeploy();
+    _fx.ingest(st.takeFx());
+    setState(() {});
+  }
+
+  void _onBattleTick(double dt) {
+    if (!_battling) return;
+    final fight = _fight;
+    final st = _raid;
+    if (fight == null || st == null) return;
+    fight.tick(dt);
+    _fx.tick(dt);
+    _animPos
+      ..clear()
+      ..addEntries(fight.positions.entries
+          .map((e) => MapEntry(e.key, Offset(e.value.col, e.value.row))));
+    _fx.ingest(st.takeFx());
+    _uiThrottle += dt;
+    if (_uiThrottle > 0.2) {
+      _uiThrottle = 0;
+      if (mounted) setState(() {});
+    }
+    if (fight.over && !_overShown) _onBattleOver();
+  }
+
+  void _onBattleOver() {
+    if (_overShown || !mounted) return;
+    _overShown = true;
+    final st = _raid;
+    final razed = st?.base.allCastlesRazed ?? false;
+    showDialog<void>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(razed ? '🏰🔥' : '⏱', style: const TextStyle(fontSize: 42)),
+            const SizedBox(height: 6),
+            Text(razed ? 'BASE RAZED' : 'TIME — 5:00 UP',
+                style: GoogleFonts.spaceGrotesk(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5,
+                    color: JarsColors.textPrimary)),
+            const SizedBox(height: 8),
+            Text(
+              '${(st?.base.destructionPercent ?? 0).round()}% razed'
+              ' · ⚔ ${st?.troopsSent ?? 0} sent · 💀 ${st?.troopsLost ?? 0} lost',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                  fontSize: 12.5, color: JarsColors.textSecondary),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dCtx);
+              _resetBattle();
+            },
+            child: const Text('🧹 RESET'),
+          ),
+          if (!razed)
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dCtx);
+                setState(() {
+                  _fight?.extend();
+                  _overShown = false;
+                });
+              },
+              child: Text('KEEP GOING',
+                  style:
+                      GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w800)),
+            ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dCtx);
+              _exitBattle();
+            },
+            child: const Text('EXIT'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final g = ref.watch(warGameProvider);
@@ -190,9 +429,15 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
             Row(children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70),
-                onPressed: () => context.go('/war'),
+                onPressed: () {
+                  if (_battling) {
+                    _exitBattle();
+                  } else {
+                    context.go('/war');
+                  }
+                },
               ),
-              Text('🧪 BASE LAB',
+              Text(_battling ? '⚔️ LAB BATTLE' : '🧪 BASE LAB',
                   style: GoogleFonts.spaceGrotesk(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
@@ -201,40 +446,87 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
               const Spacer(),
               Flexible(
                 child: Text(
-                    '${_biome.name} · ${_mapSize}x$_mapSize · seed $_seed · ${AiData.label(_ai)}'
-                    '${WarAi.lastBuildStats == null ? '' : ' · ${WarAi.lastBuildStats!.rooms} rooms · ${WarAi.lastBuildStats!.structures} pieces'}',
+                    _battling
+                        ? '${(_raid?.base.destructionPercent ?? 0).round()}% razed'
+                            ' · ${_fight?.troopsAlive ?? 0} fighting'
+                            '${_fight != null && _fight!.clockRunning ? ' · ⏱ ${_fmtClock(_fight!.timeLeft)}' : ''}'
+                        : '${_biome.name} · ${_mapSize}x$_mapSize · seed $_seed · ${AiData.label(_ai)}'
+                            '${WarAi.lastBuildStats == null ? '' : ' · ${WarAi.lastBuildStats!.rooms} rooms · ${WarAi.lastBuildStats!.structures} pieces'}',
                     textAlign: TextAlign.right,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.spaceMono(
                         fontSize: 10, color: JarsColors.textSecondary)),
               ),
-              IconButton(
-                icon: Icon(_dials ? Icons.tune_rounded : Icons.tune_outlined,
-                    color: JarsColors.gold),
-                onPressed: () => setState(() => _dials = !_dials),
-              ),
+              if (!_battling)
+                IconButton(
+                  icon: Icon(_dials ? Icons.tune_rounded : Icons.tune_outlined,
+                      color: JarsColors.gold),
+                  onPressed: () => setState(() => _dials = !_dials),
+                ),
+              if (_battling)
+                TextButton(
+                  onPressed: _exitBattle,
+                  child: Text('EXIT',
+                      style: GoogleFonts.spaceGrotesk(
+                          fontWeight: FontWeight.w800,
+                          color: JarsColors.gold)),
+                )
+              else if (base != null)
+                TextButton(
+                  onPressed: _enterBattle,
+                  child: Text('⚔ BATTLE',
+                      style: GoogleFonts.spaceGrotesk(
+                          fontWeight: FontWeight.w800,
+                          color: JarsColors.gold)),
+                ),
             ]),
             Expanded(
               child: base == null
                   ? const Center(
                       child: CircularProgressIndicator(color: JarsColors.gold))
                   : WarBoardView(
-                      key: ValueKey('${base.seed}-${base.rows}-${base.hashCode}'),
-                      base: base,
+                      key: ValueKey(_battling
+                          ? 'fight-${_raid!.base.seed}-${_raid!.hashCode}'
+                          : 'lab-${base.seed}-${base.rows}-${base.hashCode}'),
+                      base: _battling ? _raid!.base : base,
                       startFitted: true,
+                      animationFps: _battling
+                          ? ((_raid?.base.rows ?? 40) >= 52 ? 24 : 30)
+                          : null,
+                      onTick: _battling ? _onBattleTick : null,
+                      onCellTap: _battling ? _onBattleTap : null,
                       painterBuilder: (tile, gx, gy, t) => WarBoardPainter(
-                        base: base,
+                        base: _battling ? _raid!.base : base,
                         tile: tile,
                         gx: gx,
                         gy: gy,
                         t: t,
-                        ownBase: true, // show the hidden pieces too
+                        ownBase: !_battling, // hide traps once the fight starts
+                        showDropLane: _battling,
                         showTerritory: false,
+                        fog: _battling
+                            ? (_raid?.revealed ?? const <int>{})
+                            : null,
+                        troops: _battling && _raid != null
+                            ? [..._raid!.troops, ..._raid!.garrison]
+                            : const [],
+                        graves: _battling ? (_raid?.graves ?? const []) : const [],
+                        troopPositions: _battling ? _animPos : const {},
+                        troopScale: _battling ? 0.45 : 1,
+                        smokeCells: _battling
+                            ? (_raid?.smoke.keys.toSet() ?? const {})
+                            : const {},
                         biome: _biome,
                       ),
+                      overlayBuilder: (tile, gx, gy, t) =>
+                          !_battling || _fx.isEmpty
+                              ? null
+                              : _fx.painter(tile, gx, gy),
                     ),
             ),
-            if (_dials)
+            if (_battling)
+              _battleBar()
+            else if (_dials)
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
                 decoration: const BoxDecoration(
@@ -407,6 +699,25 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
                           ),
                         ),
                       ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _base == null ? null : _enterBattle,
+                          child: Container(
+                            height: 44,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: JarsColors.red,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text('⚔ BATTLE',
+                                style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white)),
+                          ),
+                        ),
+                      ),
                     ]),
                   ],
                 ),
@@ -415,6 +726,131 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
         ),
       ),
     );
+  }
+
+  // ── battle bottom bar ───────────────────────────────────────────────────────
+  Widget _battleBar() {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.38),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Expanded(
+              child: Text(
+                  'FREE MOVE — tap the ring to drop · league unlocks feed AI waves.',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                      fontSize: 11, color: JarsColors.textSecondary)),
+            ),
+            _chip('💀 $_waveDiff', JarsColors.red, () {
+              setState(() =>
+                  _waveDiff = _waveDiff >= 100 ? 25 : _waveDiff + 25);
+            }),
+            const SizedBox(width: 6),
+            _chip('⚔ AI WAVE', JarsColors.gold, _summonWave),
+            const SizedBox(width: 6),
+            _chip('🧹 RESET', JarsColors.textSecondary, _resetBattle),
+          ]),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 62,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final type in _deployable) _deployChip(type),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, Color col, VoidCallback onTap) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: col.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: col.withValues(alpha: 0.55)),
+          ),
+          child: Text(label,
+              style: GoogleFonts.spaceGrotesk(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: col)),
+        ),
+      );
+
+  Widget _deployChip(TroopType type) {
+    final spec = kTroopSpecs[type]!;
+    final on = _deploy == type;
+    final gated = kLeagueGatedTroops.contains(type);
+    final unlocked = !gated || _unlockTroops.contains(type);
+    return Opacity(
+      opacity: unlocked || on ? 1 : 0.4,
+      child: GestureDetector(
+        onTap: () => setState(() => _deploy = type),
+        onLongPress: () => showTroopCard(context, type),
+        child: Container(
+          width: 74,
+          margin: const EdgeInsets.only(right: 7),
+          decoration: BoxDecoration(
+            color: on
+                ? JarsColors.gold.withValues(alpha: 0.18)
+                : JarsColors.surface,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(
+                color: on ? JarsColors.gold : JarsColors.border,
+                width: on ? 2 : 1),
+          ),
+          child: Stack(children: [
+            Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  child: Column(
+                    children: [
+                      Text(spec.emoji, style: const TextStyle(fontSize: 18)),
+                      Text(spec.name,
+                          style: GoogleFonts.inter(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: JarsColors.textSecondary)),
+                      Text('${spec.hp}❤ ${spec.atk}⚔',
+                          style: GoogleFonts.spaceMono(
+                              fontSize: 8.5,
+                              color: JarsColors.textTertiary)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 2,
+              left: 4,
+              child: Text(unlocked ? '∞' : '🔒',
+                  style: GoogleFonts.spaceGrotesk(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: unlocked ? JarsColors.gold : JarsColors.red)),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  String _fmtClock(double secs) {
+    final s = secs.ceil().clamp(0, 9999);
+    return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
   }
 
   Widget _leagueChip(LeagueDivision d, int index) {
