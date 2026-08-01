@@ -509,13 +509,15 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            TextButton.icon(
-              onPressed: () => context.go('/war/lab'),
-              icon: const Icon(Icons.science_rounded, size: 16),
-              label: Text('Base Lab', style: GoogleFonts.inter(fontSize: 12)),
-              style:
-                  TextButton.styleFrom(foregroundColor: JarsColors.textTertiary),
-            ),
+            if (g.canControlWar)
+              TextButton.icon(
+                onPressed: () => context.go('/war/lab'),
+                icon: const Icon(Icons.science_rounded, size: 16),
+                label: Text('League maps',
+                    style: GoogleFonts.inter(fontSize: 12)),
+                style: TextButton.styleFrom(
+                    foregroundColor: JarsColors.textTertiary),
+              ),
             if (g.canControlWar)
               TextButton.icon(
                 onPressed: () => _confirmReset(context, g),

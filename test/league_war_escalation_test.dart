@@ -269,4 +269,72 @@ void main() {
       expect(kDefSpecs[DefType.wall]!.maxLevel, 5);
     });
   });
+
+  group('war generators', () {
+    int? findSpot(WarGame g) {
+      for (var r = 5; r < g.youBase.rows - 5; r++) {
+        for (var c = 5; c < g.youBase.cols - 5; c++) {
+          if (g.youBase.canPlace(r, c)) return r * 1000 + c;
+        }
+      }
+      return null;
+    }
+
+    test('L1 drips 6⚡/hr on login catch-up; destroyed pays nothing', () {
+      final realNow = DateTime.now().millisecondsSinceEpoch;
+      WarGame.nowMs = () => realNow;
+      addTearDown(() => WarGame.nowMs =
+          () => DateTime.now().millisecondsSinceEpoch);
+
+      final g = WarGame.fresh()..startPrep();
+      g.active.resources = 9999;
+      final spot = findSpot(g)!;
+      final r = spot ~/ 1000, c = spot % 1000;
+      expect(g.placeStructure(r, c, DefType.warGenerator), isNull);
+      expect(kDefSpecs[DefType.warGenerator]!.cost, 50);
+
+      g.startWar();
+      final owner = g.players.firstWhere((p) => p.id == g.active.id);
+      final before = owner.resources;
+
+      // 10 minutes of wall time → 1⚡ at L1 (6/hr).
+      WarGame.nowMs = () => realNow + 10 * 60 * 1000;
+      g.syncToWallClock();
+      expect(owner.resources, closeTo(before + 1.0, 0.05));
+
+      // Smash the pump — further time pays nothing.
+      g.youBase.structAt(r, c)!.hp = 0;
+      final mid = owner.resources;
+      WarGame.nowMs = () => realNow + 40 * 60 * 1000;
+      g.syncToWallClock();
+      expect(owner.resources, closeTo(mid, 0.05));
+    });
+
+    test('L2 upgrade costs 30 and pays 15⚡/hr', () {
+      final realNow = DateTime.now().millisecondsSinceEpoch;
+      WarGame.nowMs = () => realNow;
+      addTearDown(() => WarGame.nowMs =
+          () => DateTime.now().millisecondsSinceEpoch);
+
+      final g = WarGame.fresh()..startPrep();
+      g.active.resources = 9999;
+      final spot = findSpot(g)!;
+      final r = spot ~/ 1000, c = spot % 1000;
+      expect(g.placeStructure(r, c, DefType.warGenerator), isNull);
+      expect(g.upgradeStructure(r, c), isNull);
+      expect(g.youBase.structAt(r, c)!.level, 2);
+
+      g.startWar();
+      final owner = g.players.firstWhere((p) => p.id == g.active.id);
+      final before = owner.resources;
+      // 1 hour → 15⚡
+      WarGame.nowMs = () => realNow + 60 * 60 * 1000;
+      // Avoid ending the war via hour sim: only accrue generators.
+      // syncToWallClock would also run AI hours — that's fine for resources.
+      g.syncToWallClock();
+      expect(owner.resources - before, greaterThanOrEqualTo(14.5));
+      expect(warGeneratorRatePerHour(2), 15);
+      expect(warGeneratorRatePerHour(1), 6);
+    });
+  });
 }

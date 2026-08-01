@@ -961,6 +961,7 @@ class WarBoardPainter extends CustomPainter {
       case DefType.commandTent:
       case DefType.pitchPot:
       case DefType.citadelCore:
+      case DefType.warGenerator:
         _emojiAt(canvas, rect.center, s.spec.emoji, tile * 0.55);
         break;
       case DefType.wall:
@@ -2031,6 +2032,7 @@ class WarBoardPainter extends CustomPainter {
       case DefType.commandTent:
       case DefType.pitchPot:
       case DefType.citadelCore:
+      case DefType.warGenerator:
         _emojiAt(canvas, rect.center, kDefSpecs[type]!.emoji, tile * 0.55);
         break;
       case DefType.wall:

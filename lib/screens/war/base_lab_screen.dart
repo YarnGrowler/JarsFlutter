@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/league_config.dart';
 import '../../core/seeded_rng.dart';
 import '../../core/theme.dart';
+import '../../models/league.dart';
+import '../../providers/war_providers.dart';
 import '../../war/war_ai.dart';
 import '../../war/war_base.dart';
 import '../../war/war_biome.dart';
@@ -13,23 +17,26 @@ import '../../war/war_types.dart';
 import 'war_board.dart';
 import 'war_board_view.dart';
 
-/// 🧪 The BASE LAB — a sandbox for the stronghold + terrain generators.
-/// Turn the dials (difficulty 1–100, castles, rivers, lakes, forest,
-/// mountains), hit GENERATE, and see what the algorithm dreams up.
-class BaseLabScreen extends StatefulWidget {
+/// 🧪 The BASE LAB — sandbox for stronghold + terrain generators.
+/// Room admins get league presets (size / biome / wards) to preview higher
+/// rung enemy maps without climbing the ladder.
+class BaseLabScreen extends ConsumerStatefulWidget {
   const BaseLabScreen({super.key});
 
   @override
-  State<BaseLabScreen> createState() => _BaseLabScreenState();
+  ConsumerState<BaseLabScreen> createState() => _BaseLabScreenState();
 }
 
-class _BaseLabScreenState extends State<BaseLabScreen> {
+class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
   double _difficulty = 60; // 1..100
   double _castles = 4; // 1..6
   double _rivers = 1; // 0..3
   double _lakes = 1; // 0..3
   double _forest = 0.16; // 0..0.35
   double _mountain = 0.11; // 0..0.30
+  int _mapSize = Base.defaultSize;
+  WarBiome _biome = WarBiome.meadow;
+  int? _leaguePreset; // division index, or null = free dials
   // stronghold grammar dials (-1 / null = let the algorithm decide)
   int _archetype = -1; // -1 auto, 0 keep, 1 bailey, 2 twins
   double _gates = 0; // 0 = auto, 1..3 forced
@@ -47,7 +54,15 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
   @override
   void initState() {
     super.initState();
-    _generate();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final g = ref.read(warGameProvider);
+      if (!g.canControlWar) {
+        context.go('/war');
+        return;
+      }
+      _generate();
+    });
   }
 
   AiLevel get _ai => _difficulty >= 80
@@ -58,21 +73,60 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
               ? AiLevel.seasoned
               : AiLevel.rookie;
 
+  void _applyLeague(int index) {
+    final div = LeagueConfig.instance.divisionByIndex(index);
+    _leaguePreset = index;
+    _mapSize = div.mapSize;
+    _biome = WarBiome.of(warBiomeFromString(div.biome));
+    _mountain = div.mountainFrac;
+    _forest = div.forestFrac;
+    // Water weights → forced river/lake dials (preview, not seeded roll).
+    if (div.waterWet >= 0.4) {
+      _rivers = 2;
+      _lakes = 1;
+    } else if (div.waterDry >= 0.4) {
+      _rivers = 0;
+      _lakes = 0;
+    } else {
+      _rivers = 1;
+      _lakes = 1;
+    }
+    // Match production: wards drive citadel rooms on big boards.
+    final wards = div.wards;
+    _rooms = wards >= 2
+        ? (wards + (_mapSize >= 56 ? 1 : 0)).toDouble()
+        : -1;
+    _layers = wards >= 2 ? wards.toDouble() : -1;
+    // Nudge difficulty toward the rung's feel.
+    _difficulty = (30 + div.difficulty * 55).clamp(1, 100);
+    _generate();
+  }
+
   void _generate({bool reroll = false}) {
     if (reroll) _seed = (_seed * 16807 + 13) & 0x7fffffff;
-    final base = Base(WarSide.enemy, _seed,
-        config: TerrainConfig(
-          rivers: _rivers.round(),
-          lakes: _lakes.round(),
-          forestFrac: _forest,
-          mountainFrac: _mountain,
-        ));
+    final waterMode = _rivers.round() == 0 && _lakes.round() == 0
+        ? 0
+        : (_rivers.round() + _lakes.round() >= 3 ? 2 : 1);
+    final base = Base(
+      WarSide.enemy,
+      _seed,
+      size: _mapSize,
+      config: TerrainConfig(
+        rivers: _rivers.round(),
+        lakes: _lakes.round(),
+        forestFrac: _forest,
+        mountainFrac: _mountain,
+        waterMode: waterMode,
+      ),
+    );
     // the difficulty dial drives both the WAR CHEST and the plan depth —
     // and the CONTINUOUS skill (past master → citadels), same as a real war
     final s = WarGame.skillFor(_difficulty.round());
     final budget = WarCosts.prepBudgetFor(s);
+    // Bigger boards need more builders so the fortress fills the canvas.
+    final castleN = _castles.round().clamp(1, 6);
     final crew = [
-      for (var i = 0; i < _castles.round(); i++)
+      for (var i = 0; i < castleN; i++)
         WarPlayer(
             id: 'lab$i',
             name: 'Lab $i',
@@ -80,7 +134,7 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
             colorValue: 0xFFE6483F,
             side: WarSide.enemy,
             ai: _ai,
-            resources: budget)
+            resources: budget * (1 + (_mapSize - Base.defaultSize) / 40))
           ..skillMul = s / AiData.skill(_ai)
     ];
     WarAi.designBase(
@@ -100,7 +154,15 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final g = ref.watch(warGameProvider);
+    if (!g.canControlWar) {
+      return const Scaffold(
+        backgroundColor: JarsColors.background,
+        body: Center(child: Text('Admin only')),
+      );
+    }
     final base = _base;
+    final divisions = LeagueConfig.instance.divisions;
     return Scaffold(
       backgroundColor: JarsColors.background,
       body: SafeArea(
@@ -118,13 +180,15 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
                       letterSpacing: 1,
                       color: JarsColors.textPrimary)),
               const Spacer(),
-              Text(
-                  'seed $_seed · ${AiData.label(_ai)}'
-                  '${WarAi.lastBuildStats == null ? '' : ' · ${WarAi.lastBuildStats!.rooms} rooms · ${WarAi.lastBuildStats!.structures} pieces'}'
-                  '${_archetype < 0 ? '' : ' · ${const ['Keep', 'Bailey', 'Twins'][_archetype]}'}'
-                  '${_layers.round() < 0 ? '' : ' · ${_layers.round()} wards'}',
-                  style: GoogleFonts.spaceMono(
-                      fontSize: 11, color: JarsColors.textSecondary)),
+              Flexible(
+                child: Text(
+                    '${_biome.name} · ${_mapSize}x$_mapSize · seed $_seed · ${AiData.label(_ai)}'
+                    '${WarAi.lastBuildStats == null ? '' : ' · ${WarAi.lastBuildStats!.rooms} rooms · ${WarAi.lastBuildStats!.structures} pieces'}',
+                    textAlign: TextAlign.right,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.spaceMono(
+                        fontSize: 10, color: JarsColors.textSecondary)),
+              ),
               IconButton(
                 icon: Icon(_dials ? Icons.tune_rounded : Icons.tune_outlined,
                     color: JarsColors.gold),
@@ -133,9 +197,10 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
             ]),
             Expanded(
               child: base == null
-                  ? const SizedBox.shrink()
+                  ? const Center(
+                      child: CircularProgressIndicator(color: JarsColors.gold))
                   : WarBoardView(
-                      key: ValueKey('${base.seed}-${base.hashCode}'),
+                      key: ValueKey('${base.seed}-${base.rows}-${base.hashCode}'),
                       base: base,
                       startFitted: true,
                       painterBuilder: (tile, gx, gy, t) => WarBoardPainter(
@@ -146,7 +211,7 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
                         t: t,
                         ownBase: true, // show the hidden pieces too
                         showTerritory: false,
-                        biome: WarBiome.meadow,
+                        biome: _biome,
                       ),
                     ),
             ),
@@ -160,26 +225,66 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('LEAGUE ENEMY PRESET (admin)',
+                          style: GoogleFonts.inter(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.8,
+                              color: JarsColors.textTertiary)),
+                    ),
+                    const SizedBox(height: 4),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (var i = 0; i < divisions.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 6),
+                            _leagueChip(divisions[i], i),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     _dial('DIFFICULTY', _difficulty, 1, 100,
                         '${_difficulty.round()}',
-                        (v) => _difficulty = v),
+                        (v) {
+                      _leaguePreset = null;
+                      _difficulty = v;
+                    }),
+                    _dial('MAP SIZE', _mapSize.toDouble(), 40, 60,
+                        '${_mapSize}x$_mapSize', (v) {
+                      _leaguePreset = null;
+                      _mapSize = v.round();
+                      if (_mapSize % 2 != 0) _mapSize += 1;
+                    }),
                     _dial('CASTLES', _castles, 1, 6, '${_castles.round()}',
                         (v) => _castles = v),
                     Row(children: [
                       Expanded(
                         child: _dial('RIVERS', _rivers, 0, 3,
-                            '${_rivers.round()}', (v) => _rivers = v),
+                            '${_rivers.round()}', (v) {
+                          _leaguePreset = null;
+                          _rivers = v;
+                        }),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: _dial('LAKES', _lakes, 0, 3, '${_lakes.round()}',
-                            (v) => _lakes = v),
+                            (v) {
+                          _leaguePreset = null;
+                          _lakes = v;
+                        }),
                       ),
                     ]),
                     Row(children: [
                       Expanded(
                         child: _dial('FOREST', _forest, 0, 0.35,
-                            '${(_forest * 100).round()}%', (v) => _forest = v),
+                            '${(_forest * 100).round()}%', (v) {
+                          _leaguePreset = null;
+                          _forest = v;
+                        }),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -188,8 +293,10 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
                             _mountain,
                             0,
                             0.30,
-                            '${(_mountain * 100).round()}%',
-                            (v) => _mountain = v),
+                            '${(_mountain * 100).round()}%', (v) {
+                          _leaguePreset = null;
+                          _mountain = v;
+                        }),
                       ),
                     ]),
                     // ── stronghold grammar dials ──
@@ -281,25 +388,6 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () => _generate(),
-                        child: Container(
-                          height: 44,
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: JarsColors.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: JarsColors.border),
-                          ),
-                          child: Text('↻ SAME SEED',
-                              style: GoogleFonts.spaceGrotesk(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  color: JarsColors.textPrimary)),
-                        ),
-                      ),
                     ]),
                   ],
                 ),
@@ -310,9 +398,72 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
     );
   }
 
-  /// A row of exclusive choice chips (SHAPE, INNER KEEP…).
-  Widget _chips(
-      String label, List<String> options, int selected, void Function(int) onPick) {
+  Widget _leagueChip(LeagueDivision d, int index) {
+    final on = _leaguePreset == index;
+    return GestureDetector(
+      onTap: () => setState(() => _applyLeague(index)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: on ? d.color.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: on ? d.color : JarsColors.border, width: on ? 1.4 : 1),
+        ),
+        child: Text('${d.icon} ${d.metalName.replaceAll(' League', '')} ${d.mapSize}',
+            style: GoogleFonts.spaceGrotesk(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: on ? Colors.white : JarsColors.textSecondary)),
+      ),
+    );
+  }
+
+  Widget _dial(String label, double value, double min, double max, String shown,
+      ValueChanged<double> onChanged) {
+    return Row(children: [
+      SizedBox(
+        width: 88,
+        child: Text(label,
+            style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: JarsColors.textTertiary)),
+      ),
+      Expanded(
+        child: SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 2,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            activeTrackColor: JarsColors.gold,
+            inactiveTrackColor: JarsColors.border,
+            thumbColor: JarsColors.gold,
+          ),
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            onChanged: (v) => setState(() {
+              onChanged(v);
+            }),
+            onChangeEnd: (_) => _generate(),
+          ),
+        ),
+      ),
+      SizedBox(
+        width: 52,
+        child: Text(shown,
+            textAlign: TextAlign.right,
+            style: GoogleFonts.spaceMono(
+                fontSize: 11, color: JarsColors.textSecondary)),
+      ),
+    ]);
+  }
+
+  Widget _chips(String label, List<String> options, int selected,
+      ValueChanged<int> onPick) {
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,9 +474,10 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.6,
                   color: JarsColors.textTertiary)),
-          const SizedBox(height: 3),
+          const SizedBox(height: 4),
           Wrap(
             spacing: 4,
+            runSpacing: 4,
             children: [
               for (var i = 0; i < options.length; i++)
                 GestureDetector(
@@ -334,20 +486,22 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: i == selected
-                          ? JarsColors.gold.withValues(alpha: 0.2)
-                          : JarsColors.surface,
-                      borderRadius: BorderRadius.circular(9999),
+                      color: selected == i
+                          ? JarsColors.gold.withValues(alpha: 0.25)
+                          : Colors.white.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                          color: i == selected
+                          color: selected == i
                               ? JarsColors.gold
                               : JarsColors.border),
                     ),
                     child: Text(options[i],
                         style: GoogleFonts.spaceGrotesk(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            color: JarsColors.textPrimary)),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: selected == i
+                                ? JarsColors.gold
+                                : JarsColors.textSecondary)),
                   ),
                 ),
             ],
@@ -355,44 +509,5 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
         ],
       ),
     );
-  }
-
-  Widget _dial(String label, double value, double min, double max,
-      String readout, void Function(double) set) {
-    return Row(children: [
-      SizedBox(
-        width: 82,
-        child: Text(label,
-            style: GoogleFonts.inter(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.6,
-                color: JarsColors.textTertiary)),
-      ),
-      Expanded(
-        child: SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 3,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-          ),
-          child: Slider(
-            value: value.clamp(min, max),
-            min: min,
-            max: max,
-            activeColor: JarsColors.gold,
-            inactiveColor: JarsColors.border,
-            onChanged: (v) => setState(() => set(v)),
-            onChangeEnd: (_) => _generate(),
-          ),
-        ),
-      ),
-      SizedBox(
-        width: 36,
-        child: Text(readout,
-            textAlign: TextAlign.right,
-            style: GoogleFonts.spaceMono(
-                fontSize: 11, color: JarsColors.textSecondary)),
-      ),
-    ]);
   }
 }

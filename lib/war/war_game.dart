@@ -84,6 +84,9 @@ class WarGame extends ChangeNotifier {
   /// Peak battlefield side length. Never shrinks on relegation; grows on promote.
   int mapSize = Base.defaultSize;
 
+  /// Sim-minutes already paid out by War Generators (wall-clock catch-up cursor).
+  int lastGeneratorAccrueMin = 0;
+
   AiLevel enemyDifficulty = AiLevel.seasoned;
 
   /// The 1..100 war dial. 50 ~ old Master; past it the enemy grows crueler
@@ -688,6 +691,7 @@ class WarGame extends ChangeNotifier {
 
     phase = WarPhase.war;
     clock.simMinutes = 0;
+    lastGeneratorAccrueMin = 0;
     warStartedAtMs = nowMs(); // the wall clock starts ticking now
     for (final p in players) {
       // hard enemies march to war RICH — their raids come big and often.
@@ -785,12 +789,47 @@ class WarGame extends ChangeNotifier {
   /// is open — a player who's been away comes home to a war that kept going.
   void syncToWallClock() {
     if (phase != WarPhase.war || warStartedAtMs == 0) return;
+    // Generators drip on minute granularity — every room login / hub open.
+    _accrueWarGenerators();
     final elapsedSec = (nowMs() - warStartedAtMs) / 1000.0;
     if (elapsedSec <= 0) return; // clock skew / just started
     final targetMin = math.min(WarClock.dayMinutes,
         (elapsedSec / realSecondsPerSimHour * 60).floor());
     final delta = (targetMin ~/ 60) - clock.hour;
     if (delta > 0) _runHours(delta);
+  }
+
+  /// Pay out War Generators for sim-time since [lastGeneratorAccrueMin].
+  /// L1 = 6⚡/hr (1 per 10 min); L2 = 15⚡/hr. Credits each pump's owner.
+  /// Stops at day end / when [forceEnd] finalizes an early knockout.
+  void _accrueWarGenerators({bool forceEnd = false}) {
+    if (warStartedAtMs == 0) return;
+    if (phase != WarPhase.war && !forceEnd) return;
+
+    final elapsedSec = math.max(0.0, (nowMs() - warStartedAtMs) / 1000.0);
+    var targetMin = math.min(WarClock.dayMinutes,
+        (elapsedSec / realSecondsPerSimHour * 60).floor());
+    // Admin fast-forward advances [clock] ahead of wall time — honor that too.
+    targetMin = math.max(targetMin, clock.simMinutes);
+    if (forceEnd) targetMin = math.max(targetMin, clock.simMinutes);
+    targetMin = targetMin.clamp(0, WarClock.dayMinutes);
+
+    final last = lastGeneratorAccrueMin.clamp(0, WarClock.dayMinutes);
+    if (targetMin <= last) return;
+    final hours = (targetMin - last) / 60.0;
+    lastGeneratorAccrueMin = targetMin;
+
+    for (var r = 0; r < youBase.rows; r++) {
+      for (var c = 0; c < youBase.cols; c++) {
+        final s = youBase.structAt(r, c);
+        if (s == null || !s.alive || s.type != DefType.warGenerator) continue;
+        final pay = warGeneratorRatePerHour(s.level) * hours;
+        if (pay <= 0) continue;
+        final i = players.indexWhere((p) => p.id == s.ownerId);
+        if (i == -1) continue;
+        players[i].resources += pay;
+      }
+    }
   }
 
   /// Manual fast-forward (sandbox / testing). Also winds the wall-clock anchor
@@ -838,6 +877,8 @@ class WarGame extends ChangeNotifier {
       _noteFalls();
       if (enemyBase.allCastlesRazed && youBase.allCastlesRazed) break;
     }
+    // Keep pumps current with the sim clock (admin skip / catch-up hours).
+    _accrueWarGenerators();
     if (clock.dayOver || (enemyBase.allCastlesRazed && youBase.allCastlesRazed)) {
       endWar();
     } else {
@@ -1147,6 +1188,8 @@ class WarGame extends ChangeNotifier {
   void endWar() {
     _absorbLiveAttack(); // bank any open raid first
     _absorbClash();
+    // Final generator drip through knockout / day-end, then freeze.
+    _accrueWarGenerators(forceEnd: true);
     phase = WarPhase.results;
     final you = ClanTally(WarSide.you,
         destructionDealt: enemyBase.destructionPercent,
@@ -1329,6 +1372,7 @@ class WarGame extends ChangeNotifier {
         'gen': worldGen,
         'div': divisionIndex,
         'mapSize': mapSize,
+        'genAccrue': lastGeneratorAccrueMin,
         'diff': enemyDifficulty.index,
         'diff100': difficulty,
         'eClan': enemyClanName,
@@ -1359,6 +1403,7 @@ class WarGame extends ChangeNotifier {
     divisionIndex = (j['div'] as num?)?.toInt() ?? 0;
     mapSize = (j['mapSize'] as num?)?.toInt() ?? Base.defaultSize;
     _syncMapSize(); // division may demand larger than a legacy save
+    lastGeneratorAccrueMin = (j['genAccrue'] as num?)?.toInt() ?? 0;
     enemyDifficulty = AiLevel.values[(j['diff'] as num?)?.toInt() ?? 1];
     difficulty = (j['diff100'] as num?)?.toInt() ?? 50;
     enemyClanName = j['eClan'] as String? ?? 'The Enemy';

@@ -96,6 +96,8 @@ enum DefType {
   commandTent,
   pitchPot,
   citadelCore,
+  // economy (appended)
+  warGenerator,
 }
 
 class DefSpec {
@@ -377,6 +379,19 @@ const Map<DefType, DefSpec> kDefSpecs = {
       blurb:
           'One per crew. No gun — a landmark aura that toughens nearby walls '
           'and hastens towers. Raiders will come for it.'),
+  DefType.warGenerator: DefSpec(DefType.warGenerator,
+      name: 'War Generator',
+      emoji: '⚗️',
+      category: DefCategory.garrison,
+      cost: 50,
+      hp: 90,
+      blocks: true,
+      upgradeCost: 30,
+      maxLevel: 2,
+      blurb:
+          'War-day elixir pump. L1 drips 6⚡/hr; L2 pumps 15⚡/hr. Accrues '
+          'whenever anyone in the room opens the war — until the day ends '
+          'or the pump is smashed.'),
 };
 
 /// The palette a player can place (castle is placed separately, one per player).
@@ -400,6 +415,7 @@ const List<DefType> kBuildPalette = [
   DefType.commandTent,
   DefType.pitchPot,
   DefType.citadelCore,
+  DefType.warGenerator,
 ];
 
 /// League-gated defenses (everything else in [kBuildPalette] is always free).
@@ -409,6 +425,10 @@ const Set<DefType> kLeagueGatedDefs = {
   DefType.pitchPot,
   DefType.citadelCore,
 };
+
+/// War-day ⚡/hour by generator level (L1 = 6, L2 = 15).
+double warGeneratorRatePerHour(int level) =>
+    level >= 2 ? 15.0 : 6.0;
 
 String defUnlockKey(DefType t) {
   switch (t) {
