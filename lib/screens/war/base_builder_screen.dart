@@ -358,11 +358,15 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(children: [
-                Text(spec.name,
-                    style: GoogleFonts.spaceGrotesk(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w800,
-                        color: JarsColors.textPrimary)),
+                Flexible(
+                  child: Text(spec.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.spaceGrotesk(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w800,
+                          color: JarsColors.textPrimary)),
+                ),
                 if ((s.level as int) >= 2)
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
@@ -383,13 +387,23 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                     ),
                   ),
               ]),
+              if (!mine)
+                Text(
+                    ownerName != null
+                        ? 'belongs to $ownerName'
+                        : 'belongs to a departed crewmate',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: JarsColors.gold)),
               Text(
                   '❤ ${s.hp}/${s.maxHp}'
                   '${spec.isShooter ? ' · ⚔ ${s.damage} · 🎯 ${spec.range}' : ''}'
                   '${spec.type == DefType.guardPost ? ' · 📍 patrol ${AttackState.garrisonLeash + ((s.level as int) - 1) * 2}' : ''}'
                   '${spec.type == DefType.housing ? ' · 🏠 tents +1 defender' : ''}'
-                  '${g.youBase.grid[cell.r][cell.c].terrain == Terrain.hill && spec.isShooter ? ' · ⛰ high ground +1🎯' : ''}'
-                  '${!mine && ownerName != null ? ' · 🧑 $ownerName' : ''}',
+                  '${g.youBase.grid[cell.r][cell.c].terrain == Terrain.hill && spec.isShooter ? ' · ⛰ high ground +1🎯' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
