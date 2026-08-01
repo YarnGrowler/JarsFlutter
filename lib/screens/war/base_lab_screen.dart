@@ -10,7 +10,6 @@ import '../../core/league_config.dart';
 import '../../core/seeded_rng.dart';
 import '../../core/theme.dart';
 import '../../models/league.dart';
-import '../../providers/war_providers.dart';
 import '../../war/free_move_battle.dart';
 import '../../war/war_ai.dart';
 import '../../war/war_base.dart';
@@ -25,8 +24,8 @@ import 'war_board_view.dart';
 import 'war_info_cards.dart';
 
 /// 🧪 The BASE LAB — sandbox for stronghold + terrain generators.
-/// Room admins get league presets (size / biome / wards) to preview higher
-/// rung enemy maps without climbing the ladder.
+/// Anyone can browse league presets (size / biome / wards) to preview higher
+/// rung enemy maps. Season reset stays admin-only on the war hub.
 class BaseLabScreen extends ConsumerStatefulWidget {
   const BaseLabScreen({super.key});
 
@@ -91,11 +90,8 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final g = ref.read(warGameProvider);
-      if (!g.canControlWar) {
-        context.go('/war');
-        return;
-      }
+      // League maps are a sandbox anyone can browse — season reset stays
+      // admin-only on the war hub, not here.
       _generate();
     });
   }
@@ -412,13 +408,6 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final g = ref.watch(warGameProvider);
-    if (!g.canControlWar) {
-      return const Scaffold(
-        backgroundColor: JarsColors.background,
-        body: Center(child: Text('Admin only')),
-      );
-    }
     final base = _base;
     final divisions = LeagueConfig.instance.divisions;
     return Scaffold(

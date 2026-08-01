@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
 import '../../providers/war_providers.dart';
 import '../../war/war_game.dart';
+import '../../war/war_player.dart';
 import '../../war/war_types.dart';
 
 /// The Clan War hub — status, your crew + who you're controlling, the phase
@@ -75,6 +76,8 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
             _header(g, table),
             const SizedBox(height: 14),
             _assaultBars(g),
+            const SizedBox(height: 12),
+            _spendCard(context, g),
             const SizedBox(height: 16),
             _phaseCard(context, g),
             const SizedBox(height: 16),
@@ -174,6 +177,240 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
             child: bar('ENEMY ASSAULT', g.enemyDestruction, const Color(0xFFE6483F),
                 'damage to your stronghold')),
       ],
+    );
+  }
+
+  Widget _spendCard(BuildContext context, WarGame g) {
+    final youOff = g.clanOffense(g.youClan);
+    final youDef = g.clanDefense(g.youClan);
+    final youTot = youOff + youDef;
+    final foeOff = g.clanOffense(g.enemyClan);
+    final foeDef = g.clanDefense(g.enemyClan);
+    final foeTot = foeOff + foeDef;
+    return GestureDetector(
+      onTap: () => _showSpenders(context, g),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: JarsColors.surface,
+          borderRadius: BorderRadius.circular(JarsRadius.card),
+          border: Border.all(color: JarsColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Text('TEAM SPEND',
+                  style: GoogleFonts.spaceGrotesk(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                      color: JarsColors.textSecondary)),
+              const Spacer(),
+              Text('biggest spenders ›',
+                  style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: JarsColors.primary)),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                  child: _spendSide(
+                      'YOUR CREW',
+                      const Color(0xFF2E6BE6),
+                      youOff,
+                      youDef,
+                      youTot)),
+              Container(
+                  width: 1,
+                  height: 54,
+                  color: JarsColors.border,
+                  margin: const EdgeInsets.symmetric(horizontal: 10)),
+              Expanded(
+                  child: _spendSide(
+                      g.enemyClanName.toUpperCase(),
+                      const Color(0xFFE6483F),
+                      foeOff,
+                      foeDef,
+                      foeTot)),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _spendSide(
+      String label, Color c, double offense, double defense, double total) {
+    String fmt(double v) {
+      final n = v.round();
+      if (n >= 10000) return '${(n / 1000).toStringAsFixed(n >= 100000 ? 0 : 1)}k';
+      return '$n';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.spaceGrotesk(
+                fontSize: 11, fontWeight: FontWeight.w800, color: c)),
+        const SizedBox(height: 6),
+        Row(children: [
+          _spendChip('ATK', fmt(offense), c),
+          const SizedBox(width: 6),
+          _spendChip('DEF', fmt(defense), c),
+          const SizedBox(width: 6),
+          _spendChip('Σ', fmt(total), JarsColors.gold),
+        ]),
+      ],
+    );
+  }
+
+  Widget _spendChip(String tag, String value, Color c) => Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+          decoration: BoxDecoration(
+            color: c.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: c.withValues(alpha: 0.35)),
+          ),
+          child: Column(
+            children: [
+              Text(value,
+                  style: GoogleFonts.spaceGrotesk(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: JarsColors.textPrimary)),
+              Text(tag,
+                  style: GoogleFonts.inter(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4,
+                      color: JarsColors.textTertiary)),
+            ],
+          ),
+        ),
+      );
+
+  void _showSpenders(BuildContext context, WarGame g) {
+    final atk = g.biggestOffenseSpenders();
+    final def = g.biggestDefenseSpenders();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: JarsColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: JarsColors.border,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text('BIGGEST SPENDERS',
+                    style: GoogleFonts.spaceGrotesk(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: JarsColors.textPrimary)),
+                Text('Who poured the most ⚡ into the attack and the walls.',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: JarsColors.textSecondary)),
+                const SizedBox(height: 16),
+                _spenderColumn('⚔ OFFENSE', atk, (p) => g.offenseSpentOf(p)),
+                const SizedBox(height: 14),
+                _spenderColumn('🛡 DEFENSE', def, (p) => g.defenseSpentOf(p)),
+                const SizedBox(height: 8),
+                Text(
+                    'Offense = troops trained + raid costs. '
+                    'Defense = structures still standing under their name.',
+                    style: GoogleFonts.inter(
+                        fontSize: 10.5, color: JarsColors.textTertiary)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _spenderColumn(
+      String title, List<WarPlayer> list, double Function(WarPlayer) amount) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style: GoogleFonts.spaceGrotesk(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+                color: JarsColors.textSecondary)),
+        const SizedBox(height: 6),
+        if (list.isEmpty)
+          Text('Nobody yet.',
+              style: GoogleFonts.inter(
+                  fontSize: 12, color: JarsColors.textTertiary))
+        else
+          for (var i = 0; i < list.length; i++)
+            _spenderRow(i + 1, list[i], amount(list[i])),
+      ],
+    );
+  }
+
+  Widget _spenderRow(int rank, WarPlayer p, double amount) {
+    final you = p.side == WarSide.you;
+    final c = you ? const Color(0xFF2E6BE6) : const Color(0xFFE6483F);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(children: [
+        SizedBox(
+          width: 22,
+          child: Text('#$rank',
+              style: GoogleFonts.spaceMono(
+                  fontSize: 11, color: JarsColors.textTertiary)),
+        ),
+        Text(p.emoji, style: const TextStyle(fontSize: 16)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(p.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.spaceGrotesk(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: JarsColors.textPrimary)),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: c.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(you ? 'YOU' : 'FOE',
+              style: GoogleFonts.inter(
+                  fontSize: 9, fontWeight: FontWeight.w800, color: c)),
+        ),
+        const SizedBox(width: 8),
+        Text('${amount.round()}⚡',
+            style: GoogleFonts.spaceMono(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: JarsColors.gold)),
+      ]),
     );
   }
 
@@ -593,6 +830,41 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                 : null,
           ),
         ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: JarsColors.red.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: JarsColors.red.withValues(alpha: 0.28)),
+          ),
+          child: Row(children: [
+            const Icon(Icons.savings_outlined,
+                size: 16, color: JarsColors.gold),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text('EST. ENEMY WAR CHEST',
+                  style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.7,
+                      color: JarsColors.textSecondary)),
+            ),
+            Text('${g.estimatedEnemyWarChest.round()}⚡ total',
+                style: GoogleFonts.spaceGrotesk(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: JarsColors.gold)),
+            const SizedBox(width: 5),
+            Text('· ${g.estimatedEnemyWarChestPerFoe.round()} each',
+                style: GoogleFonts.inter(
+                    fontSize: 10.5, color: JarsColors.textTertiary)),
+          ]),
+        ),
+        const SizedBox(height: 6),
+        Text(
+            'Updates with difficulty, league/map size, team size and real crew prep earnings.',
+            style: GoogleFonts.inter(
+                fontSize: 9.5, color: JarsColors.textTertiary)),
         if (!g.canControlWar)
           Text('Only the room admin can change this.',
               style: GoogleFonts.inter(
@@ -607,15 +879,14 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            if (g.canControlWar)
-              TextButton.icon(
-                onPressed: () => context.go('/war/lab'),
-                icon: const Icon(Icons.science_rounded, size: 16),
-                label: Text('League maps',
-                    style: GoogleFonts.inter(fontSize: 12)),
-                style: TextButton.styleFrom(
-                    foregroundColor: JarsColors.textTertiary),
-              ),
+            TextButton.icon(
+              onPressed: () => context.go('/war/lab'),
+              icon: const Icon(Icons.science_rounded, size: 16),
+              label: Text('League maps',
+                  style: GoogleFonts.inter(fontSize: 12)),
+              style: TextButton.styleFrom(
+                  foregroundColor: JarsColors.textTertiary),
+            ),
             if (g.canControlWar)
               TextButton.icon(
                 onPressed: () => _confirmReset(context, g),

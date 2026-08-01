@@ -22,6 +22,18 @@ class Structure {
   bool get alive => hp > 0;
   bool get isCastle => type == DefType.castle;
 
+  /// ⚡ poured into this piece so far: place cost + every upgrade rung.
+  /// Castles are free landmarks, so they contribute 0.
+  double get investedCost {
+    if (isCastle) return 0;
+    var total = spec.cost.toDouble();
+    if (spec.upgradeCost <= 0) return total;
+    for (var lv = 1; lv < level; lv++) {
+      total += spec.upgradeCost * lv;
+    }
+    return total;
+  }
+
   /// Upgrades toughen the piece: +30% hp per level past 1.
   /// Walls get an extra +15% from L4 so bastions shrug L1 sapper bombs.
   int get maxHp {

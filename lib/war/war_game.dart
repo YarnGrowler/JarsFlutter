@@ -312,6 +312,43 @@ class WarGame extends ChangeNotifier {
   double get youDestruction => enemyBase.destructionPercent; // your clan dealt
   double get enemyDestruction => youBase.destructionPercent; // enemy clan dealt
 
+  /// ⚡ currently sitting in the stronghold under [p]'s name (place + upgrades).
+  /// Castles are free. Sold pieces drop out of the total automatically.
+  double defenseSpentOf(WarPlayer p) {
+    final base = p.side == WarSide.you ? youBase : enemyBase;
+    var total = 0.0;
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        final s = base.structAt(r, c);
+        if (s == null || !s.alive || s.ownerId != p.id) continue;
+        total += s.investedCost;
+      }
+    }
+    return total;
+  }
+
+  /// ⚡ poured into the attack this war (training + raid costs).
+  double offenseSpentOf(WarPlayer p) => p.resourcesSpent;
+
+  double clanOffense(List<WarPlayer> clan) =>
+      clan.fold(0.0, (a, p) => a + offenseSpentOf(p));
+
+  double clanDefense(List<WarPlayer> clan) =>
+      clan.fold(0.0, (a, p) => a + defenseSpentOf(p));
+
+  /// Offense / defense leaders for the spenders sheet, highest first.
+  List<WarPlayer> biggestOffenseSpenders({int limit = 5}) {
+    final all = [...youClan, ...enemyClan]
+      ..sort((a, b) => offenseSpentOf(b).compareTo(offenseSpentOf(a)));
+    return all.where((p) => offenseSpentOf(p) > 0).take(limit).toList();
+  }
+
+  List<WarPlayer> biggestDefenseSpenders({int limit = 5}) {
+    final all = [...youClan, ...enemyClan]
+      ..sort((a, b) => defenseSpentOf(b).compareTo(defenseSpentOf(a)));
+    return all.where((p) => defenseSpentOf(p) > 0).take(limit).toList();
+  }
+
   double resourcesOf(String id) => pools.of(id);
 
   /// Widgets kick the game from initState/dispose (start a clash, bank a
@@ -662,6 +699,33 @@ class WarGame extends ChangeNotifier {
     return math.max(skillFor(difficulty), leagueFloor);
   }
 
+  double get _enemyForgeMultiplier {
+    final areaMul = (mapSize * mapSize) /
+        (Base.defaultSize * Base.defaultSize).toDouble();
+    return mapSize >= 60
+        ? areaMul * 2.6
+        : mapSize >= 52
+            ? areaMul * 1.7
+            : areaMul;
+  }
+
+  /// Estimated total build chest the enemy team receives when war starts.
+  /// This is the exact start-war formula: difficulty/league budget for every
+  /// enemy castle, plus the real crew's prep effort floor.
+  double get estimatedEnemyWarChest {
+    final foes = enemyClan.length;
+    if (foes == 0) return 0;
+    final crewFloor = youClan
+        .where((p) => !p.isBot)
+        .fold(0.0, (sum, p) => sum + p.prepEarned);
+    final basePerFoe =
+        WarCosts.prepBudgetFor(_effectiveEnemySkill()) * _enemyForgeMultiplier;
+    return crewFloor + basePerFoe * foes;
+  }
+
+  double get estimatedEnemyWarChestPerFoe =>
+      enemyClan.isEmpty ? 0 : estimatedEnemyWarChest / enemyClan.length;
+
   static AiLevel _tierForSkill(double s) => s >= 0.9
       ? AiLevel.master
       : s >= 0.65
@@ -699,13 +763,7 @@ class WarGame extends ChangeNotifier {
       // A bigger board needs a bigger war chest or the fortress spreads thin
       // and every promotion feels like a WEAKER enemy. Radiant-band boards
       // get an extra forge budget so L4/L5 steel actually gets paid for.
-      final areaMul = (mapSize * mapSize) /
-          (Base.defaultSize * Base.defaultSize).toDouble();
-      final forgeMul = mapSize >= 60
-          ? areaMul * 2.6
-          : mapSize >= 52
-              ? areaMul * 1.7
-              : areaMul;
+      final forgeMul = _enemyForgeMultiplier;
       for (final p in foes) {
         p.ai = tier;
         p.skillMul = effSkill / AiData.skill(tier);
@@ -782,7 +840,7 @@ class WarGame extends ChangeNotifier {
       return 'Need ${cost.round()} ⚡ — log a workout to earn more.';
     }
     active.resources -= cost;
-    if (phase == WarPhase.war) active.resourcesSpent += cost;
+    active.resourcesSpent += cost; // offense ledger: training counts in prep too
     active.army[type] = (active.army[type] ?? 0) + 1;
     _save();
     notifyListeners();
@@ -819,7 +877,7 @@ class WarGame extends ChangeNotifier {
       return 'Need ${cost.round()} ⚡ to unlock L$next.';
     }
     active.resources -= cost;
-    if (phase == WarPhase.war) active.resourcesSpent += cost;
+    // Doctrine is a permanent unlock, not a war-day offense/defense tally.
     active.troopDoctrine[type] = next;
     _save();
     notifyListeners();
@@ -828,10 +886,13 @@ class WarGame extends ChangeNotifier {
 
   /// Deploy a trained troop from the active player's army (no ⚡ charge — it
   /// was paid at the Training Grounds). Lands at the player's doctrine level.
-  Troop? deployTrained(AttackState st, TroopType type, int r, int c) {
+  /// [allowStack] is for Free Move raids where tiles aren't exclusive slots.
+  Troop? deployTrained(AttackState st, TroopType type, int r, int c,
+      {bool allowStack = false}) {
     if (knockedOut(active)) return null; // the fallen only spectate
     if ((active.army[type] ?? 0) <= 0) return null;
-    final t = st.spawn(type, active.id, r, c, prepaid: true);
+    final t =
+        st.spawn(type, active.id, r, c, prepaid: true, allowStack: allowStack);
     if (t != null) {
       final doctrine = active.doctrineLevel(type);
       if (doctrine > 1) {

@@ -63,20 +63,23 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
 
   // clash state
   LiveBattle? _battle;
-  /// Drill only: the continuous (Clash-style) simulator. When this is running
+  /// Continuous (Clash-style) simulator for Free Move. When this is running
   /// [_battle] is null — the two engines never share a board.
   FreeMoveBattle? _free;
   int _drillDiff = 50; // difficulty of SUMMONED sandbox waves
-  bool _freeFlowDrill = false;
+  /// Free Move is the default for drills AND live clan raids. Classic stays
+  /// available as a practice toggle for A/B comparison.
+  bool _freeMove = true;
   bool _clashBanked = false;
   double _uiThrottle = 0;
 
   // smooth troop glide: animated display positions in cell-space (x=col, y=row)
   final Map<String, Offset> _animPos = {};
 
-  bool get _freeMode => _mode == 'practice' && _freeFlowDrill;
+  bool get _freeMode =>
+      (_mode == 'practice' || _mode == 'clash') && _freeMove && _free != null;
 
-  // ── engine facade: the drill can be running either simulator ────────────────
+  // ── engine facade: auto-battles can run either simulator ────────────────────
   bool get _battleOver => _free?.over ?? _battle?.over ?? false;
   double get _battleElapsed => _free?.elapsed ?? _battle?.elapsed ?? 0;
   int get _battleTroopsAlive => _free?.troopsAlive ?? _battle?.troopsAlive ?? 0;
@@ -88,6 +91,11 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   void _battleNotifyDeploy() {
     _free?.notifyDeploy();
     _battle?.notifyDeploy();
+  }
+
+  void _battleFastResolve() {
+    _free?.fastResolve();
+    _battle?.fastResolve();
   }
 
   /// Open a full-screen replay list for [side]'s raids.
@@ -186,11 +194,10 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
       if (g.liveAttack != null) {
         _mode = 'attack'; // resume a persistent commander raid (legacy save)
       } else {
-        // WAR MACHINE is the way — no dialogs, straight into the fight
+        // WAR MACHINE is the way — Free Move by default
         final st = g.startClashBattle();
         _mode = 'clash';
-        _battle = LiveBattle(st,
-            canDeploy: () => WarGame.instance.active.armyTotal > 0);
+        _armAuto(st, unlimited: false);
         _clashBanked = false;
         _deploy = TroopType.soldier;
       }
@@ -206,8 +213,8 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
       return;
     }
     // never lose a clash battle — resolve and bank it
-    if (_battle != null && !_clashBanked) {
-      _battle!.fastResolve();
+    if ((_battle != null || _free != null) && !_clashBanked) {
+      _battleFastResolve();
       WarGame.instance.bankClashBattle();
     }
     super.dispose();
@@ -224,16 +231,22 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   Map<String, String> get _badges =>
       {for (final p in WarGame.instance.players) p.id: p.emoji};
 
-  /// Point the drill at whichever engine the switch is on.
-  void _armDrill(AttackState st) {
-    if (_freeFlowDrill) {
+  /// Point an auto-battle at Free Move (default) or Classic.
+  void _armAuto(AttackState st, {required bool unlimited}) {
+    final canDeploy = unlimited
+        ? () => true
+        : () => WarGame.instance.active.armyTotal > 0;
+    if (_freeMove) {
       _battle = null;
-      _free = FreeMoveBattle(st, canDeploy: () => true);
+      _free = FreeMoveBattle(st, canDeploy: canDeploy);
     } else {
       _free = null;
-      _battle = LiveBattle(st, canDeploy: () => true);
+      _battle = LiveBattle(st, canDeploy: canDeploy);
     }
   }
+
+  /// Point the drill at whichever engine the switch is on.
+  void _armDrill(AttackState st) => _armAuto(st, unlimited: true);
 
   void _resetDrill(WarGame g, {bool clean = true}) {
     final st = g.startPracticeBattle(clean: clean);
@@ -393,8 +406,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
               }
               final st = g.startClashBattle();
               setState(() {
-                _battle = LiveBattle(st,
-                    canDeploy: () => WarGame.instance.active.armyTotal > 0);
+                _armAuto(st, unlimited: false);
                 _clashBanked = false;
               });
             },
@@ -520,8 +532,9 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
   void _onClashTap(Cell cell) {
     final g = WarGame.instance;
     final st = g.clashState;
+    final free = _free;
     final battle = _battle;
-    if (st == null || battle == null || _clashBanked) return;
+    if (st == null || (free == null && battle == null) || _clashBanked) return;
     final type = _deploy;
     if (type == null) return;
     if (!g.enemyBase.isRing(cell.r, cell.c)) {
@@ -536,15 +549,22 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
               'No trained ${kTroopSpecs[type]!.name}s — hit 🎖 TRAIN to muster more.')));
       return;
     }
-    final t = g.deployTrained(st, type, cell.r, cell.c);
+    final t = g.deployTrained(st, type, cell.r, cell.c,
+        allowStack: free != null);
     if (t == null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(g.knockedOut(g.active)
               ? '💀 Your castle has fallen — you can only spectate.'
               : 'That landing spot is blocked.')));
     } else {
+      if (free != null) {
+        final n = st.troopsSent;
+        final a = n * 2.399963;
+        final rad = 0.16 * math.sqrt(n % 9);
+        free.placeAt(t, cell.c + math.cos(a) * rad, cell.r + math.sin(a) * rad);
+      }
       HapticFeedback.selectionClick();
-      battle.notifyDeploy();
+      _battleNotifyDeploy();
       _ingest(st.takeFx());
       setState(() {});
     }
@@ -725,7 +745,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
         break;
       case 'practice':
         status =
-            '🎯 ${_freeFlowDrill ? 'FREE MOVE' : 'CLASSIC'} — '
+            '🎯 ${_freeMove ? 'FREE MOVE' : 'CLASSIC'} — '
             '${(_atk?.base.destructionPercent ?? 0).round()}% razed${_clockSuffix()}';
         break;
       case 'attack':
@@ -810,8 +830,10 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
             });
             return;
           }
-          if (_mode == 'clash' && _battle != null && !_clashBanked) {
-            _battle!.fastResolve();
+          if (_mode == 'clash' &&
+              (_battle != null || _free != null) &&
+              !_clashBanked) {
+            _battleFastResolve();
             _onClashOver();
             return;
           }
@@ -836,8 +858,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
             final st = g.startClashBattle();
             setState(() {
               _mode = 'clash';
-              _battle = LiveBattle(st,
-                  canDeploy: () => WarGame.instance.active.armyTotal > 0);
+              _armAuto(st, unlimited: false);
               _clashBanked = false;
               _deploy = TroopType.soldier;
             });
@@ -872,7 +893,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
           Row(children: [
             Expanded(
               child: Text(
-                  '🤖 Drop troops on the golden ring — they fight on their own.',
+                  '🤖 FREE MOVE — drop on the golden ring; they flow and fight.',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
@@ -1007,7 +1028,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
           Row(children: [
             Expanded(
               child: Text(
-                  _freeFlowDrill
+                  _freeMove
                       ? 'FREE MOVE — no tiles: troops flow and stack like CoC.'
                       : 'CLASSIC DRILL — original tile combat.',
                   maxLines: 1,
@@ -1016,11 +1037,11 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                       fontSize: 11, color: JarsColors.textSecondary)),
             ),
             _sandChip(
-                _freeFlowDrill ? '◉ FREE MOVE' : '▦ CLASSIC',
-                _freeFlowDrill ? JarsColors.green : JarsColors.textSecondary,
+                _freeMove ? '◉ FREE MOVE' : '▦ CLASSIC',
+                _freeMove ? JarsColors.green : JarsColors.textSecondary,
                 () {
               setState(() {
-                _freeFlowDrill = !_freeFlowDrill;
+                _freeMove = !_freeMove;
                 // Never cross engines: switching starts a pristine clone.
                 _resetDrill(g);
               });

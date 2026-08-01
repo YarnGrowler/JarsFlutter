@@ -21,8 +21,8 @@ class UnitPos {
 /// something worth hitting falls inside its reach. Tiles stop being slots —
 /// a dozen units can pile through the same gate at once.
 ///
-/// It is DRILL ONLY. Wars, raids and replays still run [LiveBattle] so the
-/// competitive ruleset never changes under anyone's feet.
+/// Default for drills AND live clan raids. Replays of AI hour-raids still use
+/// the classic frame log ([LiveBattle] / [WarAi.runAttack]).
 class FreeMoveBattle {
   final AttackState st;
 
@@ -79,8 +79,23 @@ class FreeMoveBattle {
     _emptyBeats = 0;
   }
 
+  /// A fresh deployment resets the wind-down.
   void notifyDeploy() {
     _emptyBeats = 0;
+  }
+
+  /// Headless completion (player left mid-battle): run the remaining beats.
+  void fastResolve() {
+    var guard = 0;
+    // ~90s of sim at most — enough to finish a fight or declare it over
+    while (!over && guard++ < 30 * 90) {
+      if (st.troops.every((t) => !t.alive)) {
+        over = true;
+        break;
+      }
+      _step(simStep);
+    }
+    over = true;
   }
 
   /// Seat a freshly spawned troop exactly where the commander dropped it.

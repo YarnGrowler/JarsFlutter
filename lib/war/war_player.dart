@@ -48,6 +48,7 @@ class WarPlayer {
 
   // per-war tallies (reset each war)
   int troopsLost = 0;
+  /// ⚡ spent on the attack this war: troop training (prep + war) and raid costs.
   double resourcesSpent = 0;
   double destructionDealt = 0; // % of the enemy base this player razed
 
@@ -93,6 +94,9 @@ class WarPlayer {
         'res': resources,
         'prepEarned': prepEarned,
         'ready': ready,
+        'lost': troopsLost,
+        'spent': resourcesSpent,
+        'dealt': destructionDealt,
         'army': {for (final e in army.entries) '${e.key.index}': e.value},
         'doctrine': {
           for (final e in troopDoctrine.entries) '${e.key.index}': e.value
@@ -120,6 +124,9 @@ class WarPlayer {
       ready: j['ready'] == true,
     );
     p.prepEarned = (j['prepEarned'] as num?)?.toDouble() ?? 0;
+    p.troopsLost = (j['lost'] as num?)?.toInt() ?? 0;
+    p.resourcesSpent = (j['spent'] as num?)?.toDouble() ?? 0;
+    p.destructionDealt = (j['dealt'] as num?)?.toDouble() ?? 0;
     final aj = j['army'] as Map<String, dynamic>? ?? {};
     aj.forEach((k, v) {
       final idx = int.tryParse(k);
