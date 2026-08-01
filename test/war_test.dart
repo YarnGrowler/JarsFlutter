@@ -213,7 +213,9 @@ void main() {
     });
 
     test('reachable excludes tiles the owner cannot afford', () {
-      final st = scenario(attackerFunds: 25); // exactly one soldier, 0 left
+      // exactly one soldier, 0 left
+      final st = scenario(
+          attackerFunds: kTroopSpecs[TroopType.soldier]!.cost.toDouble());
       final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       expect(st.reachable(t), isEmpty,
           reason: 'broke owner → no blue tiles, not a silent no-op');
@@ -234,7 +236,10 @@ void main() {
           base: base,
           attacker: WarSide.you,
           attackerName: 'Me',
-          pools: MapPools({'me': 25, 'def': 999}),
+          pools: MapPools({
+            'me': kTroopSpecs[TroopType.soldier]!.cost.toDouble(),
+            'def': 999
+          }),
           freeActions: true);
       final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       expect(st.pools.of('me'), 0, reason: 'deploying still costs');

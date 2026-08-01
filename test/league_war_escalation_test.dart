@@ -50,11 +50,14 @@ void main() {
       expect(WarCosts.troopDoctrineCost(TroopType.soldier, 4), 750);
       expect(WarCosts.troopDoctrineCost(TroopType.soldier, 5), 1000);
       expect(WarCosts.troopDoctrineCost(TroopType.soldier, 6), 1500);
-      expect(WarCosts.troopDoctrineCost(TroopType.brute, 2), 550,
+      expect(WarCosts.troopDoctrineCost(TroopType.brute, 2), 500,
           reason: 'expensive troops must have pricier doctrine');
-      expect(WarCosts.troopDoctrineCost(TroopType.sapper, 2), 500,
+      expect(WarCosts.troopDoctrineCost(TroopType.sapper, 2), 625,
           reason: 'permanent wall-breaching upgrades are premium doctrine');
-      expect(WarCosts.troopDoctrineCost(TroopType.sapper, 6), 3000);
+      expect(WarCosts.troopDoctrineCost(TroopType.sapper, 6), 3750);
+      expect(WarCosts.troopDoctrineCost(TroopType.sapper, 2),
+          greaterThan(WarCosts.troopDoctrineCost(TroopType.brute, 2)),
+          reason: 'the sapper stays premium however cheap the unit itself is');
       expect(g.upgradeTroopDoctrine(TroopType.soldier), isNull);
       expect(g.active.doctrineLevel(TroopType.soldier), 2);
       expect(g.upgradeTroopDoctrine(TroopType.soldier), contains('League'));

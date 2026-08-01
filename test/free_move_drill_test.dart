@@ -249,6 +249,91 @@ void main() {
         reason: '30s of drill cost ${sw.elapsedMilliseconds}ms');
   });
 
+  test('nobody downs tools on a walled master base', () {
+    // The bug this guards: reach was measured centre-to-centre, so a raider
+    // whose road ran out a fifth of a tile shy of the wall it meant to breach
+    // sat 1.18 away from a target it could only hit at 1.15 — and, having no
+    // route left either, stood there for the rest of the five minutes. On real
+    // 64² league maps a handful of units per battle simply stopped fighting.
+    for (final seed in [99, 4242, 31337]) {
+      const size = 64;
+      final base = Base(WarSide.enemy, seed, size: size);
+      final areaMul =
+          (size * size) / (Base.defaultSize * Base.defaultSize).toDouble();
+      final budget = WarCosts.prepBudgetFor(AiData.skill(AiLevel.master)) *
+          areaMul *
+          2.6;
+      WarAi.designBase(
+          base,
+          [
+            for (var i = 0; i < 4; i++)
+              WarPlayer(
+                  id: 'p$i',
+                  name: 'P$i',
+                  emoji: '🤖',
+                  colorValue: 0xFFFF0000,
+                  side: WarSide.enemy,
+                  ai: AiLevel.master,
+                  isBot: true,
+                  resources: budget)
+          ],
+          SeededRng(seed * 31 + 5));
+      final st = AttackState(
+        base: base,
+        attacker: WarSide.you,
+        attackerName: 'Drill',
+        pools: MapPools({'drill': 1e9}),
+        freeActions: true,
+        intel: {for (var k = 0; k < base.rows * base.cols; k++) k},
+      );
+      final b = armed(st);
+      final drops = st.base.dropCells.toList();
+      const kinds = [
+        TroopType.brute,
+        TroopType.soldier,
+        TroopType.archer,
+        TroopType.sapper,
+      ];
+      for (var i = 0; i < 20; i++) {
+        final d = drops[(i * 7) % drops.length];
+        final t = st.spawn(kinds[i % 4], 'drill', d.r, d.c, allowStack: true);
+        if (t == null) continue;
+        b.placeAt(t, d.c.toDouble(), d.r.toDouble());
+      }
+
+      // a unit "makes progress" when it shifts a third of a tile or earns xp
+      final mark = <String, List<double>>{};
+      final lastProgress = <String, double>{};
+      final worst = <String, double>{};
+      var clock = 0.0;
+      for (var i = 0; i < 30 * 90; i++) {
+        b.tick(FreeMoveBattle.simStep);
+        clock += FreeMoveBattle.simStep;
+        if (i % 6 != 0) continue;
+        for (final tr in st.troops) {
+          if (!tr.alive) continue;
+          final p = b.positions[tr.id];
+          if (p == null) continue;
+          final now = [p.col, p.row, tr.xp.toDouble()];
+          final was = mark[tr.id];
+          if (was == null ||
+              (now[0] - was[0]).abs() > 0.33 ||
+              (now[1] - was[1]).abs() > 0.33 ||
+              now[2] != was[2]) {
+            mark[tr.id] = now;
+            lastProgress[tr.id] = clock;
+          }
+          final dry = clock - (lastProgress[tr.id] ?? 0);
+          if (dry > (worst[tr.id] ?? 0)) worst[tr.id] = dry;
+        }
+        if (b.over) break;
+      }
+      final idlers = worst.entries.where((e) => e.value > 12).map((e) => e.key);
+      expect(idlers, isEmpty,
+          reason: 'seed $seed: ${idlers.length} raiders stopped fighting');
+    }
+  });
+
   test('classic drill still runs the tile engine untouched', () {
     final st = drill();
     final classic = LiveBattle(st, canDeploy: () => true);

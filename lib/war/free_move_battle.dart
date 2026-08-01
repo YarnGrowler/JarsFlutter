@@ -255,15 +255,31 @@ class FreeMoveBattle {
     return s != null && s.alive ? s.hp : -1;
   }
 
-  /// Stop-and-fight test: the best target whose tile centre sits inside this
-  /// unit's reach, measured from its true sub-tile position.
+  /// Distance from a unit to a target TILE — measured to the tile's square,
+  /// not to its centre point.
+  ///
+  /// Centre-to-centre was a quiet disaster: a unit whose route ran out a
+  /// fifth of a tile short of a wall sat 1.18 away from a target it could
+  /// only hit at 1.15, so it stood there for the rest of the battle staring
+  /// at a wall it was never allowed to touch. A tile is a square; touching
+  /// any part of it counts.
+  static double _edgeDist(double ex, double ey) {
+    final ax = math.max(0.0, ex.abs() - 0.5);
+    final ay = math.max(0.0, ey.abs() - 0.5);
+    return math.sqrt(ax * ax + ay * ay);
+  }
+
+  /// Stop-and-fight test: the best target whose tile falls inside this unit's
+  /// reach, measured from its true sub-tile position.
   Cell? _targetInReach(_Unit u) {
     final t = u.t;
     final ranged = t.type == TroopType.archer ||
         t.type == TroopType.javelin ||
         t.type == TroopType.general;
-    final reach = ranged ? 2.4 : 1.15;
-    final ri = reach.ceil();
+    // edge reach: 0.85 covers every neighbour, orthogonal or diagonal, with
+    // room to spare for a unit that stopped a little short
+    final reach = ranged ? 2.0 : 0.85;
+    final ri = (reach + 1).ceil();
     final br = u.y.round(), bc = u.x.round();
     Cell? best;
     var bestScore = 0.0;
@@ -271,8 +287,8 @@ class FreeMoveBattle {
       for (var dc = -ri; dc <= ri; dc++) {
         final r = br + dr, c = bc + dc;
         if (!st.base.inBounds(r, c)) continue;
-        final ex = c - u.x, ey = r - u.y;
-        if (ex * ex + ey * ey > reach * reach) continue;
+        final d = _edgeDist(c - u.x, r - u.y);
+        if (d > reach) continue;
         if (ranged && !st.visible(r, c)) continue; // no blind volleys
         final foe = _foeAt[_key(r, c)];
         if (foe != null && foe.side != t.side) {
@@ -281,7 +297,7 @@ class FreeMoveBattle {
           // swing would land on nothing at all — and a unit that keeps
           // swinging at nothing never moves again. Skip it; it walks instead.
           if (identical(st.troopAt(r, c), foe)) {
-            final s = 100.0 - math.sqrt(ex * ex + ey * ey);
+            final s = 100.0 - d;
             if (s > bestScore) {
               bestScore = s;
               best = Cell(r, c);
@@ -295,7 +311,7 @@ class FreeMoveBattle {
         // a wall is furniture UNLESS it's the one sealing our road
         if (v <= 0 && u.blockKey == _key(r, c)) v = 140;
         if (v <= 0) continue;
-        final s = v - math.sqrt(ex * ex + ey * ey);
+        final s = v - d;
         if (s > bestScore) {
           bestScore = s;
           best = Cell(r, c);
@@ -342,23 +358,31 @@ class FreeMoveBattle {
       _thinkBudget--;
       _replan(u);
     }
-    if (u.route.isEmpty || u.leg >= u.route.length) return;
-
-    final wp = u.route[u.leg];
-    var dx = wp[1] - u.x, dy = wp[0] - u.y;
-    var d = math.sqrt(dx * dx + dy * dy);
-    if (d < 0.2) {
-      u.leg++;
-      if (u.leg >= u.route.length) {
-        u.think = 0;
-        return;
+    double tx, ty;
+    if (u.route.isEmpty || u.leg >= u.route.length) {
+      // No road left — but a wall marked for breaching IS a destination. A
+      // route that stops one step short of it leaves the unit adrift, so it
+      // walks itself onto the wall's face until the swing connects.
+      final bk = u.blockKey;
+      if (bk == null) return;
+      tx = (bk % st.base.cols).toDouble();
+      ty = (bk ~/ st.base.cols).toDouble();
+    } else {
+      var wp = u.route[u.leg];
+      if ((wp[1] - u.x).abs() < 0.2 && (wp[0] - u.y).abs() < 0.2) {
+        u.leg++;
+        if (u.leg >= u.route.length) {
+          u.think = 0;
+          return;
+        }
+        wp = u.route[u.leg];
       }
-      final nx = u.route[u.leg];
-      dx = nx[1] - u.x;
-      dy = nx[0] - u.y;
-      d = math.sqrt(dx * dx + dy * dy);
-      if (d < 1e-4) return;
+      tx = wp[1].toDouble();
+      ty = wp[0].toDouble();
     }
+    final dx = tx - u.x, dy = ty - u.y;
+    final d = math.sqrt(dx * dx + dy * dy);
+    if (d < 1e-4) return;
     var ux = dx / d, uy = dy / d;
 
     // soft separation: the crowd spreads instead of forming a conga line

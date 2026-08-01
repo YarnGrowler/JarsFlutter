@@ -543,7 +543,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
   TroopType.soldier: TroopSpec(TroopType.soldier,
       name: 'Soldier',
       emoji: '⚔️',
-      cost: 25,
+      cost: 15,
       hp: 100,
       atk: 22,
       moveBudget: 5,
@@ -565,7 +565,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
   TroopType.brute: TroopSpec(TroopType.brute,
       name: 'Brute',
       emoji: '🪓',
-      cost: 55,
+      cost: 30,
       hp: 260,
       atk: 26,
       moveBudget: 3,
@@ -588,7 +588,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
   TroopType.archer: TroopSpec(TroopType.archer,
       name: 'Archer',
       emoji: '🏹',
-      cost: 30,
+      cost: 20,
       hp: 55,
       atk: 14,
       moveBudget: 5,
@@ -600,7 +600,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
   TroopType.healer: TroopSpec(TroopType.healer,
       name: 'Healer',
       emoji: '💚',
-      cost: 35,
+      cost: 27,
       hp: 70,
       atk: 0,
       moveBudget: 5,
@@ -612,7 +612,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
   TroopType.javelin: TroopSpec(TroopType.javelin,
       name: 'Javelin',
       emoji: '🗡️',
-      cost: 32,
+      cost: 25,
       hp: 65,
       atk: 16,
       moveBudget: 5,
@@ -623,7 +623,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
   TroopType.fogger: TroopSpec(TroopType.fogger,
       name: 'Fogger',
       emoji: '🌫️',
-      cost: 28,
+      cost: 24,
       hp: 55,
       atk: 12,
       moveBudget: 5,
@@ -636,7 +636,7 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
   TroopType.elephant: TroopSpec(TroopType.elephant,
       name: 'War Elephant',
       emoji: '🐘',
-      cost: 90,
+      cost: 60,
       hp: 520,
       atk: 20,
       moveBudget: 2,
@@ -758,7 +758,7 @@ class WarCosts {
       6: 1500,
     };
     final troopScale = t == TroopType.sapper
-        ? 2.0
+        ? 2.5
         : kTroopSpecs[t]!.cost / kTroopSpecs[TroopType.soldier]!.cost;
     return (soldierCurve[lv]! * troopScale / 25).round() * 25.0;
   }
