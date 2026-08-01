@@ -893,6 +893,7 @@ class WarBoardPainter extends CustomPainter {
       DefType.guardPost || DefType.commandTent || DefType.housing =>
         const Color(0xFFB8544A),
       DefType.gate => const Color(0xFF8F6B42),
+      DefType.warGenerator => const Color(0xFFC45BA8),
       _ => const Color(0xFF4A5568),
     };
     final body = rect.deflate(rect.width * 0.18);
@@ -2337,6 +2338,7 @@ class WarBoardPainter extends CustomPainter {
         _citadelCoreArt(canvas, rect);
         break;
       case DefType.warGenerator:
+        // replay sprites don't carry level — paint the base pump
         _warGeneratorArt(canvas, rect, 1);
         break;
       case DefType.wall:
@@ -2990,94 +2992,255 @@ class WarBoardPainter extends CustomPainter {
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
   }
 
-  /// War Generator: an elixir still — copper boiler, coiled pipe, a glowing
-  /// vat, and steam puffing off the top. Levels add tanks and brighten it.
+  /// War Generator: Clash-style elixir pump matching the ⚗️ menu chip —
+  /// glass flask of pink elixir on a wooden/metal stand, with a spouted neck.
+  /// L2 grows a side tank; L3 becomes a tall twin-chamber gold-fitted pump.
   void _warGeneratorArt(Canvas canvas, Rect rect, [int level = 1]) {
-    _shadow(canvas, rect, w: 0.66, y: 0.86);
+    _shadow(canvas, rect, w: 0.7, y: 0.88);
     final w = rect.width, h = rect.height;
     final cx = rect.center.dx;
-    final up = level >= 2, maxed = level >= 3;
-    // brick footing
+    final l2 = level >= 2, l3 = level >= 3;
+    final elixir = l3
+        ? const Color(0xFFFF4FD2)
+        : l2
+            ? const Color(0xFFE84EC4)
+            : const Color(0xFFD23AA8);
+    final elixirDeep = l3
+        ? const Color(0xFF9B1F7A)
+        : l2
+            ? const Color(0xFF8A186C)
+            : const Color(0xFF6E1458);
+    final metal = l3
+        ? const Color(0xFFE0B14A)
+        : l2
+            ? const Color(0xFFB8893C)
+            : const Color(0xFF8F6B42);
+    final metalDark = l3
+        ? const Color(0xFF8A6A24)
+        : l2
+            ? const Color(0xFF6B5228)
+            : const Color(0xFF5A4228);
+    final wood = const Color(0xFF6B4A2E);
+    final glow = 0.55 + 0.45 * math.sin(_at * 2.4 + cx * 0.02);
+
+    // platform / crate base
+    final baseCol = l3 ? const Color(0xFF4A4658) : wood;
     canvas.drawRRect(
         RRect.fromRectAndRadius(
             Rect.fromCenter(
-                center: Offset(cx, rect.top + h * 0.76),
-                width: w * 0.62,
+                center: Offset(cx, rect.top + h * 0.82),
+                width: w * (l3 ? 0.72 : 0.62),
                 height: h * 0.14),
-            Radius.circular(w * 0.03)),
-        Paint()..color = const Color(0xFF54423A));
-    // the boiler
-    final boiler =
-        Rect.fromLTWH(cx - w * 0.22, rect.top + h * 0.38, w * 0.44, h * 0.32);
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(boiler, Radius.circular(w * 0.09)),
-        Paint()..color = maxed
-            ? const Color(0xFFB9762E)
-            : const Color(0xFF9A6634));
-    // glowing sight-glass
-    final glow = 0.5 + 0.5 * math.sin(_at * 2.6 + cx * 0.02);
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromCenter(
-                center: boiler.center,
-                width: w * 0.2,
-                height: h * 0.14),
-            Radius.circular(w * 0.03)),
-        Paint()
-          ..color = const Color(0xFF7CE6A8)
-              .withValues(alpha: 0.55 + 0.35 * glow));
-    canvas.drawCircle(
-        boiler.center,
-        w * 0.2,
-        Paint()
-          ..color = const Color(0xFF7CE6A8).withValues(alpha: 0.14 * glow)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
-    // iron hoops
-    final hoop = Paint()
-      ..color = const Color(0xFF3A3F48)
-      ..strokeWidth = w * 0.03;
-    canvas.drawLine(Offset(boiler.left, boiler.top + boiler.height * 0.22),
-        Offset(boiler.right, boiler.top + boiler.height * 0.22), hoop);
-    canvas.drawLine(Offset(boiler.left, boiler.bottom - boiler.height * 0.18),
-        Offset(boiler.right, boiler.bottom - boiler.height * 0.18), hoop);
-    // coiled condenser pipe up the side
-    final pipe = Paint()
-      ..color = const Color(0xFFC98B3E)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.045
-      ..strokeCap = StrokeCap.round;
-    final coil = Path()..moveTo(boiler.right, boiler.top + h * 0.06);
-    for (var i = 0; i < 3; i++) {
-      final y = boiler.top + h * 0.06 + i * h * 0.07;
-      coil.quadraticBezierTo(
-          boiler.right + w * 0.16, y + h * 0.035, boiler.right, y + h * 0.07);
-    }
-    canvas.drawPath(coil, pipe);
-    // chimney + steam
-    canvas.drawRect(
-        Rect.fromLTWH(cx - w * 0.06, rect.top + h * 0.24, w * 0.12, h * 0.16),
-        Paint()..color = const Color(0xFF6B5B44));
-    for (var i = 0; i < (maxed ? 3 : 2); i++) {
-      final t = (_at * 0.6 + i * 0.34) % 1.0;
-      canvas.drawCircle(
-          Offset(cx + math.sin(_at * 1.6 + i) * w * 0.05,
-              rect.top + h * 0.24 - t * h * 0.2),
-          w * (0.05 + t * 0.06),
-          Paint()
-            ..color = Colors.white.withValues(alpha: 0.22 * (1 - t)));
-    }
-    // extra holding tank once upgraded
-    if (up) {
+            Radius.circular(w * 0.04)),
+        Paint()..color = baseCol);
+    // plank lines on the crate
+    if (!l3) {
+      final plank = Paint()
+        ..color = const Color(0xFF4A3220)
+        ..strokeWidth = w * 0.02;
+      for (var i = 0; i < 3; i++) {
+        final x = cx - w * 0.22 + i * w * 0.22;
+        canvas.drawLine(Offset(x, rect.top + h * 0.76),
+            Offset(x, rect.top + h * 0.88), plank);
+      }
+    } else {
+      // gold trim on the stone pad
       canvas.drawRRect(
           RRect.fromRectAndRadius(
-              Rect.fromLTWH(
-                  cx - w * 0.42, rect.top + h * 0.52, w * 0.16, h * 0.2),
+              Rect.fromCenter(
+                  center: Offset(cx, rect.top + h * 0.82),
+                  width: w * 0.72,
+                  height: h * 0.14),
               Radius.circular(w * 0.04)),
-          Paint()..color = const Color(0xFF7A5632));
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = w * 0.03
+            ..color = metal);
+    }
+
+    // wooden / metal stilts under the flask
+    final leg = Paint()
+      ..color = metalDark
+      ..strokeWidth = w * 0.045
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(cx - w * 0.16, rect.top + h * 0.72),
+        Offset(cx - w * 0.22, rect.top + h * 0.82), leg);
+    canvas.drawLine(Offset(cx + w * 0.16, rect.top + h * 0.72),
+        Offset(cx + w * 0.22, rect.top + h * 0.82), leg);
+
+    // main glass bulb (the ⚗️ flask body)
+    final bulbR = w * (l3 ? 0.24 : l2 ? 0.22 : 0.2);
+    final bulbC = Offset(cx, rect.top + h * (l3 ? 0.48 : 0.52));
+    // outer glow
+    canvas.drawCircle(
+        bulbC,
+        bulbR * 1.25,
+        Paint()
+          ..color = elixir.withValues(alpha: 0.14 + 0.12 * glow)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+    // glass rim
+    canvas.drawCircle(bulbC, bulbR, Paint()..color = const Color(0xFFD8E4F0));
+    // elixir fill (slightly inset)
+    canvas.drawCircle(
+        bulbC,
+        bulbR * 0.88,
+        Paint()
+          ..shader = RadialGradient(
+            center: const Alignment(-0.3, -0.35),
+            radius: 1.1,
+            colors: [
+              Color.lerp(elixir, Colors.white, 0.35)!,
+              elixir,
+              elixirDeep,
+            ],
+            stops: const [0.0, 0.45, 1.0],
+          ).createShader(Rect.fromCircle(center: bulbC, radius: bulbR)));
+    // liquid surface highlight
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: bulbC.translate(0, -bulbR * 0.15),
+            width: bulbR * 1.5,
+            height: bulbR * 0.35),
+        Paint()..color = Colors.white.withValues(alpha: 0.18 + 0.1 * glow));
+    // glass shine streak
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: bulbC.translate(-bulbR * 0.35, -bulbR * 0.35),
+            width: bulbR * 0.35,
+            height: bulbR * 0.55),
+        Paint()..color = Colors.white.withValues(alpha: 0.35));
+    // rising bubbles
+    final bubbles = l3 ? 4 : (l2 ? 3 : 2);
+    for (var i = 0; i < bubbles; i++) {
+      final ph = (_at * 0.7 + i * 0.31) % 1.0;
       canvas.drawCircle(
-          Offset(cx - w * 0.34, rect.top + h * 0.58),
-          w * 0.035,
-          Paint()..color = const Color(0xFF7CE6A8).withValues(alpha: 0.8));
+          Offset(bulbC.dx + math.sin(_at * 1.8 + i * 2) * bulbR * 0.25,
+              bulbC.dy + bulbR * 0.35 - ph * bulbR * 0.9),
+          bulbR * (0.06 + ph * 0.04),
+          Paint()..color = Colors.white.withValues(alpha: 0.35 * (1 - ph)));
+    }
+
+    // iron / gold bands on the glass (L2+)
+    if (l2) {
+      final band = Paint()
+        ..color = metal
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.028;
+      canvas.drawArc(
+          Rect.fromCircle(center: bulbC, radius: bulbR * 0.92),
+          0.15,
+          math.pi - 0.3,
+          false,
+          band);
+      if (l3) {
+        canvas.drawArc(
+            Rect.fromCircle(center: bulbC, radius: bulbR * 0.72),
+            math.pi + 0.2,
+            math.pi - 0.4,
+            false,
+            band);
+      }
+    }
+
+    // alembic neck / spout on top
+    final neckW = w * (l3 ? 0.12 : 0.1);
+    final neckTop = rect.top + h * (l3 ? 0.14 : 0.2);
+    final neckBot = bulbC.dy - bulbR * 0.75;
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTRB(cx - neckW / 2, neckTop, cx + neckW / 2, neckBot),
+            Radius.circular(w * 0.03)),
+        Paint()..color = metal);
+    // spout tip (curved elbow)
+    final spout = Paint()
+      ..color = metal
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = neckW * 0.85
+      ..strokeCap = StrokeCap.round;
+    final spoutPath = Path()
+      ..moveTo(cx, neckTop + h * 0.02)
+      ..quadraticBezierTo(
+          cx + w * 0.14, neckTop, cx + w * 0.18, neckTop + h * 0.1);
+    canvas.drawPath(spoutPath, spout);
+    // dripping elixir from the spout
+    final drip = (_at * 1.1) % 1.0;
+    canvas.drawCircle(
+        Offset(cx + w * 0.18, neckTop + h * 0.1 + drip * h * 0.12),
+        w * (0.03 + drip * 0.015),
+        Paint()..color = elixir.withValues(alpha: 0.85 * (1 - drip * 0.5)));
+    // collar ring under the neck
+    canvas.drawCircle(
+        Offset(cx, neckBot),
+        neckW * 0.85,
+        Paint()..color = metalDark);
+
+    // L2: side catch-flask
+    if (l2) {
+      final side = Offset(cx - w * 0.34, rect.top + h * 0.58);
+      final sr = w * 0.1;
+      canvas.drawCircle(side, sr * 1.1, Paint()..color = const Color(0xFFD8E4F0));
+      canvas.drawCircle(
+          side,
+          sr,
+          Paint()
+            ..shader = RadialGradient(
+              colors: [Color.lerp(elixir, Colors.white, 0.25)!, elixirDeep],
+            ).createShader(Rect.fromCircle(center: side, radius: sr)));
+      // feed pipe from main bulb
+      canvas.drawLine(
+          Offset(bulbC.dx - bulbR * 0.7, bulbC.dy + bulbR * 0.1),
+          side.translate(sr * 0.6, -sr * 0.2),
+          Paint()
+            ..color = metal
+            ..strokeWidth = w * 0.035
+            ..strokeCap = StrokeCap.round);
+    }
+
+    // L3: upper twin chamber + crank wheel
+    if (l3) {
+      final top = Offset(cx, rect.top + h * 0.22);
+      final tr = w * 0.11;
+      canvas.drawCircle(top, tr * 1.1, Paint()..color = const Color(0xFFD8E4F0));
+      canvas.drawCircle(
+          top,
+          tr,
+          Paint()
+            ..shader = RadialGradient(
+              colors: [Color.lerp(elixir, Colors.white, 0.4)!, elixir],
+            ).createShader(Rect.fromCircle(center: top, radius: tr)));
+      // connector between upper chamber and neck
+      canvas.drawRect(
+          Rect.fromCenter(
+              center: Offset(cx, (top.dy + neckTop) / 2),
+              width: w * 0.06,
+              height: (neckTop - top.dy).abs()),
+          Paint()..color = metal);
+      // pump crank wheel on the right
+      final wheel = Offset(cx + w * 0.32, rect.top + h * 0.42);
+      canvas.drawCircle(
+          wheel,
+          w * 0.09,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = w * 0.03
+            ..color = metal);
+      canvas.drawCircle(wheel, w * 0.025, Paint()..color = metalDark);
+      final ang = _at * 2.2;
+      canvas.drawLine(
+          wheel,
+          wheel + Offset(math.cos(ang), math.sin(ang)) * w * 0.08,
+          Paint()
+            ..color = metal
+            ..strokeWidth = w * 0.025
+            ..strokeCap = StrokeCap.round);
+      // axle to the bulb
+      canvas.drawLine(
+          wheel.translate(-w * 0.09, 0),
+          Offset(bulbC.dx + bulbR * 0.75, bulbC.dy),
+          Paint()
+            ..color = metalDark
+            ..strokeWidth = w * 0.03
+            ..strokeCap = StrokeCap.round);
     }
   }
 

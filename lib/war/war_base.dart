@@ -441,12 +441,14 @@ class Base {
     castles[playerId] = Cell(r, c);
   }
 
-  /// Refundable structure removal during prep (returns the spec cost).
+  /// Refundable structure removal during prep — full investment back:
+  /// place cost plus every upgrade rung already paid ([Structure.investedCost]).
   int removeAt(int r, int c) {
     final s = structAt(r, c);
     if (s == null || s.isCastle) return 0;
+    final refund = s.investedCost.round();
     grid[r][c].structure = null;
-    return s.spec.cost;
+    return refund;
   }
 
   /// Tears down any castle owned by someone NOT in [validOwnerIds] — for

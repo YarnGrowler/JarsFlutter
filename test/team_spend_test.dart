@@ -79,6 +79,23 @@ void main() {
     expect(back.troopsLost, 3);
   });
 
+  test('selling an upgraded piece refunds place cost AND upgrades', () {
+    final g = WarGame.fresh()..startPrep();
+    expect(g.placeCastle(8, 8), isNull);
+    final before = g.active.resources;
+    expect(g.placeStructure(9, 8, DefType.wall), isNull);
+    expect(g.upgradeStructure(9, 8), isNull); // L1→L2
+    expect(g.upgradeStructure(9, 8), isNull); // L2→L3
+    final wall = g.youBase.structAt(9, 8)!;
+    expect(wall.level, 3);
+    final spent = before - g.active.resources;
+    expect(spent, wall.investedCost);
+    expect(g.removeStructure(9, 8), isNull);
+    expect(g.active.resources, closeTo(before, 0.001),
+        reason: 'full investment must come back on sell');
+    expect(g.youBase.structAt(9, 8), isNull);
+  });
+
   test('enemy chest estimate reacts to difficulty and real crew effort', () {
     final g = WarGame.fresh()..startPrep();
     g.setDifficulty(20);

@@ -81,6 +81,9 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
       const _Stat('🍖 Provisions', 'tents within 3 field VETERAN guards'),
     if (type == DefType.gate)
       const _Stat('🚪 Doorway', 'YOUR garrison passes; attackers cannot'),
+    if (type == DefType.warGenerator)
+      _Stat('⚗️ Pump rate',
+          '${warGeneratorRatePerHour(level).round()}⚡/hr on war day'),
   ];
 
   // what the NEXT level buys — shown until you're maxed
@@ -93,6 +96,11 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
         _Stat('📍 Patrol', '${patrolAt(level)} → ${patrolAt(next)} tiles'),
       if (type == DefType.mortar && next >= 3)
         const _Stat('💥 Splash', '1 → 2 tiles wide'),
+      if (type == DefType.warGenerator)
+        _Stat(
+            '⚗️ Pump rate',
+            '${warGeneratorRatePerHour(level).round()} → '
+            '${warGeneratorRatePerHour(next).round()}⚡/hr'),
       const _Stat('✨ Look', 'reforged, reinforced, grander'),
     ],
   ];
