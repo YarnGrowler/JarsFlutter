@@ -55,10 +55,10 @@ void main() {
     AttackState scenario({double defenderFunds = 999, double attackerFunds = 999}) {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
-      base.place(Base.rows - 4, 3, DefType.wall, 'def');
-      base.place(Base.rows - 5, 3, DefType.archerTower, 'def');
+      base.place(Base.defaultSize - 4, 3, DefType.wall, 'def');
+      base.place(Base.defaultSize - 5, 3, DefType.archerTower, 'def');
       base.placeCastle('def', 2, 3);
       final pools = MapPools({'me': attackerFunds, 'def': defenderFunds});
       return AttackState(
@@ -68,21 +68,21 @@ void main() {
     test('marching captures ground and clears fog', () {
       final st = scenario();
       // column 3 is flattened by the scenario, so the route is guaranteed
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-      expect(st.visible(Base.rows - 1, 3), isTrue);
-      st.moveTroop(t, Base.rows - 3, 3);
-      expect(t.r, Base.rows - 3);
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+      expect(st.visible(Base.defaultSize - 1, 3), isTrue);
+      st.moveTroop(t, Base.defaultSize - 3, 3);
+      expect(t.r, Base.defaultSize - 3);
       expect(st.base.at(t.r, t.c)!.owner, WarSide.you);
       expect(st.visible(t.r, t.c), isTrue);
     });
 
     test('a troop grinds down a structure and earns XP', () {
       final st = scenario();
-      final t = st.spawn(TroopType.sapper, 'me', Base.rows - 1, 3)!;
-      t.r = Base.rows - 3;
-      final wall = st.base.structAt(Base.rows - 4, 3)!;
+      final t = st.spawn(TroopType.sapper, 'me', Base.defaultSize - 1, 3)!;
+      t.r = Base.defaultSize - 3;
+      final wall = st.base.structAt(Base.defaultSize - 4, 3)!;
       final hp0 = wall.hp;
-      st.attackCell(t, Base.rows - 4, 3);
+      st.attackCell(t, Base.defaultSize - 4, 3);
       expect(wall.hp, lessThan(hp0));
       expect(t.xp, greaterThan(0));
     });
@@ -91,8 +91,8 @@ void main() {
       final rich = scenario(defenderFunds: 999);
       final broke = scenario(defenderFunds: 0);
       for (final st in [rich, broke]) {
-        final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-        t.r = Base.rows - 4;
+        final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+        t.r = Base.defaultSize - 4;
       }
       final rt = rich.troops.first;
       final bt = broke.troops.first;
@@ -106,9 +106,9 @@ void main() {
 
     test('an attacker with no resources cannot move', () {
       final st = scenario(attackerFunds: 25);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       final r0 = t.r;
-      st.moveTroop(t, Base.rows - 4, 3);
+      st.moveTroop(t, Base.defaultSize - 4, 3);
       expect(t.r, r0);
     });
 
@@ -116,13 +116,13 @@ void main() {
         () {
       final base = Base(WarSide.enemy, 11);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) ...[
+        for (var r = 0; r < Base.defaultSize; r++) ...[
           [r, 3],
           [r, 4]
         ]
       ]);
       base.placeCastle('def', 2, 3);
-      base.place(Base.rows - 4, 4, DefType.guardPost, 'def');
+      base.place(Base.defaultSize - 4, 4, DefType.guardPost, 'def');
       final st = AttackState(
           base: base,
           attacker: WarSide.you,
@@ -131,7 +131,7 @@ void main() {
       expect(st.garrison, hasLength(1), reason: 'guard post spawns a defender');
       final guard = st.garrison.first;
       // an intruder INSIDE the patrol zone gets hunted
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 4)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 4)!;
       final d0 = (guard.r - t.r).abs() + (guard.c - t.c).abs();
       st.defendersReact();
       final d1 = (guard.r - t.r).abs() + (guard.c - t.c).abs();
@@ -141,7 +141,7 @@ void main() {
     test('a garrison defender leashes: never strays, returns home', () {
       final base = Base(WarSide.enemy, 11);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) ...[
+        for (var r = 0; r < Base.defaultSize; r++) ...[
           [r, 0],
           [r, 4]
         ]
@@ -158,7 +158,7 @@ void main() {
       guard.r = 4 + AttackState.garrisonLeash;
       guard.c = 4;
       // an intruder FAR outside the patrol zone (bottom corner) is ignored
-      st.spawn(TroopType.soldier, 'me', Base.rows - 1, 0);
+      st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 0);
       st.defendersReact();
       final distHome = (guard.r - 4).abs() + (guard.c - 4).abs();
       expect(distHome, lessThan(AttackState.garrisonLeash),
@@ -168,32 +168,32 @@ void main() {
     test('a tesla zaps a troop the moment it moves in range', () {
       final base = Base(WarSide.enemy, 13);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
-      base.place(Base.rows - 4, 3, DefType.tesla, 'def');
+      base.place(Base.defaultSize - 4, 3, DefType.tesla, 'def');
       final st = AttackState(
           base: base,
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       final hp0 = t.hp;
-      st.moveTroop(t, Base.rows - 3, 3); // walks into tesla range (2)
+      st.moveTroop(t, Base.defaultSize - 3, 3); // walks into tesla range (2)
       expect(t.hp, lessThan(hp0), reason: 'dynamic zap on movement');
-      expect(st.base.structAt(Base.rows - 4, 3)!.triggered, isTrue);
+      expect(st.base.structAt(Base.defaultSize - 4, 3)!.triggered, isTrue);
     });
 
     test('defenders never gain XP — no unkillable guards', () {
       final base = Base(WarSide.enemy, 11);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) ...[
+        for (var r = 0; r < Base.defaultSize; r++) ...[
           [r, 3],
           [r, 4]
         ]
       ]);
       base.placeCastle('def', 2, 3);
-      base.place(Base.rows - 4, 4, DefType.guardPost, 'def');
+      base.place(Base.defaultSize - 4, 4, DefType.guardPost, 'def');
       final st = AttackState(
           base: base,
           attacker: WarSide.you,
@@ -201,7 +201,7 @@ void main() {
           pools: MapPools({'me': 999, 'def': 999}));
       final guard = st.garrison.first;
       // park a fat target right next to the guard and let it swing repeatedly
-      final t = st.spawn(TroopType.brute, 'me', Base.rows - 1, 4)!;
+      final t = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 4)!;
       t.r = guard.r + 1;
       t.c = guard.c;
       for (var i = 0; i < 5; i++) {
@@ -214,7 +214,7 @@ void main() {
 
     test('reachable excludes tiles the owner cannot afford', () {
       final st = scenario(attackerFunds: 25); // exactly one soldier, 0 left
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       expect(st.reachable(t), isEmpty,
           reason: 'broke owner → no blue tiles, not a silent no-op');
       // fund them → tiles appear, each with its ⚡ price
@@ -227,7 +227,7 @@ void main() {
     test('clash mode: deployed troops act for free', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
       final st = AttackState(
@@ -236,19 +236,19 @@ void main() {
           attackerName: 'Me',
           pools: MapPools({'me': 25, 'def': 999}),
           freeActions: true);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       expect(st.pools.of('me'), 0, reason: 'deploying still costs');
       final reach = st.reachable(t);
       expect(reach, isNotEmpty, reason: 'movement is free in clash mode');
       final k = reach.keys.first;
-      st.moveTroop(t, k ~/ Base.cols, k % Base.cols);
+      st.moveTroop(t, k ~/ Base.defaultSize, k % Base.defaultSize);
       expect(st.pools.of('me'), 0, reason: 'no charge for moving');
     });
 
     test('prepaid spawn (trained army) charges nothing at deploy time', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
       final st = AttackState(
@@ -256,7 +256,7 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 0, 'def': 999}));
-      final t = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3, prepaid: true);
+      final t = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3, prepaid: true);
       expect(t, isNotNull, reason: 'a trained troop lands even with 0 ⚡');
       expect(st.pools.of('me'), 0);
     });
@@ -265,16 +265,16 @@ void main() {
       final base = Base(WarSide.enemy, 7);
       final drops = base.dropCells.toList();
       expect(drops.any((c) => c.r == 0), isTrue, reason: 'north side');
-      expect(drops.any((c) => c.r == Base.rows - 1), isTrue, reason: 'south side');
+      expect(drops.any((c) => c.r == Base.defaultSize - 1), isTrue, reason: 'south side');
       expect(drops.any((c) => c.c == 0), isTrue, reason: 'west side');
-      expect(drops.any((c) => c.c == Base.cols - 1), isTrue, reason: 'east side');
+      expect(drops.any((c) => c.c == Base.defaultSize - 1), isTrue, reason: 'east side');
     });
 
     test('fog-honest objectives: unscouted buildings are invisible to the AI',
         () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 5, 3); // deep in the fog (past the band)
       final st = AttackState(
@@ -282,7 +282,7 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       final obj = WarAi.pickObjective(st, t)!;
       expect(st.visible(5, 3), isFalse);
       expect(obj == const Cell(5, 3), isFalse,
@@ -297,29 +297,29 @@ void main() {
       expect(base.grid[5][5].terrain, Terrain.plains);
       expect(base.clearForest(6, 6), isFalse);
       expect(base.grid[6][6].terrain, Terrain.mountain);
-      expect(base.cleared, contains(5 * Base.cols + 5));
+      expect(base.cleared, contains(5 * Base.defaultSize + 5));
     });
 
     test('the landing ring is one-way: no walking back out', () {
       final st = scenario();
       // clear a second lane — the scenario walls (rows-4, 3)
       flatten(st.base, [
-        for (var r = 0; r < Base.rows; r++) [r, 4]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 4]
       ]);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-      st.moveTroop(t, Base.rows - 3, 3); // to the band's inner edge
-      st.moveTroop(t, Base.rows - 4, 4); // now the interior is scouted — enter
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+      st.moveTroop(t, Base.defaultSize - 3, 3); // to the band's inner edge
+      st.moveTroop(t, Base.defaultSize - 4, 4); // now the interior is scouted — enter
       expect(st.base.isRing(t.r, t.c), isFalse);
       final reach = st.reachable(t);
       for (final k in reach.keys) {
-        expect(st.base.isRing(k ~/ Base.cols, k % Base.cols), isFalse,
+        expect(st.base.isRing(k ~/ Base.defaultSize, k % Base.defaultSize), isFalse,
             reason: 'interior troops can never re-enter the ring');
       }
     });
 
     test('one aiStep moves at most 2 tiles (no teleporting)', () {
       final st = scenario();
-      final t = st.spawn(TroopType.runner, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.runner, 'me', Base.defaultSize - 1, 3)!;
       for (var i = 0; i < 10; i++) {
         final r0 = t.r, c0 = t.c;
         WarAi.aiStep(st, t);
@@ -351,7 +351,7 @@ void main() {
 
     test('level-up patches +25%, never a full heal', () {
       final st = scenario();
-      final t = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
       t.hp = 40; // badly wounded
       t.gainXp(Xp.perLevel.toDouble()); // ding! level 2
       expect(t.level, 2);
@@ -363,23 +363,23 @@ void main() {
     test('the mortar has a blind spot up close', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
-      base.place(Base.rows - 6, 3, DefType.mortar, 'def');
+      base.place(Base.defaultSize - 6, 3, DefType.mortar, 'def');
       final st = AttackState(
           base: base,
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
       // adjacent attacker: inside minRange → mortar can't fire
-      final close = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
-      close.r = Base.rows - 7; // chebyshev 1 from the mortar
+      final close = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
+      close.r = Base.defaultSize - 7; // chebyshev 1 from the mortar
       final hpClose = close.hp;
       st.defendersReact();
       expect(close.hp, hpClose, reason: 'inside the blind spot');
       // pull back to range 4 → boom
-      close.r = Base.rows - 2;
+      close.r = Base.defaultSize - 2;
       final hpFar = close.hp;
       st.defendersReact();
       st.defendersReact();
@@ -390,9 +390,9 @@ void main() {
     test('AI raids penetrate deep now (freeActions like the player)', () {
       final base = Base(WarSide.you, 21); // an undefended-ish base
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, Base.cols ~/ 2]
+        for (var r = 0; r < Base.defaultSize; r++) [r, Base.defaultSize ~/ 2]
       ]);
-      base.placeCastle('you', Base.rows ~/ 2, Base.cols ~/ 2);
+      base.placeCastle('you', Base.defaultSize ~/ 2, Base.defaultSize ~/ 2);
       expect(base.castleCells, isNotEmpty, reason: 'castle must actually place');
       final raider = WarPlayer(
           id: 'e1',
@@ -415,27 +415,27 @@ void main() {
     test('troops ignore walls when a route exists, breach when sealed', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) ...[
+        for (var r = 0; r < Base.defaultSize; r++) ...[
           [r, 3],
           [r, 4]
         ]
       ]);
       base.placeCastle('def', 5, 3);
-      base.place(Base.rows - 8, 3, DefType.archerTower, 'def'); // objective
-      base.place(Base.rows - 7, 4, DefType.wall, 'def'); // an IGNORABLE wall
+      base.place(Base.defaultSize - 8, 3, DefType.archerTower, 'def'); // objective
+      base.place(Base.defaultSize - 7, 4, DefType.wall, 'def'); // an IGNORABLE wall
       final st = AttackState(
           base: base,
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-      t.r = Base.rows - 7; // adjacent to the wall at (rows-7, 4)
-      final wall = base.structAt(Base.rows - 7, 4)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+      t.r = Base.defaultSize - 7; // adjacent to the wall at (rows-7, 4)
+      final wall = base.structAt(Base.defaultSize - 7, 4)!;
       final hp0 = wall.hp;
       // reveal the tower so it's a real objective
-      for (var r = Base.rows - 10; r < Base.rows - 4; r++) {
-        st.revealed.add(r * Base.cols + 3);
-        st.revealed.add(r * Base.cols + 4);
+      for (var r = Base.defaultSize - 10; r < Base.defaultSize - 4; r++) {
+        st.revealed.add(r * Base.defaultSize + 3);
+        st.revealed.add(r * Base.defaultSize + 4);
       }
       WarAi.aiStep(st, t);
       expect(wall.hp, hp0,
@@ -445,24 +445,24 @@ void main() {
     test('forest conceals troops from distant towers', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
-      base.place(Base.rows - 6, 3, DefType.archerTower, 'def'); // range 3
+      base.place(Base.defaultSize - 6, 3, DefType.archerTower, 'def'); // range 3
       final st = AttackState(
           base: base,
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       // stand in forest at range 3 from the tower → invisible
-      t.r = Base.rows - 3;
+      t.r = Base.defaultSize - 3;
       base.grid[t.r][t.c].terrain = Terrain.forest;
       final hp0 = t.hp;
       st.defendersReact();
       expect(t.hp, hp0, reason: 'hidden in the trees at range 3');
       // step to range 2 → spotted
-      t.r = Base.rows - 4;
+      t.r = Base.defaultSize - 4;
       base.grid[t.r][t.c].terrain = Terrain.forest;
       st.defendersReact();
       expect(t.hp, lessThan(hp0), reason: 'spotted at close range');
@@ -472,7 +472,7 @@ void main() {
       AttackState mk(DefType doorway) {
         final base = Base(WarSide.enemy, 11);
         flatten(base, [
-          for (var r = 0; r < Base.rows; r++) ...[
+          for (var r = 0; r < Base.defaultSize; r++) ...[
             [r, 3],
             [r, 4]
           ]
@@ -491,7 +491,7 @@ void main() {
       // the gate is THEIR door — one react and the guard stands in it
       final stG = mk(DefType.gate);
       final guardG = stG.garrison.first;
-      final intruderG = stG.spawn(TroopType.soldier, 'me', Base.rows - 1, 4)!;
+      final intruderG = stG.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 4)!;
       intruderG.r = 8;
       intruderG.c = 4;
       stG.defendersReact();
@@ -502,7 +502,7 @@ void main() {
       // a WALL is never ghosted over — the guard goes AROUND it
       final stW = mk(DefType.wall);
       final guardW = stW.garrison.first;
-      final intruderW = stW.spawn(TroopType.soldier, 'me', Base.rows - 1, 4)!;
+      final intruderW = stW.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 4)!;
       intruderW.r = 8;
       intruderW.c = 4;
       final full = intruderW.hp;
@@ -518,22 +518,22 @@ void main() {
     test('mortar shells splash the whole impact area', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) ...[
+        for (var r = 0; r < Base.defaultSize; r++) ...[
           [r, 3],
           [r, 4]
         ]
       ]);
       base.placeCastle('def', 2, 3);
-      base.place(Base.rows - 8, 3, DefType.mortar, 'def');
+      base.place(Base.defaultSize - 8, 3, DefType.mortar, 'def');
       final st = AttackState(
           base: base,
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final a = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
-      final b = st.spawn(TroopType.brute, 'me', Base.rows - 1, 4)!;
-      a.r = Base.rows - 4; // range 4 from the mortar — fair game
-      b.r = Base.rows - 4;
+      final a = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
+      final b = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 4)!;
+      a.r = Base.defaultSize - 4; // range 4 from the mortar — fair game
+      b.r = Base.defaultSize - 4;
       final aHp = a.hp, bHp = b.hp;
       for (var i = 0; i < 3; i++) {
         st.defendersReact(); // cooldown 3 → at least one volley
@@ -546,14 +546,14 @@ void main() {
 
     test('scouts reveal a radius-2 area', () {
       final st = scenario();
-      final t = st.spawn(TroopType.runner, 'me', Base.rows - 1, 3)!;
-      st.moveTroop(t, Base.rows - 3, 3);
-      st.moveTroop(t, Base.rows - 4, 3); // march past the band, in hops
+      final t = st.spawn(TroopType.runner, 'me', Base.defaultSize - 1, 3)!;
+      st.moveTroop(t, Base.defaultSize - 3, 3);
+      st.moveTroop(t, Base.defaultSize - 4, 3); // march past the band, in hops
       final scoutSees = st.revealed.length;
       final st2 = scenario();
-      final t2 = st2.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-      st2.moveTroop(t2, Base.rows - 3, 3);
-      st2.moveTroop(t2, Base.rows - 4, 3);
+      final t2 = st2.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+      st2.moveTroop(t2, Base.defaultSize - 3, 3);
+      st2.moveTroop(t2, Base.defaultSize - 4, 3);
       expect(scoutSees, greaterThan(st2.revealed.length),
           reason: 'the scout uncovers more fog than a line trooper');
     });
@@ -572,8 +572,8 @@ void main() {
       WarAi.designBase(eliteBase, elite, SeededRng(seedFromParts([9, 9])));
       final types = <DefType>{};
       var walls = 0;
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 0; c < Base.defaultSize; c++) {
           final s = eliteBase.structAt(r, c);
           if (s == null) continue;
           types.add(s.type);
@@ -589,8 +589,8 @@ void main() {
       final rookies = [for (var i = 0; i < 4; i++) mk('r$i', AiLevel.rookie)];
       WarAi.designBase(rookieBase, rookies, SeededRng(seedFromParts([9, 9])));
       var rookieStructs = 0, eliteStructs = 0;
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 0; c < Base.defaultSize; c++) {
           if (rookieBase.structAt(r, c) != null) rookieStructs++;
           if (eliteBase.structAt(r, c) != null) eliteStructs++;
         }
@@ -613,9 +613,9 @@ void main() {
 
     test('replay frames carry the combat FX', () {
       final st = scenario();
-      final t = st.spawn(TroopType.sapper, 'me', Base.rows - 1, 3)!;
-      t.r = Base.rows - 3;
-      st.attackCell(t, Base.rows - 4, 3); // smash the wall → melee FX
+      final t = st.spawn(TroopType.sapper, 'me', Base.defaultSize - 1, 3)!;
+      t.r = Base.defaultSize - 3;
+      st.attackCell(t, Base.defaultSize - 4, 3); // smash the wall → melee FX
       st.snapshot();
       expect(st.frames.last.fx, isNotEmpty,
           reason: 'replays play the arrows/cannonballs, not emoji');
@@ -627,8 +627,8 @@ void main() {
           base.inBounds(r, c) &&
           (base.grid[r][c].terrain == Terrain.river ||
               base.grid[r][c].terrain == Terrain.bridge);
-      for (var r = 1; r < Base.rows - 1; r++) {
-        for (var c = 1; c < Base.cols - 1; c++) {
+      for (var r = 1; r < Base.defaultSize - 1; r++) {
+        for (var c = 1; c < Base.defaultSize - 1; c++) {
           if (base.grid[r][c].terrain != Terrain.bridge) continue;
           final horiz = water(r, c - 1) && water(r, c + 1);
           final vert = water(r - 1, c) && water(r + 1, c);
@@ -640,7 +640,7 @@ void main() {
 
     test('aiStep marches a troop toward the base and it fights', () {
       final st = scenario();
-      final t = st.spawn(TroopType.sapper, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.sapper, 'me', Base.defaultSize - 1, 3)!;
       final d0 = (t.r - 2).abs() + (t.c - 3).abs();
       var guard = 0;
       while (guard++ < 60 && t.alive && !st.base.allCastlesRazed) {
@@ -655,7 +655,7 @@ void main() {
     test('a LiveBattle ticks to completion and deals destruction', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
       final st = AttackState(
@@ -679,7 +679,7 @@ void main() {
     test('a LiveBattle waits for you while trained troops remain', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
       final st = AttackState(
@@ -700,7 +700,7 @@ void main() {
       final st = scenario();
       final drop = st.base.dropCells.first;
       final t = st.spawn(TroopType.soldier, 'me', drop.r, drop.c)!;
-      st.moveTroop(t, Base.rows - 3, drop.c);
+      st.moveTroop(t, Base.defaultSize - 3, drop.c);
       final j = st.toJson();
       final restored = AttackState.restore(
         base: st.base,
@@ -768,7 +768,7 @@ void main() {
       final reach = st.reachable(t);
       if (reach.isNotEmpty) {
         final k = reach.keys.first;
-        st.moveTroop(t, k ~/ Base.cols, k % Base.cols);
+        st.moveTroop(t, k ~/ Base.defaultSize, k % Base.defaultSize);
       }
       final revealedCount = st.revealed.length;
       g.commitLiveAttack();
@@ -815,7 +815,7 @@ void main() {
             final reach = st.reachable(t);
             if (reach.isNotEmpty) {
               final k = reach.keys.first;
-              st.moveTroop(t, k ~/ Base.cols, k % Base.cols);
+              st.moveTroop(t, k ~/ Base.defaultSize, k % Base.defaultSize);
             }
           }
         }
@@ -844,8 +844,8 @@ void main() {
         resources: resources);
 
     test('the map is 40×40', () {
-      expect(Base.rows, 40);
-      expect(Base.cols, 40);
+      expect(Base.defaultSize, 40);
+      expect(Base.defaultSize, 40);
     });
 
     test('level 2 needs 300 XP; chipping buildings pays quarter XP', () {
@@ -853,20 +853,20 @@ void main() {
       expect(Xp.levelForXp(300), 2);
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
-      base.place(Base.rows - 4, 3, DefType.wall, 'def');
+      base.place(Base.defaultSize - 4, 3, DefType.wall, 'def');
       final st = AttackState(
           base: base,
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-      t.r = Base.rows - 3;
-      final wall = base.structAt(Base.rows - 4, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+      t.r = Base.defaultSize - 3;
+      final wall = base.structAt(Base.defaultSize - 4, 3)!;
       final hp0 = wall.hp;
-      st.attackCell(t, Base.rows - 4, 3);
+      st.attackCell(t, Base.defaultSize - 4, 3);
       final dealt = (hp0 - wall.hp).toDouble();
       expect(t.xp, closeTo(dealt * 0.25, 0.01),
           reason: 'structure chip XP is quartered — no more rocket levels');
@@ -905,7 +905,7 @@ void main() {
       final t = st.spawn(TroopType.soldier, 'me', drop.r, drop.c)!;
       t.r = 10;
       t.c = 10;
-      st.revealed.add(2 * Base.cols + 10); // the castle is a KNOWN objective
+      st.revealed.add(2 * Base.defaultSize + 10); // the castle is a KNOWN objective
       var damaged = false;
       for (var i = 0; i < 8 && !damaged; i++) {
         WarAi.aiStep(st, t);
@@ -921,9 +921,9 @@ void main() {
     test('enemy raids land as one focused push (clustered drops)', () {
       final base = Base(WarSide.you, 21);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, Base.cols ~/ 2]
+        for (var r = 0; r < Base.defaultSize; r++) [r, Base.defaultSize ~/ 2]
       ]);
-      base.placeCastle('you', Base.rows ~/ 2, Base.cols ~/ 2);
+      base.placeCastle('you', Base.defaultSize ~/ 2, Base.defaultSize ~/ 2);
       final raider = mk('e1', AiLevel.master, resources: 500);
       final pools = MapPools({'e1': 500.0});
       final res = WarAi.runAttack(
@@ -949,9 +949,9 @@ void main() {
       List<WarPlayer> crew() =>
           [for (var i = 0; i < 4; i++) mk('e$i', AiLevel.master)];
       Set<int> layout(Base b) => {
-            for (var r = 0; r < Base.rows; r++)
-              for (var c = 0; c < Base.cols; c++)
-                if (b.structAt(r, c) != null) r * Base.cols + c
+            for (var r = 0; r < Base.defaultSize; r++)
+              for (var c = 0; c < Base.defaultSize; c++)
+                if (b.structAt(r, c) != null) r * Base.defaultSize + c
           };
       final b1 = Base(WarSide.enemy, 33);
       WarAi.designBase(b1, crew(), SeededRng(seedFromParts([33, 'a'])));
@@ -967,7 +967,7 @@ void main() {
       Base b() {
         final base = Base(WarSide.enemy, 7);
         flatten(base, [
-          for (var r = 0; r < Base.rows; r++) [r, 3]
+          for (var r = 0; r < Base.defaultSize; r++) [r, 3]
         ]);
         base.placeCastle('def', 2, 3);
         return base;
@@ -982,7 +982,7 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t1 = st1.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
+      final t1 = st1.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
       t1.r = 13;
       final hp1 = t1.hp;
       st1.defendersReact();
@@ -998,7 +998,7 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t2 = st2.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
+      final t2 = st2.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
       t2.r = 13;
       final hp2 = t2.hp;
       st2.defendersReact();
@@ -1008,8 +1008,8 @@ void main() {
     test('difficulty scales the enemy war chest (master builds more)', () {
       double value(Base b) {
         var v = 0.0;
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 0; c < Base.defaultSize; c++) {
             final s = b.structAt(r, c);
             if (s != null) v += s.spec.cost;
           }
@@ -1038,10 +1038,10 @@ void main() {
       int progress({required bool woods}) {
         final base = Base(WarSide.enemy, 7);
         flatten(base, [
-          for (var r = 0; r < Base.rows; r++) [r, 3]
+          for (var r = 0; r < Base.defaultSize; r++) [r, 3]
         ]);
         base.placeCastle('def', 2, 3);
-        for (var r = Base.rows - 7; r <= Base.rows - 2; r++) {
+        for (var r = Base.defaultSize - 7; r <= Base.defaultSize - 2; r++) {
           // canyon walls so there is no dry detour, in BOTH variants
           base.grid[r][2].terrain = Terrain.mountain;
           base.grid[r][4].terrain = Terrain.mountain;
@@ -1052,12 +1052,12 @@ void main() {
             attacker: WarSide.you,
             attackerName: 'Me',
             pools: MapPools({'me': 999, 'def': 999}));
-        final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-        st.revealed.add(2 * Base.cols + 3); // march on the castle
+        final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+        st.revealed.add(2 * Base.defaultSize + 3); // march on the castle
         for (var i = 0; i < 6; i++) {
           WarAi.aiStep(st, t);
         }
-        return Base.rows - 1 - t.r;
+        return Base.defaultSize - 1 - t.r;
       }
 
       final plains = progress(woods: false);
@@ -1090,8 +1090,8 @@ void main() {
         final base = Base(WarSide.enemy, seed);
         WarAi.designBase(base, masters(), SeededRng(seedFromParts([seed, 'gs'])));
         final gates = <List<int>>[];
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 0; c < Base.defaultSize; c++) {
             if (base.structAt(r, c)?.type == DefType.gate) gates.add([r, c]);
           }
         }
@@ -1109,8 +1109,8 @@ void main() {
     test('WARD LAYERS carve the fort into more rooms and more doors', () {
       int count(Base b, DefType t) {
         var n = 0;
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 0; c < Base.defaultSize; c++) {
             if (b.structAt(r, c)?.type == t) n++;
           }
         }
@@ -1137,7 +1137,7 @@ void main() {
     test('the fallen leave tombstones — up to four to a tile', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) ...[
+        for (var r = 0; r < Base.defaultSize; r++) ...[
           [r, 3],
           [r, 4]
         ]
@@ -1148,8 +1148,8 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final a = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-      final b = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 4)!;
+      final a = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+      final b = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 4)!;
       b.r = a.r;
       b.c = a.c; // fell on the same tile
       a.hp = 0;
@@ -1172,7 +1172,7 @@ void main() {
       AttackState mk(int level) {
         final base = Base(WarSide.enemy, 11);
         flatten(base, [
-          for (var r = 0; r < Base.rows; r++) ...[
+          for (var r = 0; r < Base.defaultSize; r++) ...[
             [r, 3],
             [r, 4]
           ]
@@ -1189,7 +1189,7 @@ void main() {
 
       bool chases(AttackState st, int intruderR) {
         final guard = st.garrison.first;
-        final intruder = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 4)!;
+        final intruder = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 4)!;
         intruder.r = intruderR;
         intruder.c = 4;
         final d0 = (guard.r - intruder.r).abs() + (guard.c - intruder.c).abs();
@@ -1221,20 +1221,20 @@ void main() {
     test('a sapper one-shots a wall, splashes the next one, and dies', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) ...[
+        for (var r = 0; r < Base.defaultSize; r++) ...[
           [r, 3],
           [r, 4]
         ]
       ]);
       base.placeCastle('def', 2, 3);
-      base.place(Base.rows - 4, 3, DefType.wall, 'def');
-      base.place(Base.rows - 4, 4, DefType.wall, 'def'); // splash victim
+      base.place(Base.defaultSize - 4, 3, DefType.wall, 'def');
+      base.place(Base.defaultSize - 4, 4, DefType.wall, 'def'); // splash victim
       final st = mkState(base);
-      final t = st.spawn(TroopType.sapper, 'me', Base.rows - 1, 3)!;
-      t.r = Base.rows - 3;
-      final target = base.structAt(Base.rows - 4, 3)!;
-      final neighbour = base.structAt(Base.rows - 4, 4)!;
-      st.attackCell(t, Base.rows - 4, 3);
+      final t = st.spawn(TroopType.sapper, 'me', Base.defaultSize - 1, 3)!;
+      t.r = Base.defaultSize - 3;
+      final target = base.structAt(Base.defaultSize - 4, 3)!;
+      final neighbour = base.structAt(Base.defaultSize - 4, 4)!;
+      st.attackCell(t, Base.defaultSize - 4, 3);
       expect(target.alive, isFalse, reason: 'the bomb one-shots a wall');
       expect(neighbour.hp, lessThan(neighbour.spec.hp),
           reason: 'the blast tears at the wall beside it');
@@ -1244,24 +1244,24 @@ void main() {
     test('sappers CHASE walls; brutes CHASE defenses', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 18, 3);
       base.place(14, 3, DefType.archerTower, 'def');
       base.place(16, 3, DefType.wall, 'def');
       final st = mkState(base);
-      final sapper = st.spawn(TroopType.sapper, 'me', Base.rows - 1, 3)!;
+      final sapper = st.spawn(TroopType.sapper, 'me', Base.defaultSize - 1, 3)!;
       sapper.r = 20;
       for (final rc in [
         [14, 3],
         [16, 3],
         [18, 3]
       ]) {
-        st.revealed.add(rc[0] * Base.cols + rc[1]);
+        st.revealed.add(rc[0] * Base.defaultSize + rc[1]);
       }
       expect(WarAi.pickObjective(st, sapper), const Cell(16, 3),
           reason: 'the sapper lives to blow the wall');
-      final brute = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
+      final brute = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
       brute.r = 21;
       expect(WarAi.pickObjective(st, brute), const Cell(14, 3),
           reason: 'the brute hunts the tower, not the nearer castle');
@@ -1270,19 +1270,19 @@ void main() {
     test('routes ignore friendly troops (no more convoy oscillation)', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
       // canyon: the only road is column 3
-      for (var r = 4; r < Base.rows - 1; r++) {
+      for (var r = 4; r < Base.defaultSize - 1; r++) {
         base.grid[r][2].terrain = Terrain.mountain;
         base.grid[r][4].terrain = Terrain.mountain;
       }
       final st = mkState(base);
-      final blocker = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-      blocker.r = Base.rows - 5; // parked mid-corridor
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-      t.r = Base.rows - 3;
+      final blocker = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+      blocker.r = Base.defaultSize - 5; // parked mid-corridor
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+      t.r = Base.defaultSize - 3;
       final route = st.routeTo(t, 5, 3);
       expect(route, isNotEmpty,
           reason: 'a friend on the road is a beat of patience, not a wall');
@@ -1291,14 +1291,14 @@ void main() {
     test('master defense focus-fires the weakest intruder', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
       base.place(10, 3, DefType.archerTower, 'def'); // range 3
       final st = mkState(base, iq: 1.0);
-      final healthy = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
+      final healthy = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
       healthy.r = 11; // right next to the tower
-      final wounded = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final wounded = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       wounded.r = 13; // farther out…
       wounded.hp = 12; // …but nearly dead
       final healthyHp = healthy.hp;
@@ -1311,7 +1311,7 @@ void main() {
     test('an upgraded guard tent patrols 2 tiles farther', () {
       final base = Base(WarSide.enemy, 11);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) ...[
+        for (var r = 0; r < Base.defaultSize; r++) ...[
           [r, 3],
           [r, 4]
         ]
@@ -1321,7 +1321,7 @@ void main() {
       base.structAt(10, 4)!.level = 2; // the pavilion
       final st = mkState(base);
       final guard = st.garrison.first;
-      final intruder = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 4)!;
+      final intruder = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 4)!;
       intruder.r = 14; // 4 from home: outside a stock leash (3), inside 5
       intruder.c = 4;
       final d0 = (guard.r - intruder.r).abs() + (guard.c - intruder.c).abs();
@@ -1347,8 +1347,8 @@ void main() {
       for (final seed in [21, 33, 51]) {
         final base = Base(WarSide.enemy, seed);
         WarAi.designBase(base, masters(), SeededRng(seedFromParts([seed, 'b'])));
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 0; c < Base.defaultSize; c++) {
             if (base.grid[r][c].terrain != Terrain.bridge) continue;
             expect(base.structAt(r, c), isNull,
                 reason: 'a bridge is a PASSAGE, not a foundation ($seed $r,$c)');
@@ -1365,10 +1365,10 @@ void main() {
       // flood attacker-passable ground from the landing ring
       final seen = <int>{};
       final stack = <List<int>>[];
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 0; c < Base.defaultSize; c++) {
           if (base.isRing(r, c) && base.passable(r, c)) {
-            if (seen.add(r * Base.cols + c)) stack.add([r, c]);
+            if (seen.add(r * Base.defaultSize + c)) stack.add([r, c]);
           }
         }
       }
@@ -1382,7 +1382,7 @@ void main() {
         ]) {
           final nr = cur[0] + d[0], nc = cur[1] + d[1];
           if (!base.passable(nr, nc)) continue;
-          if (seen.add(nr * Base.cols + nc)) stack.add([nr, nc]);
+          if (seen.add(nr * Base.defaultSize + nc)) stack.add([nr, nc]);
         }
       }
       for (final castle in base.castleCells) {
@@ -1393,7 +1393,7 @@ void main() {
           [0, 1]
         ]) {
           expect(
-              seen.contains((castle.r + d[0]) * Base.cols + (castle.c + d[1])),
+              seen.contains((castle.r + d[0]) * Base.defaultSize + (castle.c + d[1])),
               isFalse,
               reason: 'a stroll from the ring reaches a castle at '
                   '(${castle.r},${castle.c}) — the wall has a hole');
@@ -1407,8 +1407,8 @@ void main() {
         final base = Base(WarSide.enemy, seed,
             config: const TerrainConfig(rivers: 2, lakes: 0));
         WarAi.designBase(base, masters(), SeededRng(seedFromParts([seed, 'r'])));
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 0; c < Base.defaultSize; c++) {
             if (base.grid[r][c].terrain != Terrain.bridge) continue;
             // a bridge with a wall RIGHT beside it must have a gate within 2
             var walled = false, gated = false;
@@ -1447,8 +1447,8 @@ void main() {
       ];
       WarAi.designBase(base, crew, SeededRng(seedFromParts([51, 'g'])));
       var gates = 0;
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 0; c < Base.defaultSize; c++) {
           if (base.structAt(r, c)?.type == DefType.gate) gates++;
         }
       }
@@ -1464,7 +1464,7 @@ void main() {
           for (var c = 8; c <= 14; c++) [r, c]
       ]);
       base.placeCastle('def', 11, 11);
-      final pocket = <int>{11 * Base.cols + 11};
+      final pocket = <int>{11 * Base.defaultSize + 11};
       for (final d in const [
         [-1, -1],
         [-1, 0],
@@ -1476,14 +1476,14 @@ void main() {
         [1, 1]
       ]) {
         base.place(11 + d[0], 11 + d[1], DefType.wall, 'def');
-        pocket.add((11 + d[0]) * Base.cols + (11 + d[1]));
+        pocket.add((11 + d[0]) * Base.defaultSize + (11 + d[1]));
       }
       // the clan has scouted EVERYTHING except the sealed pocket — the exact
       // endgame that used to freeze every troop mid-raid
       final intel = <int>{
-        for (var r = 0; r < Base.rows; r++)
-          for (var c = 0; c < Base.cols; c++)
-            if (!pocket.contains(r * Base.cols + c)) r * Base.cols + c
+        for (var r = 0; r < Base.defaultSize; r++)
+          for (var c = 0; c < Base.defaultSize; c++)
+            if (!pocket.contains(r * Base.defaultSize + c)) r * Base.defaultSize + c
       };
       final st = AttackState(
           base: base,
@@ -1501,7 +1501,7 @@ void main() {
       for (var i = 0; i < 10 && !damaged; i++) {
         WarAi.aiStep(st, t);
         damaged = pocket.any((k) {
-          final s = base.structAt(k ~/ Base.cols, k % Base.cols);
+          final s = base.structAt(k ~/ Base.defaultSize, k % Base.defaultSize);
           return s != null && s.type == DefType.wall && s.hp < s.spec.hp;
         });
       }
@@ -1511,7 +1511,7 @@ void main() {
     test('replay sprites carry stable troop ids (no flying garrisons)', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) ...[
+        for (var r = 0; r < Base.defaultSize; r++) ...[
           [r, 3],
           [r, 4]
         ]
@@ -1519,8 +1519,8 @@ void main() {
       base.placeCastle('def', 2, 3);
       base.place(10, 4, DefType.guardPost, 'def');
       final st = mkState(base);
-      final t1 = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
-      final t2 = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 4)!;
+      final t1 = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
+      final t2 = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 4)!;
       st.snapshot();
       final ids = st.frames.last.sprites.map((s) => s.id).toList();
       expect(ids.toSet().length, ids.length, reason: 'every sprite is SOMEONE');
@@ -1531,8 +1531,8 @@ void main() {
     test('the water dials work: 0 rivers = dry land, 3 = riverlands', () {
       int water(Base b) {
         var n = 0;
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 0; c < Base.defaultSize; c++) {
             final t = b.grid[r][c].terrain;
             if (t == Terrain.river || t == Terrain.bridge) n++;
           }
@@ -1553,8 +1553,8 @@ void main() {
       g.startPrep();
       final seedBefore = g.warSeed;
       String fingerprint(Base b) => [
-            for (var r = 0; r < Base.rows; r += 3)
-              for (var c = 0; c < Base.cols; c += 3) b.grid[r][c].terrain.index
+            for (var r = 0; r < Base.defaultSize; r += 3)
+              for (var c = 0; c < Base.defaultSize; c += 3) b.grid[r][c].terrain.index
           ].join(',');
       final terrainBefore = fingerprint(g.youBase);
       g.resetSeason();
@@ -1588,8 +1588,8 @@ void main() {
       for (final seed in [21, 51, 77]) {
         final base = Base(WarSide.enemy, seed);
         WarAi.designBase(base, masters(), SeededRng(seedFromParts([seed, 'f'])));
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 0; c < Base.defaultSize; c++) {
             final s = base.structAt(r, c);
             if (s == null || s.type != DefType.gate) continue;
             var support = 0;
@@ -1621,7 +1621,7 @@ void main() {
       Base build() {
         final base = Base(WarSide.enemy, 7);
         flatten(base, [
-          for (var r = 0; r < Base.rows; r++) ...[
+          for (var r = 0; r < Base.defaultSize; r++) ...[
             [r, 3],
             [r, 4]
           ]
@@ -1651,7 +1651,7 @@ void main() {
       AttackState mk(int level) {
         final base = Base(WarSide.enemy, 7);
         flatten(base, [
-          for (var r = 0; r < Base.rows; r++) [r, 3]
+          for (var r = 0; r < Base.defaultSize; r++) [r, 3]
         ]);
         base.placeCastle('def', 2, 3);
         base.place(10, 3, DefType.cannon, 'def');
@@ -1664,7 +1664,7 @@ void main() {
       }
 
       int hurt(AttackState st) {
-        final t = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
+        final t = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
         t.r = 11; // point blank, clear line
         final hp0 = t.hp;
         st.defendersReact();
@@ -1686,7 +1686,7 @@ void main() {
       base.place(6, 19, DefType.archerTower, 'you');
       final intel = <int>{
         for (var r = 0; r < 12; r++)
-          for (var c = 14; c < 26; c++) r * Base.cols + c
+          for (var c = 14; c < 26; c++) r * Base.defaultSize + c
       };
       final raider = WarPlayer(
           id: 'e1',
@@ -1706,14 +1706,14 @@ void main() {
       final drops = res.frames.first.sprites;
       expect(drops, isNotEmpty);
       final avgRow = drops.fold<double>(0, (a, s) => a + s.r) / drops.length;
-      expect(avgRow, lessThan(Base.rows / 2),
+      expect(avgRow, lessThan(Base.defaultSize / 2),
           reason: 'the base is NORTH and they know it — land north');
     });
 
     test('mortar fire scars the land and flattens forest', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
       base.place(10, 3, DefType.mortar, 'def');
@@ -1722,7 +1722,7 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
       t.r = 12; // range 2 — inside forestSpotRange, outside the blind spot
       base.grid[12][3].terrain = Terrain.forest; // standing in the trees
       for (var i = 0; i < 3; i++) {
@@ -1736,7 +1736,7 @@ void main() {
     test('the dead persist on the WORLD and through Base save/load', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 0; r < Base.rows; r++) [r, 3]
+        for (var r = 0; r < Base.defaultSize; r++) [r, 3]
       ]);
       base.placeCastle('def', 2, 3);
       final st = AttackState(
@@ -1744,7 +1744,7 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       t.hp = 0;
       st.defendersReact();
       expect(base.graves, isNotEmpty, reason: 'the world remembers');
@@ -1757,7 +1757,7 @@ void main() {
     test('troops fan out: different troops break path ties differently', () {
       final base = Base(WarSide.enemy, 7);
       flatten(base, [
-        for (var r = 20; r < Base.rows; r++)
+        for (var r = 20; r < Base.defaultSize; r++)
           for (var c = 10; c < 24; c++) [r, c]
       ]);
       base.placeCastle('def', 2, 3);
@@ -1797,7 +1797,7 @@ void main() {
     test('HOUSING quarters a second defender for nearby tents', () {
       AttackState mk({required bool housed}) {
         final base = Base(WarSide.enemy, 11);
-        for (var r = 0; r < Base.rows; r++) {
+        for (var r = 0; r < Base.defaultSize; r++) {
           base.grid[r][3].terrain = Terrain.plains;
           base.grid[r][4].terrain = Terrain.plains;
           base.grid[r][5].terrain = Terrain.plains;
@@ -1819,7 +1819,7 @@ void main() {
 
     test('scouts peer an extra tile ahead of their march', () {
       final base = Base(WarSide.enemy, 7);
-      for (var r = 0; r < Base.rows; r++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
         base.grid[r][3].terrain = Terrain.plains;
       }
       base.placeCastle('def', 2, 3);
@@ -1828,10 +1828,10 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      final t = st.spawn(TroopType.runner, 'me', Base.rows - 1, 3)!;
-      st.moveTroop(t, Base.rows - 3, 3); // marching NORTH
+      final t = st.spawn(TroopType.runner, 'me', Base.defaultSize - 1, 3)!;
+      st.moveTroop(t, Base.defaultSize - 3, 3); // marching NORTH
       // radius 2 covers rows-5; the look-ahead reveals rows-6 too
-      expect(st.visible(Base.rows - 6, 3), isTrue,
+      expect(st.visible(Base.defaultSize - 6, 3), isTrue,
           reason: 'the scout sees one tile beyond its circle, ahead');
     });
 
@@ -1852,8 +1852,8 @@ void main() {
     /// exactly what they need.
     Base flat({WarSide side = WarSide.enemy, int seed = 7}) {
       final b = Base(side, seed);
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 0; c < Base.defaultSize; c++) {
           b.grid[r][c].terrain = Terrain.plains;
         }
       }
@@ -1873,10 +1873,10 @@ void main() {
       b.place(30, 3, DefType.guardPost, 'def');
       final st = raid(b);
       final guard = st.garrison.first; // fielded at the post
-      final a = st.spawn(TroopType.archer, 'me', Base.rows - 1, 3)!;
+      final a = st.spawn(TroopType.archer, 'me', Base.defaultSize - 1, 3)!;
       a.r = 32;
       a.c = 3;
-      st.revealed.add(30 * Base.cols + 3); // she can see the post
+      st.revealed.add(30 * Base.defaultSize + 3); // she can see the post
       expect(st.attackTargets(a).any((c) => c.r == 30 && c.c == 3), isTrue,
           reason: 'range-2 volley over the ground between');
       final guardHp = guard.hp;
@@ -1891,9 +1891,9 @@ void main() {
       final b = flat();
       b.placeCastle('def', 2, 3);
       final st = raid(b);
-      final hurt = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final hurt = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       hurt.hp = 10;
-      final h = st.spawn(TroopType.healer, 'me', Base.rows - 1, 4)!;
+      final h = st.spawn(TroopType.healer, 'me', Base.defaultSize - 1, 4)!;
       WarAi.aiStep(st, h);
       expect(hurt.hp, 24, reason: '+14 from the healer beside him');
     });
@@ -1902,10 +1902,10 @@ void main() {
       final b = flat();
       b.place(30, 3, DefType.pitchThrower, 'def');
       final st = raid(b);
-      final t1 = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t1 = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       t1.r = 31;
       t1.c = 3;
-      final t2 = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 5)!;
+      final t2 = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 5)!;
       t2.r = 30;
       t2.c = 4;
       st.defendersReact();
@@ -1920,7 +1920,7 @@ void main() {
         b.place(20, 3, DefType.cannon, 'def');
         if (banner) b.place(20, 5, DefType.banner, 'def');
         final st = raid(b);
-        final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+        final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
         t.r = 23;
         t.c = 3;
         st.defendersReact();
@@ -1937,7 +1937,7 @@ void main() {
         b.place(20, 3, DefType.ballista, 'def');
         if (wall) b.place(24, 3, DefType.wall, 'def');
         final st = raid(b);
-        final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+        final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
         t.r = troopR;
         t.c = 3;
         st.defendersReact();
@@ -1958,7 +1958,7 @@ void main() {
       b.place(20, 3, DefType.archerTower, 'def');
       b.grid[23][3].terrain = Terrain.forest;
       final st = raid(b);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       t.r = 23;
       t.c = 3;
       st.defendersReact();
@@ -1974,7 +1974,7 @@ void main() {
       final b = flat();
       b.place(20, 3, DefType.archerTower, 'def');
       final st = raid(b);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       t.r = 24;
       t.c = 3; // range 3 tower, distance 4
       st.defendersReact();
@@ -1996,10 +1996,10 @@ void main() {
         b.place(20, 3, DefType.mortar, 'def');
         b.structAt(20, 3)!.level = level;
         final st = raid(b);
-        final target = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+        final target = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
         target.r = 23;
         target.c = 3;
-        final by = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 5)!;
+        final by = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 5)!;
         by.r = 25;
         by.c = 3; // Chebyshev 2 from the impact
         st.defendersReact();
@@ -2026,7 +2026,7 @@ void main() {
         b.place(30, 10, DefType.guardPost, 'def');
         b.structAt(30, 10)!.level = level;
         final st = raid(b);
-        final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 10)!;
+        final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 10)!;
         t.r = 23;
         t.c = 10; // 7 from home
         st.defendersReact();
@@ -2046,7 +2046,7 @@ void main() {
       final guard = st.garrison.first;
       guard.r = 26;
       guard.c = 10; // drifted 4 from home
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 10)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 10)!;
       t.r = 24;
       t.c = 10; // 6 from home (outside the leash), 2 from the guard
       st.defendersReact();
@@ -2058,7 +2058,7 @@ void main() {
       b.place(37, 3, DefType.wall, 'def');
       b.placeCastle('def', 2, 3);
       final st = raid(b, free: true);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       final spawnCost = kTroopSpecs[TroopType.soldier]!.cost.toDouble();
       expect(st.resourcesSpent, spawnCost);
       t.r = 38;
@@ -2088,7 +2088,7 @@ void main() {
       b.place(20, 3, DefType.mortar, 'def');
       b.grid[24][3].terrain = Terrain.forest;
       final st = raid(b);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       t.r = 24;
       t.c = 3;
       for (var i = 0; i < 200 && b.scorch.isEmpty; i++) {
@@ -2111,11 +2111,11 @@ void main() {
       b.place(30, 3, DefType.guardPost, 'def');
       b.placeCastle('def', 2, 3);
       final st = raid(b);
-      final brute = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
+      final brute = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
       brute.r = 35;
       brute.c = 3;
-      st.revealed.add(30 * Base.cols + 3);
-      st.revealed.add(2 * Base.cols + 3);
+      st.revealed.add(30 * Base.defaultSize + 3);
+      st.revealed.add(2 * Base.defaultSize + 3);
       final obj = WarAi.pickObjective(st, brute)!;
       expect(obj.r == 30 && obj.c == 3, isTrue,
           reason: 'the tent in sight beats the distant castle');
@@ -2129,8 +2129,8 @@ void main() {
       // wreck something in the drill copy
       late int vr, vc;
       var found = false;
-      for (var r = 0; r < Base.rows && !found; r++) {
-        for (var c = 0; c < Base.cols && !found; c++) {
+      for (var r = 0; r < Base.defaultSize && !found; r++) {
+        for (var c = 0; c < Base.defaultSize && !found; c++) {
           final v = st.base.structAt(r, c);
           if (v != null && !v.isCastle) {
             vr = r;
@@ -2170,8 +2170,8 @@ void main() {
     test('base codes: export → wreck → import rebuilds the same fortress', () {
       String sig(Base b) {
         final out = <String>[];
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 0; c < Base.defaultSize; c++) {
             final s = b.structAt(r, c);
             if (s != null) out.add('$r.$c.${s.type.index}.${s.level}');
           }
@@ -2186,8 +2186,8 @@ void main() {
       expect(code, startsWith('JARS1.'));
       // wreck the base, then restore it from the code
       var wrecked = 0;
-      for (var r = 0; r < Base.rows && wrecked < 5; r++) {
-        for (var c = 0; c < Base.cols && wrecked < 5; c++) {
+      for (var r = 0; r < Base.defaultSize && wrecked < 5; r++) {
+        for (var c = 0; c < Base.defaultSize && wrecked < 5; c++) {
           final s = g.youBase.structAt(r, c);
           if (s != null && !s.isCastle) {
             g.youBase.removeAt(r, c);
@@ -2241,7 +2241,7 @@ void main() {
             pools: MapPools({'casey': 999}),
             warSeed: 99,
             activePlayerId: 'you',
-            youIntel: <int>{5 * Base.cols + 5},
+            youIntel: <int>{5 * Base.defaultSize + 5},
             enemyIntel: <int>{});
       }
 
@@ -2262,7 +2262,7 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: g.pools);
-      expect(g.deployTrained(st, TroopType.soldier, Base.rows - 1, 5), isNull);
+      expect(g.deployTrained(st, TroopType.soldier, Base.defaultSize - 1, 5), isNull);
     });
 
     test('the crew edits the crew base: sell refunds the OWNER, castles never',
@@ -2273,8 +2273,8 @@ void main() {
       // an open plains cell in the interior
       late int rr, cc;
       outer:
-      for (var r = 5; r < Base.rows - 5; r++) {
-        for (var c = 5; c < Base.cols - 5; c++) {
+      for (var r = 5; r < Base.defaultSize - 5; r++) {
+        for (var c = 5; c < Base.defaultSize - 5; c++) {
           if (g.youBase.structAt(r, c) == null &&
               g.youBase.grid[r][c].terrain == Terrain.plains) {
             rr = r;
@@ -2307,14 +2307,14 @@ void main() {
       final b = flat();
       b.place(20, 3, DefType.mortar, 'def');
       final st = raid(b);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       t.r = 23;
       t.c = 3;
       st.defendersReact();
       st.snapshot('shellfall');
       expect(b.scorch, isNotEmpty);
       final frame = st.frames.last;
-      expect(frame.scorch.any((e) => e[0] == 23 * Base.cols + 3 && e[1] >= 2),
+      expect(frame.scorch.any((e) => e[0] == 23 * Base.defaultSize + 3 && e[1] >= 2),
           isTrue, reason: 'the frame remembers the crater under the impact');
     });
 
@@ -2342,10 +2342,10 @@ void main() {
     test('the landing band is three tiles deep', () {
       final b = flat();
       expect(b.isRing(2, 20), isTrue);
-      expect(b.isRing(20, Base.cols - 3), isTrue);
+      expect(b.isRing(20, Base.defaultSize - 3), isTrue);
       expect(b.isRing(3, 20), isFalse, reason: 'row 3 is buildable ground');
       final st = raid(b);
-      expect(st.spawn(TroopType.soldier, 'me', Base.rows - 2, 8), isNotNull,
+      expect(st.spawn(TroopType.soldier, 'me', Base.defaultSize - 2, 8), isNotNull,
           reason: 'the second row is a legal drop now');
     });
 
@@ -2356,7 +2356,7 @@ void main() {
         if (banners >= 1) b.place(20, 5, DefType.banner, 'def');
         if (banners >= 2) b.place(18, 3, DefType.banner, 'def');
         final st = raid(b);
-        final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+        final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
         t.r = 27;
         t.c = 3;
         st.defendersReact();
@@ -2371,7 +2371,7 @@ void main() {
       final b = flat();
       b.place(30, 3, DefType.pitchThrower, 'def');
       final st = raid(b);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3)!;
       t.r = 31;
       t.c = 3;
       st.defendersReact(); // the splash — and the cling
@@ -2393,11 +2393,11 @@ void main() {
       }
       b.placeCastle('def', 25, 3);
       final st = raid(b);
-      final brute = st.spawn(TroopType.brute, 'me', Base.rows - 1, 3)!;
+      final brute = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
       brute.r = 31;
       brute.c = 3;
       brute.movePoints = 0;
-      st.revealed.add(25 * Base.cols + 3);
+      st.revealed.add(25 * Base.defaultSize + 3);
       WarAi.aiStep(st, brute);
       expect(b.structAt(30, 3)!.hp,
           lessThan(kDefSpecs[DefType.barbedWire]!.hp),
@@ -2412,7 +2412,7 @@ void main() {
       b.place(33, 5, DefType.gate, 'def');
       b.place(30, 3, DefType.guardPost, 'def');
       final st = raid(b);
-      final t = st.spawn(TroopType.soldier, 'me', Base.rows - 1, 8)!;
+      final t = st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 8)!;
       t.r = 30;
       t.c = 7; // the far side of the spine — greedy stepping stalls here
       final full = kTroopSpecs[TroopType.soldier]!.hp;
@@ -2430,7 +2430,7 @@ void main() {
       final battle = LiveBattle(st, canDeploy: () => true);
       battle.tick(10);
       expect(battle.over, isFalse, reason: 'the clock idles until boots land');
-      st.spawn(TroopType.soldier, 'me', Base.rows - 1, 3);
+      st.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 3);
       battle.elapsed = 299;
       battle.tick(2);
       expect(battle.over, isTrue, reason: 'time is up, commander');
@@ -2491,10 +2491,10 @@ void main() {
       }
 
       final seen =
-          List.generate(Base.rows, (_) => List.filled(Base.cols, false));
+          List.generate(Base.defaultSize, (_) => List.filled(Base.defaultSize, false));
       var rooms = 0, vaults = 0;
-      for (var r = 3; r < Base.rows - 3; r++) {
-        for (var c = 3; c < Base.cols - 3; c++) {
+      for (var r = 3; r < Base.defaultSize - 3; r++) {
+        for (var c = 3; c < Base.defaultSize - 3; c++) {
           if (seen[r][c] || blockedAt(r, c)) continue;
           var size = 0;
           var touchesRing = false;
@@ -2514,7 +2514,7 @@ void main() {
               [0, 1]
             ]) {
               final nr = cur[0] + d[0], nc = cur[1] + d[1];
-              if (nr < 0 || nr >= Base.rows || nc < 0 || nc >= Base.cols) {
+              if (nr < 0 || nr >= Base.defaultSize || nc < 0 || nc >= Base.defaultSize) {
                 continue;
               }
               final ns = b.structAt(nr, nc);
@@ -2537,8 +2537,8 @@ void main() {
 
     int nonWallPieces(Base b) {
       var n = 0;
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 0; c < Base.defaultSize; c++) {
           final st = b.structAt(r, c);
           if (st != null &&
               st.type != DefType.wall &&
@@ -2585,8 +2585,8 @@ void main() {
 
     test('no dead stubs at scale: every wall leans on two friends', () {
       final b = build(47, 1.49);
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 0; c < Base.defaultSize; c++) {
           final st = b.structAt(r, c);
           if (st == null ||
               (st.type != DefType.wall && st.type != DefType.gate)) {
@@ -2619,8 +2619,8 @@ void main() {
     test('gate discipline holds in the labyrinth: no two doors adjacent', () {
       final b = build(91, 1.49);
       final gates = <List<int>>[];
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 0; c < Base.defaultSize; c++) {
           final st = b.structAt(r, c);
           if (st != null && st.type == DefType.gate) gates.add([r, c]);
         }

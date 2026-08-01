@@ -87,6 +87,26 @@ class LeagueConfig {
     return null;
   }
 
+  /// All troop unlock names available at [divisionIndex] (cumulative).
+  Set<String> unlockedTroopsThrough(int divisionIndex) {
+    final out = <String>{};
+    final hi = divisionIndex.clamp(0, divisions.length - 1);
+    for (var i = 0; i <= hi; i++) {
+      out.addAll(divisions[i].unlockTroops);
+    }
+    return out;
+  }
+
+  /// All new-def unlock names available at [divisionIndex] (cumulative).
+  Set<String> unlockedDefsThrough(int divisionIndex) {
+    final out = <String>{};
+    final hi = divisionIndex.clamp(0, divisions.length - 1);
+    for (var i = 0; i <= hi; i++) {
+      out.addAll(divisions[i].unlockDefs);
+    }
+    return out;
+  }
+
   // ── Loading ────────────────────────────────────────────────────────────────
   static LeagueConfig _instance = _fallback;
   static LeagueConfig get instance => _instance;
@@ -117,6 +137,7 @@ class LeagueConfig {
     for (var i = 0; i < divsJson.length; i++) {
       final d = divsJson[i] as Map<String, dynamic>;
       final ability = (d['aiAbility'] as List?) ?? const [0.7, 1.0];
+      final water = (d['water'] as Map<String, dynamic>?) ?? const {};
       divisions.add(LeagueDivision(
         index: i,
         id: (d['id'] ?? 'div$i').toString(),
@@ -127,6 +148,16 @@ class LeagueConfig {
         difficulty: dbl(d['difficulty'], 1.0),
         aiAbilityMin: dbl(ability.isNotEmpty ? ability[0] : 0.7, 0.7),
         aiAbilityMax: dbl(ability.length > 1 ? ability[1] : 1.0, 1.0),
+        mapSize: intOf(d['mapSize'], 40 + i * 2).clamp(40, 80),
+        biome: (d['biome'] ?? 'meadow').toString(),
+        unlockTroops: strList(d['unlockTroops']),
+        unlockDefs: strList(d['unlockDefs']),
+        wards: intOf(d['wards'], 1).clamp(1, 4),
+        mountainFrac: dbl(d['mountainFrac'], 0.11),
+        forestFrac: dbl(d['forestFrac'], 0.16),
+        waterDry: dbl(water['dry'], 0.25),
+        waterLight: dbl(water['light'], 0.50),
+        waterWet: dbl(water['wet'], 0.25),
       ));
     }
 
@@ -184,6 +215,9 @@ class LeagueConfig {
       if (c.divisions[i].difficulty < c.divisions[i - 1].difficulty) {
         throw StateError('divisions must ascend in difficulty');
       }
+      if (c.divisions[i].mapSize < c.divisions[i - 1].mapSize) {
+        throw StateError('divisions must ascend (or hold) in mapSize');
+      }
     }
     if (c.ai.rosterMin > c.ai.rosterMax || c.ai.rosterMin < 1) {
       throw StateError('invalid roster bounds');
@@ -220,7 +254,9 @@ class LeagueConfig {
           icon: '🥉',
           difficulty: 0.80,
           aiAbilityMin: 0.7,
-          aiAbilityMax: 1.0),
+          aiAbilityMax: 1.0,
+          mapSize: 40,
+          biome: 'meadow'),
       LeagueDivision(
           index: 1,
           id: 'silver',
@@ -230,7 +266,10 @@ class LeagueConfig {
           icon: '🥈',
           difficulty: 0.90,
           aiAbilityMin: 0.8,
-          aiAbilityMax: 1.1),
+          aiAbilityMax: 1.1,
+          mapSize: 42,
+          biome: 'autumn',
+          unlockTroops: ['healer']),
       LeagueDivision(
           index: 2,
           id: 'gold',
@@ -240,7 +279,11 @@ class LeagueConfig {
           icon: '🥇',
           difficulty: 1.00,
           aiAbilityMin: 0.9,
-          aiAbilityMax: 1.2),
+          aiAbilityMax: 1.2,
+          mapSize: 44,
+          biome: 'sunscrub',
+          unlockTroops: ['javelin'],
+          unlockDefs: ['tributeChest', 'commandTent']),
       LeagueDivision(
           index: 3,
           id: 'platinum',
@@ -250,7 +293,12 @@ class LeagueConfig {
           icon: '💠',
           difficulty: 1.12,
           aiAbilityMin: 1.0,
-          aiAbilityMax: 1.3),
+          aiAbilityMax: 1.3,
+          mapSize: 48,
+          biome: 'coast',
+          unlockTroops: ['fogger'],
+          unlockDefs: ['pitchPot'],
+          wards: 2),
       LeagueDivision(
           index: 4,
           id: 'diamond',
@@ -260,7 +308,11 @@ class LeagueConfig {
           icon: '💎',
           difficulty: 1.25,
           aiAbilityMin: 1.1,
-          aiAbilityMax: 1.45),
+          aiAbilityMax: 1.45,
+          mapSize: 52,
+          biome: 'tundra',
+          unlockTroops: ['elephant'],
+          wards: 2),
       LeagueDivision(
           index: 5,
           id: 'champion',
@@ -270,7 +322,10 @@ class LeagueConfig {
           icon: '👑',
           difficulty: 1.40,
           aiAbilityMin: 1.25,
-          aiAbilityMax: 1.6),
+          aiAbilityMax: 1.6,
+          mapSize: 56,
+          biome: 'nightglass',
+          wards: 3),
       LeagueDivision(
           index: 6,
           id: 'radiant',
@@ -280,7 +335,11 @@ class LeagueConfig {
           icon: '🌟',
           difficulty: 1.55,
           aiAbilityMin: 1.4,
-          aiAbilityMax: 1.8),
+          aiAbilityMax: 1.8,
+          mapSize: 60,
+          biome: 'ashfall',
+          unlockDefs: ['citadelCore'],
+          wards: 3),
     ],
     ai: AiConfig(
       teamNames: [

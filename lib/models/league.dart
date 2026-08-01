@@ -26,6 +26,29 @@ class LeagueDivision {
   final double aiAbilityMin;
   final double aiAbilityMax;
 
+  /// Battlefield side length for this rung (square). Peak map size never shrinks.
+  final int mapSize;
+
+  /// Biome id string (see [WarBiomeId] / war_biome.dart).
+  final String biome;
+
+  /// Troop type names unlocked AT this rung (cumulative with lower rungs).
+  final List<String> unlockTroops;
+
+  /// Defense type names unlocked AT this rung (cumulative; current palette always free).
+  final List<String> unlockDefs;
+
+  /// Target AI ward/citadel count for enemy base design.
+  final int wards;
+
+  final double mountainFrac;
+  final double forestFrac;
+
+  /// dry / light / wet weights (should roughly sum to 1).
+  final double waterDry;
+  final double waterLight;
+  final double waterWet;
+
   const LeagueDivision({
     required this.index,
     required this.id,
@@ -36,6 +59,16 @@ class LeagueDivision {
     required this.difficulty,
     required this.aiAbilityMin,
     required this.aiAbilityMax,
+    this.mapSize = 40,
+    this.biome = 'meadow',
+    this.unlockTroops = const [],
+    this.unlockDefs = const [],
+    this.wards = 1,
+    this.mountainFrac = 0.11,
+    this.forestFrac = 0.16,
+    this.waterDry = 0.25,
+    this.waterLight = 0.50,
+    this.waterWet = 0.25,
   });
 
   String displayName(DivisionTheme theme) =>

@@ -154,6 +154,9 @@ class AttackState {
   final List<FxEvent> _fxQueue = [];
   final List<FxEvent> _frameFx = []; // buffered per snapshot for replays
 
+  /// Fogger smoke: cellKey → ticks remaining (forest-style concealment).
+  final Map<int, int> smoke = {};
+
   int troopsLost = 0;
   int troopsSent = 0;
   int garrisonLost = 0;
@@ -173,13 +176,16 @@ class AttackState {
   }) {
     _startDestruction = base.destructionPercent;
     // the landing ring (all four sides) starts scouted
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
         if (base.isRing(r, c)) revealed.add(_key(r, c));
       }
     }
     if (intel != null) revealed.addAll(intel);
-    if (spawnGarrison) _spawnGarrison();
+    if (spawnGarrison) {
+      _spawnGarrison();
+      _spawnGenerals();
+    }
   }
 
   /// Drain pending combat effects (the UI animates them).
@@ -210,11 +216,48 @@ class AttackState {
     return false;
   }
 
+  /// Command Tents field one General each (ranged elite defender).
+  void _spawnGenerals() {
+    var i = 0;
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        final s = base.structAt(r, c);
+        if (s == null || !s.alive || s.type != DefType.commandTent) continue;
+        // Prefer an adjacent open tile; else sit on the tent.
+        var gr = r, gc = c;
+        for (final d in _orth) {
+          final nr = r + d[0], nc = c + d[1];
+          if (base.passable(nr, nc) &&
+              troopAt(nr, nc) == null &&
+              !base.isRing(nr, nc)) {
+            gr = nr;
+            gc = nc;
+            break;
+          }
+        }
+        if (troopAt(gr, gc) != null) continue;
+        final gen = Troop(
+          id: 'gen${i++}',
+          ownerId: s.ownerId,
+          side: base.side,
+          type: TroopType.general,
+          r: gr,
+          c: gc,
+          homeR: r,
+          homeC: c,
+        );
+        gen.gainXp(Xp.perLevel * 2 + 1);
+        gen.hp = gen.maxHp;
+        garrison.add(gen);
+      }
+    }
+  }
+
   /// Guard Posts field a live defender each raid, anchored to the post.
   void _spawnGarrison() {
     var i = 0;
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
         final s = base.structAt(r, c);
         if (s == null || !s.alive || s.type != DefType.guardPost) continue;
         if (troopAt(r, c) != null) continue;
@@ -268,7 +311,7 @@ class AttackState {
   }
 
   WarSide get defender => base.side;
-  int _key(int r, int c) => r * Base.cols + c;
+  int _key(int r, int c) => r * base.cols + c;
   bool visible(int r, int c) => revealed.contains(_key(r, c));
 
   /// The landing ring is ONE-WAY: once a unit steps inland it can never walk
@@ -336,6 +379,8 @@ class AttackState {
     troopsSent++;
     _reveal(r, c, radius: t.spec.revealRadius);
     _stepEffects(t);
+    // Fogger blooms smoke on landing (one cloud per life); AI path is a no-op after.
+    if (t.type == TroopType.fogger) dropSmoke(t);
     log.add(AttackEvent('${t.spec.emoji} ${t.spec.name} deployed', at: Cell(r, c)));
     return t;
   }
@@ -393,16 +438,47 @@ class AttackState {
     return path;
   }
 
-  /// Effective spotting range vs [t]: forests conceal troops from a distance —
-  /// unless a WATCHTOWER stands within 3 of them (nothing hides from the eyes).
+  /// Effective spotting range vs [t]: forests AND fogger smoke conceal troops
+  /// from a distance — unless a WATCHTOWER stands within 3 of them.
   int _spotRange(int range, Troop t) {
-    if (base.at(t.r, t.c)!.terrain == Terrain.forest &&
-        !_watchtowerNear(t.r, t.c)) {
+    final concealed = (base.at(t.r, t.c)!.terrain == Terrain.forest ||
+            smoke.containsKey(_key(t.r, t.c))) &&
+        !_watchtowerNear(t.r, t.c);
+    if (concealed) {
       return range < TerrainData.forestSpotRange
           ? range
           : TerrainData.forestSpotRange;
     }
     return range;
+  }
+
+  /// Fogger drops a one-time smoke cloud (radius 2), then fights normally.
+  bool dropSmoke(Troop t) {
+    if (t.type != TroopType.fogger || t.smokeUsed || !t.alive) return false;
+    t.smokeUsed = true;
+    const life = 8;
+    for (var dr = -2; dr <= 2; dr++) {
+      for (var dc = -2; dc <= 2; dc++) {
+        if (dr * dr + dc * dc > 5) continue;
+        final nr = t.r + dr, nc = t.c + dc;
+        if (!base.inBounds(nr, nc)) continue;
+        final k = _key(nr, nc);
+        smoke[k] = math.max(smoke[k] ?? 0, life);
+      }
+    }
+    log.add(AttackEvent('🌫️ Smoke blooms', at: Cell(t.r, t.c)));
+    _fx(FxEvent(FxKind.trap, Cell(t.r, t.c), bySide: t.side));
+    return true;
+  }
+
+  void _tickSmoke() {
+    final next = <int, int>{};
+    smoke.forEach((k, v) {
+      if (v > 1) next[k] = v - 1;
+    });
+    smoke
+      ..clear()
+      ..addAll(next);
   }
 
   /// Garrison discipline: defenders DON'T climb their own walls anymore —
@@ -422,8 +498,8 @@ class AttackState {
   /// places a scout would push toward.
   List<Cell> fogFrontier() {
     final out = <Cell>[];
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
         if (visible(r, c)) continue;
         // TERRAIN passability only — a wall hiding in the fog is still a
         // frontier (the breach system smashes it). Filtering walls out here
@@ -460,7 +536,7 @@ class AttackState {
     final energy = <int, double>{_key(t.r, t.c): 0};
     final pq = SplayTreeSet<List<int>>((a, b) {
       final d = a[0].compareTo(b[0]);
-      return d != 0 ? d : (a[1] * Base.cols + a[2]).compareTo(b[1] * Base.cols + b[2]);
+      return d != 0 ? d : (a[1] * base.cols + a[2]).compareTo(b[1] * base.cols + b[2]);
     });
     pq.add([0, t.r, t.c]);
     while (pq.isNotEmpty) {
@@ -473,7 +549,7 @@ class AttackState {
         if (!base.passable(nr, nc)) continue;
         if (!_stepAllowed(cr, cc, nr, nc)) continue;
         if (troopAt(nr, nc) != null) continue;
-        var step = base.moveCost(nr, nc);
+        var step = base.moveCost(nr, nc, mover: t.type);
         if (base.at(nr, nc)!.owner != attacker) step += 1;
         final nd = cd + step;
         if (nd > t.moveBudget) continue;
@@ -502,7 +578,7 @@ class AttackState {
     final dist = <int, int>{_key(t.r, t.c): 0};
     final pq = SplayTreeSet<List<int>>((a, b) {
       final d = a[0].compareTo(b[0]);
-      return d != 0 ? d : (a[1] * Base.cols + a[2]).compareTo(b[1] * Base.cols + b[2]);
+      return d != 0 ? d : (a[1] * base.cols + a[2]).compareTo(b[1] * base.cols + b[2]);
     });
     pq.add([0, t.r, t.c]);
     while (pq.isNotEmpty) {
@@ -516,7 +592,7 @@ class AttackState {
         if (!base.passable(nr, nc)) continue;
         if (!_stepAllowed(cr, cc, nr, nc)) continue;
         if (troopAt(nr, nc) != null) continue;
-        var step = base.moveCost(nr, nc);
+        var step = base.moveCost(nr, nc, mover: t.type);
         if (base.at(nr, nc)!.owner != attacker) step += 1;
         final nd = cd + step;
         if (nd > t.moveBudget) continue;
@@ -581,15 +657,32 @@ class AttackState {
   void _stepEffects(Troop t) {
     final s = base.structAt(t.r, t.c);
     if (s == null || !s.alive) return;
-    if (s.spec.chipOnEnter > 0) {
+    if (s.spec.chipOnEnter > 0 || s.type == DefType.pitchPot) {
       s.triggered = true;
-      t.hp -= s.spec.chipOnEnter;
+      // War Elephants shrug barbed wire damage (and its slow via moveCost).
+      final chip = (t.type == TroopType.elephant && s.type == DefType.barbedWire)
+          ? 0
+          : s.spec.chipOnEnter;
+      if (chip > 0) t.hp -= chip;
+      // Pitch Pot: tar slow across a small radius.
+      if (s.type == DefType.pitchPot) {
+        for (var dr = -1; dr <= 1; dr++) {
+          for (var dc = -1; dc <= 1; dc++) {
+            final foe = troopAt(t.r + dr, t.c + dc);
+            if (foe != null && foe.side == attacker && foe.alive) {
+              foe.tarRounds = math.max(foe.tarRounds, 5);
+            }
+          }
+        }
+      }
       _reveal(t.r, t.c, radius: 1);
       _flash(t.r, t.c);
       _fx(FxEvent(FxKind.trap, Cell(t.r, t.c),
-          amount: s.spec.chipOnEnter, bySide: defender, defType: s.type));
+          amount: chip, bySide: defender, defType: s.type));
       log.add(AttackEvent(
-          '${s.spec.emoji} ${s.spec.name} hit ${t.spec.name} for ${s.spec.chipOnEnter}',
+          '${s.spec.emoji} ${s.spec.name} hit ${t.spec.name}'
+          '${chip > 0 ? ' for $chip' : ''}'
+          '${s.type == DefType.pitchPot ? ' — tar spreads' : ''}',
           at: Cell(t.r, t.c)));
       if (s.spec.oneShot) s.hp = 0;
     }
@@ -598,8 +691,8 @@ class AttackState {
   /// Jars-2.0-style dynamic defense: teslas strike troops the moment they move
   /// within range (if their owner can pay for the shot).
   void _teslaZap(Troop t) {
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
         final s = base.structAt(r, c);
         if (s == null || !s.alive || !s.spec.zapsMovers) continue;
         if (s.cooldown > 0) continue;
@@ -646,7 +739,17 @@ class AttackState {
     final self = base.structAt(r, c);
     var buff = 0.0;
     if (self != null && self.alive && base.side == side) {
-      buff = self.isCastle ? 0.3 : self.spec.defBuffAdj;
+      buff = self.isCastle ? 0.3 : self.effectiveDefBuff;
+    }
+    // Citadel Core / wall L4+ radiate to adjacent friendlies.
+    for (final d in _orth) {
+      final ns = base.structAt(r + d[0], c + d[1]);
+      if (ns != null &&
+          ns.alive &&
+          base.side == side &&
+          ns.effectiveDefBuff > 0) {
+        buff += ns.effectiveDefBuff * 0.5;
+      }
     }
     final m = 1 +
         friendlyTiles * 0.1 +
@@ -659,8 +762,12 @@ class AttackState {
   // ── attacking (structures AND enemy troops) ─────────────────────────────────
   List<Cell> attackTargets(Troop t) {
     final out = <Cell>[];
-    // ARCHERS loose over the walls from 2 tiles out; everyone else is melee
-    final reach = t.type == TroopType.archer ? 2 : 1;
+    // Archers / javelins / generals loose from 2; everyone else is melee
+    final reach = (t.type == TroopType.archer ||
+            t.type == TroopType.javelin ||
+            t.type == TroopType.general)
+        ? 2
+        : 1;
     for (var dr = -reach; dr <= reach; dr++) {
       for (var dc = -reach; dc <= reach; dc++) {
         if (dr == 0 && dc == 0) continue;
@@ -838,24 +945,31 @@ class AttackState {
     s.triggered = true;
     _grantXp(t, pv.dmg * 0.25); // chipping buildings is slow XP
     _flash(r, c);
-    _fx(FxEvent(t.type == TroopType.archer ? FxKind.shot : FxKind.melee,
-        Cell(r, c),
+    final ranged = t.type == TroopType.archer ||
+        t.type == TroopType.javelin ||
+        t.type == TroopType.general;
+    _fx(FxEvent(ranged ? FxKind.shot : FxKind.melee, Cell(r, c),
         from: Cell(t.r, t.c), amount: pv.dmg, bySide: t.side));
     log.add(AttackEvent('${t.spec.emoji} → ${s.spec.emoji} ${pv.dmg} dmg', at: Cell(r, c)));
+    // Spiked walls chip melee attackers.
+    if (!ranged && s.meleeChip > 0 && s.hp > 0) {
+      t.hp -= s.meleeChip;
+      _flash(t.r, t.c);
+    }
     if (s.hp <= 0) {
       _grantXp(t, Xp.perStructure.toDouble());
       _fx(FxEvent(FxKind.death, Cell(r, c), bySide: t.side, defType: s.type));
       log.add(AttackEvent('${s.spec.emoji} ${s.spec.name} destroyed', at: Cell(r, c)));
-    } else if (pv.counter > 0) {
+    } else if (pv.counter > 0 && t.alive) {
       t.hp -= pv.counter;
       _flash(t.r, t.c);
       _fx(FxEvent(FxKind.shot, Cell(t.r, t.c),
           from: Cell(r, c), amount: pv.counter, bySide: defender, defType: s.type));
-      if (!t.alive) {
-        troopsLost++;
-        _fx(FxEvent(FxKind.death, Cell(t.r, t.c),
-            bySide: defender, emoji: t.spec.emoji));
-      }
+    }
+    if (!t.alive) {
+      troopsLost++;
+      _fx(FxEvent(FxKind.death, Cell(t.r, t.c),
+          bySide: defender, emoji: t.spec.emoji));
     }
     t.done = true;
     _cull();
@@ -864,7 +978,13 @@ class AttackState {
   /// Troop-vs-troop exchange. The defender's counter costs its owner [counterCost].
   void _strike(Troop a, Troop b, {required double counterCost}) {
     final terr = TerrainData.defBonus(base.at(b.r, b.c)!.terrain);
-    final dmg = (a.atk * multiplierAt(a.r, a.c, a.side) * (1 - terr)).round();
+    var raw = a.atk * multiplierAt(a.r, a.c, a.side) * (1 - terr);
+    // Javelins spear garrison defenders and Generals.
+    if (a.type == TroopType.javelin &&
+        (b.type == TroopType.general || b.homeR != null)) {
+      raw *= 1.45;
+    }
+    final dmg = raw.round();
     b.hp -= dmg;
     _grantXp(a, dmg * 0.5);
     _flash(b.r, b.c);
@@ -910,6 +1030,11 @@ class AttackState {
 
   // ── the defense acts (towers volley + garrison hunts) ───────────────────────
   void defendersReact() {
+    _tickSmoke();
+    // Tar fades each beat (slow only — no damage).
+    for (final t in [...troops, ...garrison]) {
+      if (t.tarRounds > 0) t.tarRounds--;
+    }
     // clinging pitch COOKS: 3/beat while it lasts (the SLOW lives in the
     // troops' own movement accumulator)
     for (final t in troops.toList()) {
@@ -926,8 +1051,8 @@ class AttackState {
       }
     }
     // towers
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
         final s = base.structAt(r, c);
         if (s == null || !s.alive || !s.spec.isShooter) continue;
         if (s.cooldown > 0) {
@@ -1066,7 +1191,7 @@ class AttackState {
           while (prev[at] != startK) {
             at = prev[at]!;
           }
-          return [at ~/ Base.cols, at % Base.cols];
+          return [at ~/ base.cols, at % base.cols];
         }
         if (!_garrisonPassable(nr, nc)) continue;
         if (!_stepAllowed(cur[0], cur[1], nr, nc)) continue;
@@ -1084,13 +1209,17 @@ class AttackState {
   int _reloadFor(Structure s, int r, int c) {
     var reload = s.spec.fireEveryTicks - 1;
     var rallied = false;
-    for (var dr = -2; dr <= 2 && !rallied; dr++) {
-      for (var dc = -2; dc <= 2 && !rallied; dc++) {
+    var citadel = false;
+    for (var dr = -2; dr <= 2; dr++) {
+      for (var dc = -2; dc <= 2; dc++) {
         final b = base.structAt(r + dr, c + dc);
-        if (b != null && b.alive && b.type == DefType.banner) rallied = true;
+        if (b == null || !b.alive) continue;
+        if (b.type == DefType.banner) rallied = true;
+        if (b.type == DefType.citadelCore) citadel = true;
       }
     }
     if (rallied) reload -= 1;
+    if (citadel) reload -= 1;
     return reload < 0 ? 0 : reload;
   }
 
@@ -1175,11 +1304,11 @@ class AttackState {
     if (hidden.isEmpty) return;
     _blindVolleys++;
     final rng = SeededRng(
-        seedFromParts([r * Base.cols + c, _blindVolleys, 'blindfire']));
+        seedFromParts([r * base.cols + c, _blindVolleys, 'blindfire']));
     if (rng.unit() > 0.2) return; // it usually holds its fire
     final mark = hidden[rng.intRange(0, hidden.length)];
-    final ir = (mark.r + rng.intRange(-2, 3)).clamp(0, Base.rows - 1);
-    final ic = (mark.c + rng.intRange(-2, 3)).clamp(0, Base.cols - 1);
+    final ir = (mark.r + rng.intRange(-2, 3)).clamp(0, base.rows - 1);
+    final ic = (mark.c + rng.intRange(-2, 3)).clamp(0, base.cols - 1);
     s.triggered = true;
     s.cooldown = _reloadFor(s, r, c) + 2; // blind volleys come SLOW
     s.aimAngle = math.atan2((ir - r).toDouble(), (ic - c).toDouble());
@@ -1205,12 +1334,12 @@ class AttackState {
     ]) {
       final rr = impactR + d[0], cc = impactC + d[1];
       if (!base.inBounds(rr, cc)) continue;
-      final k = rr * Base.cols + cc;
+      final k = rr * base.cols + cc;
       base.scorch[k] = (base.scorch[k] ?? 0) + (d[0] == 0 && d[1] == 0 ? 2 : 1);
     }
     if (base.grid[impactR][impactC].terrain == Terrain.forest) {
       base.grid[impactR][impactC].terrain = Terrain.plains;
-      base.cleared.add(impactR * Base.cols + impactC);
+      base.cleared.add(impactR * base.cols + impactC);
     }
     var hits = 0;
     final maxSplash = s.level >= 3 ? 2 : 1; // L3 shells blast a WIDER field
@@ -1292,8 +1421,8 @@ class AttackState {
 
   void snapshot([String caption = '']) {
     final structs = <RaidStruct>[];
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
         final s = base.structAt(r, c);
         if (s == null) continue;
         if (s.spec.hidden && !s.triggered) continue; // keep secrets secret

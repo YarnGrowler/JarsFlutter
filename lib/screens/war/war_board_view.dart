@@ -70,8 +70,8 @@ class _WarBoardViewState extends State<WarBoardView>
   final FocusNode _focus = FocusNode();
 
   double get _tile => baseTile * _zoom;
-  double get _worldW => Base.cols * baseTile;
-  double get _worldH => Base.rows * baseTile;
+  double get _worldW => widget.base.cols * baseTile;
+  double get _worldH => widget.base.rows * baseTile;
 
   double _shakeAmp = 0; // camera rattle (mortar hits)
 
@@ -181,7 +181,9 @@ class _WarBoardViewState extends State<WarBoardView>
   Cell? _cellAt(Offset local) {
     final c = ((local.dx + _offset.dx) / _tile).floor();
     final r = ((local.dy + _offset.dy) / _tile).floor();
-    if (r < 0 || r >= Base.rows || c < 0 || c >= Base.cols) return null;
+    if (r < 0 || r >= widget.base.rows || c < 0 || c >= widget.base.cols) {
+      return null;
+    }
     return Cell(r, c);
   }
 

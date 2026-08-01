@@ -7,7 +7,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
 import '../../providers/war_providers.dart';
 import '../../war/live_battle.dart';
-import '../../war/war_base.dart';
 import '../../war/war_engine.dart';
 import '../../war/war_game.dart';
 import '../../war/war_troop.dart';
@@ -132,6 +131,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                         // clan raids honor YOUR intel — no free base scouting;
                         // enemy raids hit your own base, which you fully know
                         fog: side == WarSide.you ? g.youIntel : null,
+                        biome: g.currentBiome,
                         title:
                             '${side == WarSide.you ? '🔵' : '🔴'} ${e.attackerName}\'s raid',
                         summary:
@@ -536,7 +536,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
         setState(() {});
         return;
       }
-      if (_reachInfo.containsKey(cell.r * Base.cols + cell.c)) {
+      if (_reachInfo.containsKey(cell.r * atk.base.cols + cell.c)) {
         atk.moveTroop(sel, cell.r, cell.c);
         atk.defendersReact();
         _ingest(atk.takeFx());
@@ -577,8 +577,9 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                 base: base,
                 controller: _cam,
                 startFitted: _mode != 'attack',
-                startFocus:
-                    _mode == 'attack' ? Cell(Base.rows - 1, Base.cols ~/ 2) : null,
+                startFocus: _mode == 'attack'
+                    ? Cell(base.rows - 1, base.cols ~/ 2)
+                    : null,
                 onTick: _onTick,
                 onCellTap: switch (_mode) {
                   'attack' => (cell) => _onCommanderTap(cell, g),
@@ -618,6 +619,10 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                   showTerritory: _mode == 'defense',
                   enemyEyes:
                       _mode == 'defense' ? g.enemyIntel : const <int>{},
+                  biome: g.currentBiome,
+                  smokeCells: _mode == 'defense' || _atk == null
+                      ? const {}
+                      : _atk!.smoke.keys.toSet(),
                 ),
                 overlayBuilder: (tile, gx, gy, t) =>
                     _fx.isEmpty ? null : _fx.painter(tile, gx, gy),
@@ -974,6 +979,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                   base: st.base,
                   frames: List.of(st.frames),
                   fog: null,
+                  biome: g.currentBiome,
                   title: '🎯 The drill',
                   summary:
                       '⚔ ${st.troopsSent} sent · 💀 ${st.troopsLost} lost · ⏱ ${_fmtDur(st.frames.length * 0.55)}');

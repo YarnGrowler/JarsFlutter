@@ -23,10 +23,27 @@ class Structure {
   bool get isCastle => type == DefType.castle;
 
   /// Upgrades toughen the piece: +30% hp per level past 1.
-  int get maxHp => (spec.hp * (1 + 0.3 * (level - 1))).round();
+  /// Walls get an extra +15% from L4 so bastions shrug L1 sapper bombs.
+  int get maxHp {
+    var mul = 1 + 0.3 * (level - 1);
+    if (type == DefType.wall && level >= 4) mul += 0.15 * (level - 3);
+    return (spec.hp * mul).round();
+  }
 
   /// Upgrades sharpen the guns: +25% damage per level past 1.
   int get damage => (spec.damage * (1 + 0.25 * (level - 1))).round();
+
+  /// Wall L4+ and Citadel Core radiate a tougher adjacent buff.
+  double get effectiveDefBuff {
+    var b = spec.defBuffAdj;
+    if (type == DefType.wall && level >= 4) b += 0.08;
+    if (type == DefType.citadelCore) b += 0.05;
+    return b;
+  }
+
+  /// Wall L3+ chips troops that melee it.
+  int get meleeChip =>
+      (type == DefType.wall && level >= 3) ? 4 + (level - 3) * 3 : 0;
 
   Map<String, dynamic> toJson() =>
       {'t': type.index, 'o': ownerId, 'hp': hp, 'tr': triggered, 'lv': level};
@@ -47,14 +64,27 @@ class BaseTile {
 }
 
 /// Terrain dials — the game leaves them null/default (seeded variety);
-/// the Base Lab turns them by hand.
+/// the Base Lab turns them by hand. [waterMode] null = seeded dry/light/wet.
 class TerrainConfig {
-  final int? rivers; // null = seeded 1–3
-  final int? lakes; // null = seeded 0–2
+  final int? rivers; // null = derived from waterMode / seeded
+  final int? lakes; // null = derived from waterMode / seeded
   final double mountainFrac; // share of the map that is mountain
   final double forestFrac; // share of the map that is forest
-  const TerrainConfig(
-      {this.rivers, this.lakes, this.mountainFrac = 0.11, this.forestFrac = 0.16});
+  /// 0=dry, 1=light, 2=wet; null = seeded from [waterDry]/[waterWet] weights.
+  final int? waterMode;
+  final double waterDry;
+  final double waterLight;
+  final double waterWet;
+  const TerrainConfig({
+    this.rivers,
+    this.lakes,
+    this.mountainFrac = 0.11,
+    this.forestFrac = 0.16,
+    this.waterMode,
+    this.waterDry = 0.25,
+    this.waterLight = 0.50,
+    this.waterWet = 0.25,
+  });
 }
 
 /// One clan's fortress on a naturally generated battlefield. Attackers land on
@@ -63,8 +93,12 @@ class Base {
   final WarSide side;
   final int seed;
   final TerrainConfig config;
-  static const int rows = 40;
-  static const int cols = 40;
+
+  /// Classic Bronze floor — also the size tests assume when using [defaultSize].
+  static const int defaultSize = 40;
+
+  final int rows;
+  final int cols;
 
   late List<List<BaseTile>> grid;
   final Map<String, Cell> castles = {}; // playerId -> castle cell
@@ -72,7 +106,13 @@ class Base {
   final List<List<int>> graves = []; // [r, c, slot] — the war's fallen, forever
   final Map<int, int> scorch = {}; // cellKey → hit count (mortar-torn ground)
 
-  Base(this.side, this.seed, {this.config = const TerrainConfig()}) {
+  Base(
+    this.side,
+    this.seed, {
+    this.config = const TerrainConfig(),
+    int? size,
+  })  : rows = (size ?? defaultSize).clamp(defaultSize, 80),
+        cols = (size ?? defaultSize).clamp(defaultSize, 80) {
     _generate();
   }
 
@@ -189,12 +229,21 @@ class Base {
       }
     }
 
-    // WATER: 1–3 winding rivers (edge to opposite edge) + the odd lake.
-    // The Lab can force the counts; the game rolls them per world.
+    // WATER: seeded dry / light / wet (or Lab-forced river/lake counts).
+    // Some wars are open plains; some are split by river/lake.
+    final mode = config.waterMode ?? _rollWaterMode(rng);
     final riverCount = config.rivers ??
-        1 + (rng.unit() < 0.3 ? 1 : 0) + (rng.unit() < 0.08 ? 1 : 0);
-    final lakeCount =
-        config.lakes ?? (rng.unit() < 0.35 ? 1 : 0) + (rng.unit() < 0.1 ? 1 : 0);
+        (mode == 0
+            ? 0
+            : mode == 1
+                ? (rng.unit() < 0.55 ? 1 : 0)
+                : 1 + (rng.unit() < 0.45 ? 1 : 0) + (rng.unit() < 0.15 ? 1 : 0));
+    final lakeCount = config.lakes ??
+        (mode == 0
+            ? 0
+            : mode == 1
+                ? (riverCount == 0 ? 1 : (rng.unit() < 0.35 ? 1 : 0))
+                : (rng.unit() < 0.55 ? 1 : 0) + (rng.unit() < 0.2 ? 1 : 0));
 
     List<Cell> carveRiver(int tag) {
       final riverCells = <Cell>[];
@@ -244,10 +293,12 @@ class Base {
       rivers.add(carveRiver(3 + i * 11));
     }
     // lakes: still-water blobs (no bridge needed — walk around)
+    // Bigger boards get larger water features.
+    final lakeScale = rows >= 52 ? 2 : (rows >= 48 ? 1 : 0);
     for (var i = 0; i < lakeCount; i++) {
       final lr = 6 + rng.intRange(0, rows - 12);
       final lc = 6 + rng.intRange(0, cols - 12);
-      final rad = 1 + rng.intRange(0, 2);
+      final rad = 1 + rng.intRange(0, 2) + lakeScale;
       for (var dr = -rad; dr <= rad; dr++) {
         for (var dc = -rad; dc <= rad; dc++) {
           if (dr * dr + dc * dc > rad * rad + rng.intRange(0, 2)) continue;
@@ -301,6 +352,15 @@ class Base {
     }
 
     _ensureConnected();
+  }
+
+  int _rollWaterMode(SeededRng rng) {
+    final u = rng.unit();
+    final d = config.waterDry;
+    final l = config.waterLight;
+    if (u < d) return 0;
+    if (u < d + l) return 1;
+    return 2;
   }
 
   /// Guarantee the map's heart is reachable from the landing ring.
@@ -418,10 +478,15 @@ class Base {
     return true;
   }
 
-  int moveCost(int r, int c) {
+  int moveCost(int r, int c, {TroopType? mover}) {
     var cost = TerrainData.moveCost(grid[r][c].terrain);
     final s = grid[r][c].structure;
-    if (s != null && s.alive) cost += s.spec.extraMoveCost;
+    if (s != null && s.alive) {
+      // War Elephants shrug barbed wire.
+      if (!(mover == TroopType.elephant && s.type == DefType.barbedWire)) {
+        cost += s.spec.extraMoveCost;
+      }
+    }
     return cost;
   }
 
@@ -483,10 +548,66 @@ class Base {
 
   bool get allCastlesRazed => castleCount > 0 && castlesRazed >= castleCount;
 
+  /// Grow the board to [newSize] by padding new terrain around the edges.
+  /// Structures keep their relative positions (shifted toward the new center).
+  /// Never shrinks. Returns `this` if already large enough.
+  Base expandTo(int newSize, {TerrainConfig? rimConfig}) {
+    final n = newSize.clamp(defaultSize, 80);
+    if (n <= rows) return this;
+    final pad = (n - rows) ~/ 2;
+    final fresh = Base(side, seed ^ 0xA5A5, config: rimConfig ?? config, size: n);
+    // Overlay the old fortress onto the padded center — keep structures/terrain.
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        final nr = r + pad, nc = c + pad;
+        fresh.grid[nr][nc].terrain = grid[r][c].terrain;
+        fresh.grid[nr][nc].structure = grid[r][c].structure;
+        fresh.grid[nr][nc].owner = grid[r][c].owner;
+      }
+    }
+    // Re-assert landing ring ownership (outer pad must stay neutral).
+    for (var r = 0; r < n; r++) {
+      for (var c = 0; c < n; c++) {
+        if (fresh.isRing(r, c)) {
+          fresh.grid[r][c].owner = null;
+          final t = fresh.grid[r][c].terrain;
+          if (t == Terrain.mountain ||
+              t == Terrain.forest ||
+              t == Terrain.hill) {
+            fresh.grid[r][c].terrain = Terrain.plains;
+          } else if (t == Terrain.river) {
+            fresh.grid[r][c].terrain = Terrain.bridge;
+          }
+        } else if (fresh.grid[r][c].owner == null) {
+          fresh.grid[r][c].owner = side;
+        }
+      }
+    }
+    for (final e in castles.entries) {
+      fresh.castles[e.key] = Cell(e.value.r + pad, e.value.c + pad);
+    }
+    for (final k in cleared) {
+      final r = k ~/ cols, c = k % cols;
+      fresh.cleared.add((r + pad) * n + (c + pad));
+    }
+    for (final g in graves) {
+      if (g.length >= 2) {
+        fresh.graves.add([g[0] + pad, g[1] + pad, if (g.length > 2) g[2]]);
+      }
+    }
+    for (final e in scorch.entries) {
+      final r = e.key ~/ cols, c = e.key % cols;
+      fresh.scorch[(r + pad) * n + (c + pad)] = e.value;
+    }
+    fresh._ensureConnected();
+    return fresh;
+  }
+
   // ── persistence ─────────────────────────────────────────────────────────────
   Map<String, dynamic> toJson() => {
         'side': side.index,
         'seed': seed,
+        'size': rows,
         'structs': [
           for (var r = 0; r < rows; r++)
             for (var c = 0; c < cols; c++)
@@ -506,10 +627,15 @@ class Base {
       };
 
   factory Base.fromJson(Map<String, dynamic> j) {
-    final b = Base(WarSide.values[(j['side'] as num).toInt()], (j['seed'] as num).toInt());
+    final size = (j['size'] as num?)?.toInt() ?? defaultSize;
+    final b = Base(
+      WarSide.values[(j['side'] as num).toInt()],
+      (j['seed'] as num).toInt(),
+      size: size,
+    );
     for (final v in (j['cleared'] as List? ?? const [])) {
       final k = (v as num).toInt();
-      final r = k ~/ cols, c = k % cols;
+      final r = k ~/ b.cols, c = k % b.cols;
       if (b.inBounds(r, c) && b.grid[r][c].terrain == Terrain.forest) {
         b.grid[r][c].terrain = Terrain.plains;
       }
@@ -517,14 +643,18 @@ class Base {
     }
     for (final s in (j['structs'] as List? ?? const [])) {
       final m = s as Map<String, dynamic>;
-      b.grid[(m['r'] as num).toInt()][(m['c'] as num).toInt()].structure =
-          Structure.fromJson(m);
+      final r = (m['r'] as num).toInt(), c = (m['c'] as num).toInt();
+      if (b.inBounds(r, c)) {
+        b.grid[r][c].structure = Structure.fromJson(m);
+      }
     }
     for (final o in (j['owners'] as List? ?? const [])) {
       final m = o as Map<String, dynamic>;
       final idx = (m['o'] as num).toInt();
-      b.grid[(m['r'] as num).toInt()][(m['c'] as num).toInt()].owner =
-          idx < 0 ? null : WarSide.values[idx];
+      final r = (m['r'] as num).toInt(), c = (m['c'] as num).toInt();
+      if (b.inBounds(r, c)) {
+        b.grid[r][c].owner = idx < 0 ? null : WarSide.values[idx];
+      }
     }
     final cj = j['castles'] as Map<String, dynamic>? ?? {};
     cj.forEach((k, v) {

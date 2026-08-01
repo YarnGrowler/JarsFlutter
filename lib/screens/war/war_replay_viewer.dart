@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
 import '../../war/war_base.dart';
+import '../../war/war_biome.dart';
 import '../../war/war_engine.dart';
 import '../../war/war_types.dart';
 import 'battle_fx.dart';
@@ -16,12 +17,14 @@ class ReplayEntry {
   final String title;
   final String? summary; // '⚔ sent · 💀 lost · ⏱ length' — shown under the title
   final Set<int>? fog; // null = no fog
+  final WarBiome biome;
   const ReplayEntry(
       {required this.base,
       required this.frames,
       required this.title,
       this.fog,
-      this.summary});
+      this.summary,
+      this.biome = WarBiome.meadow});
 }
 
 /// Full-screen CoC-style battle replay: play/pause + frame scrubbing over the
@@ -39,10 +42,16 @@ class WarReplayViewer extends StatefulWidget {
       required List<RaidFrame> frames,
       required String title,
       Set<int>? fog,
-      String? summary}) {
+      String? summary,
+      WarBiome biome = WarBiome.meadow}) {
     showChronicle(context, entries: [
       ReplayEntry(
-          base: base, frames: frames, title: title, fog: fog, summary: summary)
+          base: base,
+          frames: frames,
+          title: title,
+          fog: fog,
+          summary: summary,
+          biome: biome)
     ]);
   }
 
@@ -196,6 +205,7 @@ class _WarReplayViewerState extends State<WarReplayViewer> {
                 replayFrame: _frames[_frame.clamp(0, _frames.length - 1)],
                 replayPrev: _frame > 0 ? _frames[_frame - 1] : null,
                 replayBlend: _blend,
+                biome: _cur.biome,
               ),
               overlayBuilder: (tile, gx, gy, t) =>
                   _fx.isEmpty ? null : _fx.painter(tile, gx, gy),

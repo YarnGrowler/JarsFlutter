@@ -6,6 +6,7 @@ import '../../core/seeded_rng.dart';
 import '../../core/theme.dart';
 import '../../war/war_ai.dart';
 import '../../war/war_base.dart';
+import '../../war/war_biome.dart';
 import '../../war/war_game.dart';
 import '../../war/war_player.dart';
 import '../../war/war_types.dart';
@@ -145,6 +146,7 @@ class _BaseLabScreenState extends State<BaseLabScreen> {
                         t: t,
                         ownBase: true, // show the hidden pieces too
                         showTerritory: false,
+                        biome: WarBiome.meadow,
                       ),
                     ),
             ),

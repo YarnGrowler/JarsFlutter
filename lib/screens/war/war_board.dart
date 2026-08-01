@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
 import '../../war/war_base.dart';
+import '../../war/war_biome.dart';
 import '../../war/war_engine.dart' show RaidFrame, RaidSprite;
 import '../../war/war_troop.dart';
 import '../../war/war_types.dart';
@@ -50,6 +51,12 @@ class WarBoardPainter extends CustomPainter {
   /// Tombstones: [r, c, slot 0..3] — where troops fell this raid.
   final List<List<int>> graves;
 
+  /// League biome palette — plains, forests, peaks, water, skirt.
+  final WarBiome biome;
+
+  /// Fogger smoke cell keys (r * cols + c) currently concealing the board.
+  final Set<int> smokeCells;
+
   WarBoardPainter({
     required this.base,
     required this.tile,
@@ -74,24 +81,26 @@ class WarBoardPainter extends CustomPainter {
     this.rangeRings = const [],
     this.troopPositions = const {},
     this.graves = const [],
+    this.biome = WarBiome.meadow,
+    this.smokeCells = const {},
   });
 
   static const _you = Color(0xFF3D7BFF);
   static const _enemy = Color(0xFFE6483F);
 
-  int _key(int r, int c) => r * Base.cols + c;
+  int _key(int r, int c) => r * base.cols + c;
   bool _revealed(int r, int c) => fog == null || fog!.contains(_key(r, c));
   Rect _rect(int r, int c) => Rect.fromLTWH(gx + c * tile, gy + r * tile, tile, tile);
   Offset _center(num r, num c) =>
       Offset(gx + (c + 0.5) * tile, gy + (r + 0.5) * tile);
 
   // visible cell range (viewport culling for the scrolling camera)
-  int _r0 = 0, _r1 = Base.rows - 1, _c0 = 0, _c1 = Base.cols - 1;
+  int _r0 = 0, _r1 = 0, _c0 = 0, _c1 = 0;
   void _cull(Size size) {
     _r0 = math.max(0, ((-gy) / tile).floor() - 1);
-    _r1 = math.min(Base.rows - 1, ((size.height - gy) / tile).ceil() + 1);
+    _r1 = math.min(base.rows - 1, ((size.height - gy) / tile).ceil() + 1);
     _c0 = math.max(0, ((-gx) / tile).floor() - 1);
-    _c1 = math.min(Base.cols - 1, ((size.width - gx) / tile).ceil() + 1);
+    _c1 = math.min(base.cols - 1, ((size.width - gx) / tile).ceil() + 1);
   }
 
   /// Deterministic per-cell jitter (0..1) so grass/trees vary but never flicker.
@@ -104,7 +113,7 @@ class WarBoardPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final board = Rect.fromLTWH(
-        gx - 8, gy - 8, tile * Base.cols + 16, tile * Base.rows + 16);
+        gx - 8, gy - 8, tile * base.cols + 16, tile * base.rows + 16);
     _skirtPass(canvas, size, board);
     // outer panel
     canvas.drawRRect(
@@ -124,6 +133,7 @@ class WarBoardPainter extends CustomPainter {
     _groundPass(canvas);
     if (showTerritory) _territoryPass(canvas);
     _terrainPass(canvas);
+    _smokePass(canvas);
     if (replayFrame == null) {
       _scorchPass(canvas, base.scorch);
     } else {
@@ -152,10 +162,10 @@ class WarBoardPainter extends CustomPainter {
   /// Scenery OUTSIDE the battlefield — a dark forest skirt so the map floats
   /// in a world (and the camera has something to overscroll onto), CoC-style.
   void _skirtPass(Canvas canvas, Size size, Rect board) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFF141D14));
+    canvas.drawRect(Offset.zero & size, Paint()..color = biome.skirt);
     // scattered dark pines outside the board, deterministic, culled to view
-    final leaf = Paint()..color = const Color(0xFF1D3323);
-    final leafD = Paint()..color = const Color(0xFF17291C);
+    final leaf = Paint()..color = biome.skirtLeaf;
+    final leafD = Paint()..color = biome.skirtLeafDeep;
     final skirt = tile.clamp(14.0, 60.0);
     final c0 = ((-gx) / skirt).floor() - 8, c1 = ((size.width - gx) / skirt).ceil() + 8;
     final r0 = ((-gy) / skirt).floor() - 8, r1 = ((size.height - gy) / skirt).ceil() + 8;
@@ -248,8 +258,7 @@ class WarBoardPainter extends CustomPainter {
               d = _hash(r0 + 1, c0 + 1, 40);
           final dry =
               a + (b - a) * fc + (cc2 - a) * fr + (a - b - cc2 + d) * fc * fr;
-          final grassA =
-              Color.lerp(const Color(0xFF33513B), const Color(0xFF48653F), dry)!;
+          final grassA = Color.lerp(biome.plains, biome.plainsAlt, dry)!;
           col = Color.lerp(grassA, Color.lerp(grassA, Colors.black, 0.12)!,
               h * 0.5)!;
         }
@@ -296,7 +305,7 @@ class WarBoardPainter extends CustomPainter {
   void _territoryPass(Canvas canvas) {
     if (enemyEyes.isEmpty) return;
     bool eyes(int rr, int cc) =>
-        base.inBounds(rr, cc) && enemyEyes.contains(rr * Base.cols + cc);
+        base.inBounds(rr, cc) && enemyEyes.contains(rr * base.cols + cc);
     for (var r = _r0; r <= _r1; r++) {
       for (var c = _c0; c <= _c1; c++) {
         if (!eyes(r, c)) continue;
@@ -364,11 +373,10 @@ class WarBoardPainter extends CustomPainter {
     canvas.drawRect(
         rect,
         Paint()
-          ..color =
-              Color.lerp(const Color(0xFF244B2E), const Color(0xFF1D4027), h)!);
+          ..color = Color.lerp(biome.forestCanopy, biome.forestDeep, h)!);
     // silhouette rim toward non-forest neighbours
     final rim = Paint()
-      ..color = const Color(0xFF14301B)
+      ..color = biome.forestDeep
       ..strokeWidth = 2;
     if (!_terr(r - 1, c, Terrain.forest)) {
       canvas.drawLine(rect.topLeft, rect.topRight, rim);
@@ -387,8 +395,8 @@ class WarBoardPainter extends CustomPainter {
     void pine(double fx, double fy, double s) {
       final bx = rect.left + rect.width * fx;
       final by = rect.top + rect.height * fy;
-      final leaf = Paint()..color = const Color(0xFF2F6B3C);
-      final leafD = Paint()..color = const Color(0xFF275A32);
+      final leaf = Paint()..color = biome.forestCanopy;
+      final leafD = Paint()..color = biome.forestDeep;
       for (var i = 0; i < 2; i++) {
         final y = by - i * s * 0.3;
         final w = s * (0.9 - i * 0.3);
@@ -428,12 +436,12 @@ class WarBoardPainter extends CustomPainter {
     // depth shading: range cores read higher/darker than the skirts
     final h = _hash(r, c, 30);
     final core = neighbours / 4.0;
-    final lo = Color.lerp(const Color(0xFF565D68), const Color(0xFF3C424C), core)!;
+    final lo = Color.lerp(biome.mountain, biome.mountainShade, core)!;
     canvas.drawRect(
         rect, Paint()..color = Color.lerp(lo, Colors.black, h * 0.1)!);
     // silhouette rim + foot shadow toward open ground
     final rim = Paint()
-      ..color = const Color(0xFF23272E)
+      ..color = biome.mountainShade
       ..strokeWidth = 2.2;
     if (!_terr(r - 1, c, Terrain.mountain)) {
       canvas.drawLine(rect.topLeft, rect.topRight, rim);
@@ -472,7 +480,7 @@ class WarBoardPainter extends CustomPainter {
             ..lineTo(px, peakY)
             ..lineTo(px + w / 2, baseY)
             ..close(),
-          Paint()..color = const Color(0xFF6A707C));
+          Paint()..color = biome.mountain);
       // lit face
       canvas.drawPath(
           Path()
@@ -490,7 +498,7 @@ class WarBoardPainter extends CustomPainter {
             ..lineTo(px, snowY - rect.height * 0.03)
             ..lineTo(px - rect.width * 0.1, snowY)
             ..close(),
-          Paint()..color = const Color(0xFFEFF3FA));
+          Paint()..color = biome.mountainSnow);
     }
   }
 
@@ -499,13 +507,13 @@ class WarBoardPainter extends CustomPainter {
     canvas.drawRect(
         rect,
         Paint()
-          ..shader = const LinearGradient(
+          ..shader = LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFF2E6E9E), Color(0xFF255B84)],
+            colors: [biome.water, biome.waterDeep],
           ).createShader(rect));
     final bank = Paint()
-      ..color = const Color(0xFF57452F)
+      ..color = biome.bridge
       ..strokeWidth = 2.5;
     if (!_water(r - 1, c)) canvas.drawLine(rect.topLeft, rect.topRight, bank);
     if (!_water(r + 1, c)) {
@@ -517,7 +525,7 @@ class WarBoardPainter extends CustomPainter {
     }
     if (tile < 16) return;
     // drifting sparkle instead of stripey waves
-    final glint = Paint()..color = Colors.white.withValues(alpha: 0.22);
+    final glint = Paint()..color = biome.waterFoam.withValues(alpha: 0.55);
     for (var i = 0; i < 2; i++) {
       final phase = (t * 0.6 + _hash(r, c, 40 + i)) % 1.0;
       final gx0 = rect.left + rect.width * ((_hash(r, c, 42 + i) + phase) % 1.0);
@@ -525,7 +533,7 @@ class WarBoardPainter extends CustomPainter {
       canvas.drawCircle(Offset(gx0, gy0), tile * 0.035, glint);
       canvas.drawLine(Offset(gx0 - tile * 0.08, gy0), Offset(gx0 + tile * 0.08, gy0),
           Paint()
-            ..color = Colors.white.withValues(alpha: 0.12)
+            ..color = biome.waterFoam.withValues(alpha: 0.25)
             ..strokeWidth = 1.2);
     }
   }
@@ -540,7 +548,7 @@ class WarBoardPainter extends CustomPainter {
         : Rect.fromLTWH(rect.left, rect.top + rect.height * 0.12, rect.width,
             rect.height * 0.76);
     canvas.drawRRect(RRect.fromRectAndRadius(deck, const Radius.circular(3)),
-        Paint()..color = const Color(0xFF7A5A38));
+        Paint()..color = biome.bridge);
     final plank = Paint()
       ..color = const Color(0xFF5E4429)
       ..strokeWidth = 1.6;
@@ -565,25 +573,47 @@ class WarBoardPainter extends CustomPainter {
     }
   }
 
+  /// Fogger smoke — soft grey billows that read as forest-style concealment.
+  void _smokePass(Canvas canvas) {
+    if (smokeCells.isEmpty) return;
+    for (final k in smokeCells) {
+      final r = k ~/ base.cols, c = k % base.cols;
+      if (r < _r0 || r > _r1 || c < _c0 || c > _c1) continue;
+      if (!_revealed(r, c)) continue;
+      final rect = _rect(r, c);
+      final pulse = 0.22 + 0.06 * math.sin(t * 2.4 + r * 0.3 + c * 0.17);
+      canvas.drawCircle(
+          rect.center,
+          tile * 0.55,
+          Paint()
+            ..color = const Color(0xFFB8C0CC).withValues(alpha: pulse)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+      canvas.drawCircle(
+          rect.center.translate(tile * 0.08, -tile * 0.06),
+          tile * 0.32,
+          Paint()..color = Colors.white.withValues(alpha: pulse * 0.55));
+    }
+  }
+
   /// The 4-side landing ring: soft gold glow + dashed inner frontier + inward
   /// chevrons on every side.
   void _ringPass(Canvas canvas) {
     final glow =
         Paint()..color = JarsColors.gold.withValues(alpha: 0.05 + 0.03 * math.sin(t * 3));
-    canvas.drawRect(Rect.fromLTWH(gx, gy, tile * Base.cols, tile), glow);
+    canvas.drawRect(Rect.fromLTWH(gx, gy, tile * base.cols, tile), glow);
     canvas.drawRect(
-        Rect.fromLTWH(gx, gy + (Base.rows - 1) * tile, tile * Base.cols, tile), glow);
+        Rect.fromLTWH(gx, gy + (base.rows - 1) * tile, tile * base.cols, tile), glow);
     canvas.drawRect(
-        Rect.fromLTWH(gx, gy + tile, tile, tile * (Base.rows - 2)), glow);
+        Rect.fromLTWH(gx, gy + tile, tile, tile * (base.rows - 2)), glow);
     canvas.drawRect(
-        Rect.fromLTWH(gx + (Base.cols - 1) * tile, gy + tile, tile, tile * (Base.rows - 2)),
+        Rect.fromLTWH(gx + (base.cols - 1) * tile, gy + tile, tile, tile * (base.rows - 2)),
         glow);
     // dashed inner frontier
     final dash = Paint()
       ..color = JarsColors.gold.withValues(alpha: 0.5)
       ..strokeWidth = 2;
-    final inner = Rect.fromLTWH(gx + tile, gy + tile, tile * (Base.cols - 2),
-        tile * (Base.rows - 2));
+    final inner = Rect.fromLTWH(gx + tile, gy + tile, tile * (base.cols - 2),
+        tile * (base.rows - 2));
     void dashLine(Offset a, Offset b) {
       final total = (b - a).distance;
       final dir = (b - a) / total;
@@ -609,7 +639,7 @@ class WarBoardPainter extends CustomPainter {
       canvas.drawLine(armB, tip, chevron);
     }
 
-    for (var c = 1; c < Base.cols - 1; c += 3) {
+    for (var c = 1; c < base.cols - 1; c += 3) {
       final cx = gx + (c + 0.5) * tile;
       final ph = (t * 1.4 + c * 0.23) % 1.0;
       // top edge, pointing down
@@ -617,11 +647,11 @@ class WarBoardPainter extends CustomPainter {
       chev(Offset(cx, cy + tile * 0.1), Offset(cx - tile * 0.14, cy),
           Offset(cx + tile * 0.14, cy), ph);
       // bottom edge, pointing up
-      cy = gy + Base.rows * tile - tile * (0.25 + ph * 0.5);
+      cy = gy + base.rows * tile - tile * (0.25 + ph * 0.5);
       chev(Offset(cx, cy - tile * 0.1), Offset(cx - tile * 0.14, cy),
           Offset(cx + tile * 0.14, cy), ph);
     }
-    for (var r = 1; r < Base.rows - 1; r += 3) {
+    for (var r = 1; r < base.rows - 1; r += 3) {
       final cy = gy + (r + 0.5) * tile;
       final ph = (t * 1.4 + r * 0.31) % 1.0;
       // left edge, pointing right
@@ -629,7 +659,7 @@ class WarBoardPainter extends CustomPainter {
       chev(Offset(cx + tile * 0.1, cy), Offset(cx, cy - tile * 0.14),
           Offset(cx, cy + tile * 0.14), ph);
       // right edge, pointing left
-      cx = gx + Base.cols * tile - tile * (0.25 + ph * 0.5);
+      cx = gx + base.cols * tile - tile * (0.25 + ph * 0.5);
       chev(Offset(cx - tile * 0.1, cy), Offset(cx, cy - tile * 0.14),
           Offset(cx, cy + tile * 0.14), ph);
     }
@@ -731,11 +761,15 @@ class WarBoardPainter extends CustomPainter {
 
     // drop shadow, body, top light — three passes over the same union.
     // UPGRADED walls are cut from darker, denser stone with pale capstones.
-    final stone = level >= 3
-        ? const Color(0xFF3E4650) // L3: near-black obsidian
-        : level >= 2
-            ? const Color(0xFF636E80)
-            : const Color(0xFF808A99);
+    final stone = level >= 5
+        ? const Color(0xFF1A1018) // L5: obsidian bastion
+        : level >= 4
+            ? const Color(0xFF2A3040) // L4: rampart slate
+            : level >= 3
+                ? const Color(0xFF3E4650) // L3: near-black
+                : level >= 2
+                    ? const Color(0xFF636E80)
+                    : const Color(0xFF808A99);
     final shadowOff = Offset(0, rect.height * 0.05);
     strut(
         Paint()
@@ -769,6 +803,59 @@ class WarBoardPainter extends CustomPainter {
           cap);
       canvas.drawCircle(Offset(cx - th * 0.3, cy - th * 0.1), th * 0.05, cap);
       canvas.drawCircle(Offset(cx + th * 0.28, cy + th * 0.16), th * 0.05, cap);
+    }
+    if (level >= 3) {
+      // spiked crest — iron teeth along the top edge
+      final spike = Paint()..color = const Color(0xFFB8C0CC);
+      for (final dx in const [-0.28, 0.0, 0.28]) {
+        final tip = Offset(cx + th * dx, cy - th * 0.52);
+        canvas.drawPath(
+            Path()
+              ..moveTo(tip.dx - th * 0.06, tip.dy + th * 0.14)
+              ..lineTo(tip.dx, tip.dy)
+              ..lineTo(tip.dx + th * 0.06, tip.dy + th * 0.14)
+              ..close(),
+            spike);
+      }
+    }
+    if (level >= 4) {
+      // rampart silhouette — thicker outer band + merlon nubs
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              Rect.fromCenter(center: rect.center, width: th * 1.18, height: th * 1.18),
+              Radius.circular(th * 0.28)),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = th * 0.12
+            ..color = const Color(0xFF9AA6B8).withValues(alpha: 0.55));
+      final merlon = Paint()..color = const Color(0xFFC4CDD8).withValues(alpha: 0.7);
+      canvas.drawRect(
+          Rect.fromCenter(
+              center: Offset(cx - th * 0.22, cy - th * 0.42),
+              width: th * 0.14,
+              height: th * 0.12),
+          merlon);
+      canvas.drawRect(
+          Rect.fromCenter(
+              center: Offset(cx + th * 0.22, cy - th * 0.42),
+              width: th * 0.14,
+              height: th * 0.12),
+          merlon);
+    }
+    if (level >= 5) {
+      // obsidian bastion — violet sheen + hard edge highlight
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              Rect.fromCenter(center: rect.center, width: th * 0.9, height: th * 0.9),
+              rad),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.4
+            ..color = const Color(0xFF7B5CFF).withValues(alpha: 0.45));
+      canvas.drawCircle(
+          Offset(cx + th * 0.18, cy - th * 0.18),
+          th * 0.08,
+          Paint()..color = const Color(0xFFE8DEFF).withValues(alpha: 0.35));
     }
     strut(
         Paint()
@@ -869,6 +956,12 @@ class WarBoardPainter extends CustomPainter {
         break;
       case DefType.storehouse:
         _storehouseArt(canvas, rect);
+        break;
+      case DefType.tributeChest:
+      case DefType.commandTent:
+      case DefType.pitchPot:
+      case DefType.citadelCore:
+        _emojiAt(canvas, rect.center, s.spec.emoji, tile * 0.55);
         break;
       case DefType.wall:
         break; // painted in the wall pass
@@ -1666,11 +1759,11 @@ class WarBoardPainter extends CustomPainter {
   // ── highlights ──────────────────────────────────────────────────────────────
   void _highlightPass(Canvas canvas) {
     for (final k in buildable) {
-      _cellGlow(canvas, k ~/ Base.cols, k % Base.cols,
+      _cellGlow(canvas, k ~/ base.cols, k % base.cols,
           JarsColors.gold.withValues(alpha: 0.3), fill: JarsColors.gold.withValues(alpha: 0.05));
     }
     for (final k in reachable) {
-      final r = k ~/ Base.cols, c = k % Base.cols;
+      final r = k ~/ base.cols, c = k % base.cols;
       _cellGlow(canvas, r, c, _you.withValues(alpha: 0.7),
           fill: _you.withValues(alpha: 0.22));
       // ⚡ cost of walking here (only when tiles are big enough to read)
@@ -1755,8 +1848,8 @@ class WarBoardPainter extends CustomPainter {
       ..color = Colors.white.withValues(alpha: 0.025)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
     for (var i = 0; i < 10; i++) {
-      final baseR = _hash(i, 7) * Base.rows;
-      final baseC = _hash(i, 13) * Base.cols;
+      final baseR = _hash(i, 7) * base.rows;
+      final baseC = _hash(i, 13) * base.cols;
       final drift = math.sin(t * 0.25 + i * 1.7) * 1.6;
       final r = baseR.round(), c = (baseC + drift).round();
       if (!base.inBounds(r, c) || _revealed(r, c)) continue;
@@ -1821,15 +1914,15 @@ class WarBoardPainter extends CustomPainter {
         if ((s.type == DefType.wall || s.type == DefType.gate) &&
             s.hpFrac > 0 &&
             _revealed(s.r, s.c))
-          s.r * Base.cols + s.c
+          s.r * base.cols + s.c
     };
     final wireKeys = <int>{
       for (final s in f.structs)
         if (s.type == DefType.barbedWire && _revealed(s.r, s.c))
-          s.r * Base.cols + s.c
+          s.r * base.cols + s.c
     };
-    bool frameWall(int r, int c) => wallKeys.contains(r * Base.cols + c);
-    bool frameWire(int r, int c) => wireKeys.contains(r * Base.cols + c);
+    bool frameWall(int r, int c) => wallKeys.contains(r * base.cols + c);
+    bool frameWire(int r, int c) => wireKeys.contains(r * base.cols + c);
     for (final s in f.structs) {
       if (s.type != DefType.wall || s.hpFrac <= 0 || !_revealed(s.r, s.c)) {
         continue;
@@ -1933,6 +2026,12 @@ class WarBoardPainter extends CustomPainter {
         break;
       case DefType.storehouse:
         _storehouseArt(canvas, rect);
+        break;
+      case DefType.tributeChest:
+      case DefType.commandTent:
+      case DefType.pitchPot:
+      case DefType.citadelCore:
+        _emojiAt(canvas, rect.center, kDefSpecs[type]!.emoji, tile * 0.55);
         break;
       case DefType.wall:
         break; // walls are painted connected in _drawReplay's wall pass
@@ -2317,7 +2416,7 @@ class WarBoardPainter extends CustomPainter {
     if (gs.isEmpty) return;
     final byCell = <int, int>{};
     for (final g in gs) {
-      final k = g[0] * Base.cols + g[1];
+      final k = g[0] * base.cols + g[1];
       byCell[k] = (byCell[k] ?? 0) + 1;
     }
     const quads = [
@@ -2330,7 +2429,7 @@ class WarBoardPainter extends CustomPainter {
       final r = g[0], c = g[1];
       if (r < _r0 || r > _r1 || c < _c0 || c > _c1) continue;
       if (!_revealed(r, c)) continue;
-      if ((byCell[r * Base.cols + c] ?? 0) >= 4) continue; // a mound instead
+      if ((byCell[r * base.cols + c] ?? 0) >= 4) continue; // a mound instead
       final rect = _rect(r, c);
       final q = quads[g[2].clamp(0, 3)];
       final gx0 = rect.left + rect.width * q[0];
@@ -2365,7 +2464,7 @@ class WarBoardPainter extends CustomPainter {
     // burial mounds where 4+ fell on one tile
     for (final e in byCell.entries) {
       if (e.value < 4) continue;
-      final r = e.key ~/ Base.cols, c = e.key % Base.cols;
+      final r = e.key ~/ base.cols, c = e.key % base.cols;
       if (r < _r0 || r > _r1 || c < _c0 || c > _c1) continue;
       if (!_revealed(r, c)) continue;
       _burialMound(canvas, _rect(r, c));
@@ -2373,12 +2472,12 @@ class WarBoardPainter extends CustomPainter {
     // the KILLING FIELDS: 8+ dead across a 3×3 → a bone-pile memorial on the
     // bloodiest tile of the cluster
     for (final e in byCell.entries) {
-      final r = e.key ~/ Base.cols, c = e.key % Base.cols;
+      final r = e.key ~/ base.cols, c = e.key % base.cols;
       var sum = 0;
       var isPeak = true;
       for (var dr = -1; dr <= 1; dr++) {
         for (var dc = -1; dc <= 1; dc++) {
-          final n = byCell[(r + dr) * Base.cols + (c + dc)] ?? 0;
+          final n = byCell[(r + dr) * base.cols + (c + dc)] ?? 0;
           sum += n;
           if (!(dr == 0 && dc == 0) && n > e.value) isPeak = false;
         }
@@ -2519,21 +2618,21 @@ class WarBoardPainter extends CustomPainter {
 
   /// High ground: a mossy rocky knoll — brighter crown, shaded skirt.
   void _hillTile(Canvas canvas, Rect rect, int r, int c) {
-    canvas.drawRect(rect, Paint()..color = const Color(0xFF57744B));
+    canvas.drawRect(rect, Paint()..color = biome.hill);
     canvas.drawOval(
         Rect.fromCenter(
             center: rect.center.translate(0, -rect.height * 0.06),
             width: rect.width * 0.92,
             height: rect.height * 0.7),
-        Paint()..color = const Color(0xFF64825A));
+        Paint()..color = Color.lerp(biome.hill, Colors.white, 0.08)!);
     canvas.drawOval(
         Rect.fromCenter(
             center: rect.center.translate(0, -rect.height * 0.12),
             width: rect.width * 0.55,
             height: rect.height * 0.34),
-        Paint()..color = const Color(0xFF6F8F63));
+        Paint()..color = Color.lerp(biome.hill, Colors.white, 0.14)!);
     // a couple of embedded stones
-    final stone = Paint()..color = const Color(0xFF7E8798);
+    final stone = Paint()..color = biome.mountain;
     if (_hash(r, c, 130) > 0.4) {
       canvas.drawCircle(
           Offset(rect.left + rect.width * (0.3 + _hash(r, c, 131) * 0.4),
@@ -2547,7 +2646,7 @@ class WarBoardPainter extends CustomPainter {
   void _scorchPass(Canvas canvas, Map<int, int> scorch) {
     if (scorch.isEmpty) return;
     for (final e in scorch.entries) {
-      final r = e.key ~/ Base.cols, c = e.key % Base.cols;
+      final r = e.key ~/ base.cols, c = e.key % base.cols;
       if (r < _r0 || r > _r1 || c < _c0 || c > _c1) continue;
       if (!_revealed(r, c)) continue;
       final rect = _rect(r, c);
@@ -2774,15 +2873,20 @@ class WarBoardPainter extends CustomPainter {
 /// Geometry helper so screens size the board and map taps consistently.
 class BoardGeom {
   final double tile, gx, gy;
-  const BoardGeom(this.tile, this.gx, this.gy);
-  factory BoardGeom.fit(double w, double h) {
-    final tile = math.min((w - 20) / Base.cols, (h - 20) / Base.rows);
-    return BoardGeom(tile, (w - tile * Base.cols) / 2, (h - tile * Base.rows) / 2);
+  final int rows, cols;
+  const BoardGeom(this.tile, this.gx, this.gy,
+      {this.rows = Base.defaultSize, this.cols = Base.defaultSize});
+  factory BoardGeom.fit(double w, double h, {Base? base}) {
+    final rows = base?.rows ?? Base.defaultSize;
+    final cols = base?.cols ?? Base.defaultSize;
+    final tile = math.min((w - 20) / cols, (h - 20) / rows);
+    return BoardGeom(tile, (w - tile * cols) / 2, (h - tile * rows) / 2,
+        rows: rows, cols: cols);
   }
   Cell? cellAt(Offset local) {
     final c = ((local.dx - gx) / tile).floor();
     final r = ((local.dy - gy) / tile).floor();
-    if (r < 0 || r >= Base.rows || c < 0 || c >= Base.cols) return null;
+    if (r < 0 || r >= rows || c < 0 || c >= cols) return null;
     return Cell(r, c);
   }
 }

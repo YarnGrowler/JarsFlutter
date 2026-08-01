@@ -11,6 +11,7 @@ import '../models/league.dart';
 import '../services/league_simulator.dart';
 import 'war_ai.dart';
 import 'war_base.dart';
+import 'war_biome.dart';
 import 'war_clock.dart';
 import 'war_engine.dart';
 import 'war_player.dart';
@@ -79,6 +80,10 @@ class WarGame extends ChangeNotifier {
   int warIndex = 0; // war number within the season
   int worldGen = 0; // bumped on season reset → a brand-new WORLD, not a rerun
   int divisionIndex = 0;
+
+  /// Peak battlefield side length. Never shrinks on relegation; grows on promote.
+  int mapSize = Base.defaultSize;
+
   AiLevel enemyDifficulty = AiLevel.seasoned;
 
   /// The 1..100 war dial. 50 ~ old Master; past it the enemy grows crueler
@@ -134,6 +139,60 @@ class WarGame extends ChangeNotifier {
   final LeagueSimulator _sim = LeagueSimulator();
   LeagueConfig get _lcfg => LeagueConfig.instance;
   int get warsPerSeason => _lcfg.matchweeks;
+
+  LeagueDivision get currentDivision => _lcfg.divisionByIndex(divisionIndex);
+
+  WarBiome get currentBiome =>
+      WarBiome.of(warBiomeFromString(currentDivision.biome));
+
+  TerrainConfig _terrainForDivision([LeagueDivision? d]) {
+    final div = d ?? currentDivision;
+    return TerrainConfig(
+      mountainFrac: div.mountainFrac,
+      forestFrac: div.forestFrac,
+      waterDry: div.waterDry,
+      waterLight: div.waterLight,
+      waterWet: div.waterWet,
+    );
+  }
+
+  /// Sync peak [mapSize] up to the current division (never shrinks).
+  void _syncMapSize() {
+    final want = currentDivision.mapSize;
+    if (want > mapSize) mapSize = want;
+    if (mapSize < Base.defaultSize) mapSize = Base.defaultSize;
+  }
+
+  bool troopUnlocked(TroopType t) {
+    if (!kLeagueGatedTroops.contains(t)) return true;
+    return _lcfg
+        .unlockedTroopsThrough(divisionIndex)
+        .contains(troopUnlockKey(t));
+  }
+
+  bool defUnlocked(DefType t) {
+    if (!kLeagueGatedDefs.contains(t)) return true;
+    return _lcfg.unlockedDefsThrough(divisionIndex).contains(defUnlockKey(t));
+  }
+
+  /// Lowest division index that unlocks [t], or -1 if always free.
+  int troopUnlockDivision(TroopType t) {
+    if (!kLeagueGatedTroops.contains(t)) return -1;
+    final key = troopUnlockKey(t);
+    for (final d in _lcfg.divisions) {
+      if (d.unlockTroops.contains(key)) return d.index;
+    }
+    return _lcfg.divisions.length - 1;
+  }
+
+  int defUnlockDivision(DefType t) {
+    if (!kLeagueGatedDefs.contains(t)) return -1;
+    final key = defUnlockKey(t);
+    for (final d in _lcfg.divisions) {
+      if (d.unlockDefs.contains(key)) return d.index;
+    }
+    return _lcfg.divisions.length - 1;
+  }
 
   // ── rosters ─────────────────────────────────────────────────────────────────
   // The solo/offline fallback crew — used only when no real room is wired in
@@ -384,6 +443,7 @@ class WarGame extends ChangeNotifier {
   void startPrep() {
     phase = WarPhase.prep;
     warSeed = seedFromParts([seedKey, worldGen, seasonIndex, warIndex]).abs();
+    _syncMapSize();
     const clanNames = [
       'Iron Wolves', 'Bone Legion', 'The Red Banners', 'Storm Callers',
       'Ash Walkers', 'The Broken Tusk', 'Night Ravens', 'Granite Sons',
@@ -391,8 +451,9 @@ class WarGame extends ChangeNotifier {
     ];
     enemyClanName = clanNames[warSeed % clanNames.length];
     if (players.isEmpty) _buildRosters();
-    youBase = Base(WarSide.you, warSeed);
-    enemyBase = Base(WarSide.enemy, warSeed);
+    final terr = _terrainForDivision();
+    youBase = Base(WarSide.you, warSeed, config: terr, size: mapSize);
+    enemyBase = Base(WarSide.enemy, warSeed, config: terr, size: mapSize);
     clock.simMinutes = 0;
     enemyBaseFellAt = -1;
     youBaseFellAt = -1;
@@ -448,6 +509,32 @@ class WarGame extends ChangeNotifier {
 
   String? placeStructure(int r, int c, DefType type) {
     if (phase != WarPhase.prep) return 'Prep is over.';
+    if (!defUnlocked(type)) {
+      final div = _lcfg.divisionByIndex(defUnlockDivision(type));
+      return '${kDefSpecs[type]!.name} unlocks in ${div.metalName}.';
+    }
+    if (type == DefType.commandTent) {
+      for (var rr = 0; rr < youBase.rows; rr++) {
+        for (var cc = 0; cc < youBase.cols; cc++) {
+          final s = youBase.structAt(rr, cc);
+          if (s != null &&
+              s.type == DefType.commandTent &&
+              s.ownerId == active.id) {
+            return 'You already have a Command Tent.';
+          }
+        }
+      }
+    }
+    if (type == DefType.citadelCore) {
+      for (var rr = 0; rr < youBase.rows; rr++) {
+        for (var cc = 0; cc < youBase.cols; cc++) {
+          final s = youBase.structAt(rr, cc);
+          if (s != null && s.type == DefType.citadelCore) {
+            return 'The crew already has a Citadel Core.';
+          }
+        }
+      }
+    }
     final cost = kDefSpecs[type]!.cost;
     if (active.resources < cost) return 'Need $cost points.';
     if (!youBase.canPlace(r, c)) return 'Can\'t build there.';
@@ -587,8 +674,16 @@ class WarGame extends ChangeNotifier {
         p.skillMul = effSkill / AiData.skill(tier);
         p.resources = perFoeFloor + WarCosts.prepBudgetFor(p.skill);
       }
+      // Scale ward/citadel count with league size band + skill.
+      final wards = currentDivision.wards;
       WarAi.designBase(
-          enemyBase, foes, SeededRng(seedFromParts([warSeed, 'enemyDesign'])));
+        enemyBase,
+        foes,
+        SeededRng(seedFromParts([warSeed, 'enemyDesign'])),
+        style: StrongholdStyle(
+          rooms: wards >= 2 ? wards + (mapSize >= 56 ? 1 : 0) : null,
+        ),
+      );
     }
 
     phase = WarPhase.war;
@@ -621,8 +716,8 @@ class WarGame extends ChangeNotifier {
   }
 
   Cell? _fallbackCastle(Base base, int i) {
-    for (var r = 1; r < Base.rows - 1; r++) {
-      for (var c = 1; c < Base.cols - 1; c++) {
+    for (var r = 1; r < base.rows - 1; r++) {
+      for (var c = 1; c < base.cols - 1; c++) {
         if (base.canPlace(r, c)) return Cell(r, c);
       }
     }
@@ -634,6 +729,13 @@ class WarGame extends ChangeNotifier {
   String? trainTroop(TroopType type) {
     if (phase == WarPhase.war && knockedOut(active)) {
       return 'Your castle has fallen — you fight no more this war.';
+    }
+    if (type == TroopType.general) {
+      return 'Generals are fielded by Command Tents — not trained.';
+    }
+    if (!troopUnlocked(type)) {
+      final div = _lcfg.divisionByIndex(troopUnlockDivision(type));
+      return '${kTroopSpecs[type]!.name} unlocks in ${div.metalName}.';
     }
     final cost = kTroopSpecs[type]!.cost.toDouble();
     if (active.resources < cost) {
@@ -845,8 +947,8 @@ class WarGame extends ChangeNotifier {
   String exportBaseCode() {
     final b = youBase;
     final structs = <List<dynamic>>[];
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < b.rows; r++) {
+      for (var c = 0; c < b.cols; c++) {
         final st = b.structAt(r, c);
         if (st == null || st.isCastle) continue;
         structs.add([r, c, st.type.index, st.level, st.ownerId]);
@@ -855,6 +957,7 @@ class WarGame extends ChangeNotifier {
     final j = {
       'v': 1,
       'seed': b.seed,
+      'size': b.rows,
       'cleared': b.cleared.toList(),
       'castles': {
         for (final e in b.castles.entries) e.key: [e.value.r, e.value.c]
@@ -873,10 +976,14 @@ class WarGame extends ChangeNotifier {
       if (payload.startsWith('JARS1.')) payload = payload.substring(6);
       final j = jsonDecode(utf8.decode(base64Url.decode(payload)))
           as Map<String, dynamic>;
-      final fresh = Base(WarSide.you, (j['seed'] as num).toInt());
+      final fresh = Base(
+        WarSide.you,
+        (j['seed'] as num).toInt(),
+        size: (j['size'] as num?)?.toInt() ?? mapSize,
+      );
       for (final v in (j['cleared'] as List? ?? const [])) {
         final k = (v as num).toInt();
-        final r = k ~/ Base.cols, c = k % Base.cols;
+        final r = k ~/ fresh.cols, c = k % fresh.cols;
         if (fresh.inBounds(r, c) &&
             fresh.grid[r][c].terrain == Terrain.forest) {
           fresh.grid[r][c].terrain = Terrain.plains;
@@ -927,7 +1034,7 @@ class WarGame extends ChangeNotifier {
       freeActions: true,
       defenderIq: skillFor(difficulty),
       // it's YOUR base — you know every stone of it
-      intel: {for (var k = 0; k < Base.rows * Base.cols; k++) k},
+      intel: {for (var k = 0; k < clone.rows * clone.cols; k++) k},
     );
     notifyListeners();
     return practiceState!;
@@ -1054,8 +1161,28 @@ class WarGame extends ChangeNotifier {
         troopsLost: enemyClan.fold(0, (a, p) => a + p.troopsLost),
         resourcesSpent: enemyClan.fold(0.0, (a, p) => a + p.resourcesSpent));
     lastVerdict = WarScoring.decide(you, foe);
+    _payoutTributeChests();
     _save();
     notifyListeners();
+  }
+
+  /// Surviving Tribute Chests pay 2× cost, split evenly across real crewmates.
+  void _payoutTributeChests() {
+    var chests = 0;
+    for (var r = 0; r < youBase.rows; r++) {
+      for (var c = 0; c < youBase.cols; c++) {
+        final s = youBase.structAt(r, c);
+        if (s != null && s.alive && s.type == DefType.tributeChest) chests++;
+      }
+    }
+    if (chests <= 0) return;
+    final real = youClan.where((p) => !p.isBot).toList();
+    if (real.isEmpty) return;
+    final total = chests * 200.0;
+    final share = total / real.length;
+    for (final p in real) {
+      p.resources += share;
+    }
   }
 
   void nextWar() {
@@ -1077,6 +1204,12 @@ class WarGame extends ChangeNotifier {
     } else if (pos > _lcfg.teamsPerLeague - _lcfg.relegateCount &&
         divisionIndex > 0) {
       divisionIndex--;
+    }
+    // Peak map size never shrinks — pad the living fortress if we grew.
+    final before = mapSize;
+    _syncMapSize();
+    if (mapSize > before && youBase.rows < mapSize) {
+      youBase = youBase.expandTo(mapSize, rimConfig: _terrainForDivision());
     }
     seasonIndex++;
     warIndex = 0;
@@ -1195,6 +1328,7 @@ class WarGame extends ChangeNotifier {
         'war': warIndex,
         'gen': worldGen,
         'div': divisionIndex,
+        'mapSize': mapSize,
         'diff': enemyDifficulty.index,
         'diff100': difficulty,
         'eClan': enemyClanName,
@@ -1223,6 +1357,8 @@ class WarGame extends ChangeNotifier {
     warIndex = (j['war'] as num?)?.toInt() ?? 0;
     worldGen = (j['gen'] as num?)?.toInt() ?? 0;
     divisionIndex = (j['div'] as num?)?.toInt() ?? 0;
+    mapSize = (j['mapSize'] as num?)?.toInt() ?? Base.defaultSize;
+    _syncMapSize(); // division may demand larger than a legacy save
     enemyDifficulty = AiLevel.values[(j['diff'] as num?)?.toInt() ?? 1];
     difficulty = (j['diff100'] as num?)?.toInt() ?? 50;
     enemyClanName = j['eClan'] as String? ?? 'The Enemy';
@@ -1244,10 +1380,18 @@ class WarGame extends ChangeNotifier {
     ];
     youBase = j['youBase'] != null
         ? Base.fromJson(j['youBase'] as Map<String, dynamic>)
-        : Base(WarSide.you, warSeed);
+        : Base(WarSide.you, warSeed, size: mapSize, config: _terrainForDivision());
+    if (youBase.rows < mapSize) {
+      youBase = youBase.expandTo(mapSize, rimConfig: _terrainForDivision());
+    }
     enemyBase = j['enemyBase'] != null
         ? Base.fromJson(j['enemyBase'] as Map<String, dynamic>)
-        : Base(WarSide.enemy, warSeed);
+        : Base(WarSide.enemy, warSeed,
+            size: mapSize, config: _terrainForDivision());
+    if (enemyBase.rows < mapSize && phase == WarPhase.prep) {
+      enemyBase =
+          enemyBase.expandTo(mapSize, rimConfig: _terrainForDivision());
+    }
     youIntel = {
       for (final v in (j['youIntel'] as List? ?? const [])) (v as num).toInt()
     };

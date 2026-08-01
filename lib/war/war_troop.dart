@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'war_types.dart';
 
 /// An attacking unit on a base. Owned by the player who spawned it (actions cost
@@ -37,11 +39,21 @@ class Troop {
   /// Beats of clinging pitch left — burns 3/beat and SLOWS while it lasts.
   int burnRounds = 0;
 
+  /// Beats of tar slow left (from Pitch Pot) — halves move, no burn damage.
+  int tarRounds = 0;
+
+  /// Fogger: one smoke drop per life.
+  bool smokeUsed = false;
+
   TroopSpec get spec => kTroopSpecs[type]!;
   int get level => Xp.levelForXp(xp);
   int get maxHp => (spec.hp * Xp.bonus(level)).round();
   int get atk => (spec.atk * Xp.bonus(level)).round();
-  int get moveBudget => spec.moveBudget;
+  int get moveBudget {
+    var m = spec.moveBudget;
+    if (burnRounds > 0 || tarRounds > 0) m = math.max(1, (m * 0.5).round());
+    return m;
+  }
   bool get alive => hp > 0;
 
   void gainXp(double amount) {
@@ -67,6 +79,8 @@ class Troop {
         'hr': homeR,
         'hc': homeC,
         'bu': burnRounds,
+        'tar': tarRounds,
+        'sm': smokeUsed,
       };
 
   factory Troop.fromJson(Map<String, dynamic> j) {
@@ -83,6 +97,8 @@ class Troop {
     );
     t.hp = (j['hp'] as num?)?.toInt() ?? t.maxHp;
     t.burnRounds = (j['bu'] as num?)?.toInt() ?? 0;
+    t.tarRounds = (j['tar'] as num?)?.toInt() ?? 0;
+    t.smokeUsed = j['sm'] == true;
     return t;
   }
 }

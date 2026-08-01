@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme.dart';
 import '../../providers/war_providers.dart';
 import '../../war/war_base.dart';
+import '../../war/war_biome.dart';
 import '../../war/war_engine.dart';
 import '../../war/war_game.dart';
 import '../../war/war_player.dart';
@@ -60,6 +61,7 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
   List<WarLogEntry> _feed = const [];
   late Base _youBase;
   late Base _enemyBase;
+  WarBiome _biome = WarBiome.meadow;
   double _youDestruction = 0;
   double _enemyDestruction = 0;
   bool _enemyBaseRazed = false;
@@ -84,6 +86,7 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
     _feed = List<WarLogEntry>.of(g.feed);
     _youBase = g.youBase;
     _enemyBase = g.enemyBase;
+    _biome = g.currentBiome;
     _youDestruction = g.youDestruction;
     _enemyDestruction = g.enemyDestruction;
     _enemyBaseRazed = g.enemyBase.allCastlesRazed;
@@ -281,6 +284,7 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
         base: base,
         frames: e.replay!,
         fog: null,
+        biome: _biome,
         title:
             '${e.attackerSide == WarSide.you ? '🔵' : '🔴'} ${e.attackerName}\'s raid');
   }
@@ -310,11 +314,13 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
         ReplayEntry(
             base: _enemyBase,
             frames: siege,
+            biome: _biome,
             title: '⚔ The siege of $_enemyClanName — the whole war'),
       if (defense.isNotEmpty)
         ReplayEntry(
             base: _youBase,
             frames: defense,
+            biome: _biome,
             title: '🛡 Your Crew holds the line — the whole war'),
     ];
     if (entries.isEmpty) {
@@ -330,8 +336,8 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
   void _viewBase(BuildContext context, WarSide side) {
     final base = side == WarSide.you ? _youBase : _enemyBase;
     final structs = <RaidStruct>[
-      for (var r = 0; r < Base.rows; r++)
-        for (var c = 0; c < Base.cols; c++)
+      for (var r = 0; r < base.rows; r++)
+        for (var c = 0; c < base.cols; c++)
           if (base.structAt(r, c) != null && base.structAt(r, c)!.alive)
             RaidStruct(r, c, base.structAt(r, c)!.type,
                 base.structAt(r, c)!.hp / base.structAt(r, c)!.maxHp),
@@ -339,6 +345,7 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
     WarReplayViewer.show(context,
         base: base,
         frames: [RaidFrame(const [], structs, const [], const [], '')],
+        biome: _biome,
         title: side == WarSide.you
             ? '🏰 Your base — after the war'
             : '🗺 Their base — fully revealed');

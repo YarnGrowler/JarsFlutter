@@ -377,8 +377,8 @@ void main() {
     // bought.
     double structureValue(Base b) {
       var v = 0.0;
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 0; c < Base.defaultSize; c++) {
           final s = b.structAt(r, c);
           if (s != null) v += s.spec.cost;
         }

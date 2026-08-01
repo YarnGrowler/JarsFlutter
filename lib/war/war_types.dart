@@ -91,6 +91,11 @@ enum DefType {
   ballista,
   watchtower,
   storehouse,
+  // league unlocks (appended — never reorder; saves use .index)
+  tributeChest,
+  commandTent,
+  pitchPot,
+  citadelCore,
 }
 
 class DefSpec {
@@ -161,8 +166,9 @@ const Map<DefType, DefSpec> kDefSpecs = {
       blocks: true,
       defBuffAdj: 0.1,
       upgradeCost: 10,
-      maxLevel: 3,
-      blurb: 'Cheap and solid. Blocks troops until it\'s smashed through.'),
+      maxLevel: 5,
+      blurb:
+          'Cheap and solid. Levels into spiked ramparts and obsidian bastions.'),
   DefType.barbedWire: DefSpec(DefType.barbedWire,
       name: 'Barbed Wire',
       emoji: '🌵',
@@ -244,9 +250,10 @@ const Map<DefType, DefSpec> kDefSpecs = {
       cost: 35,
       hp: 60,
       upgradeCost: 30,
-      maxLevel: 3,
+      maxLevel: 4,
       blurb:
-          'Stations a live defender at the start of every raid — they hunt intruders down.'),
+          'Stations a live defender at the start of every raid — upgrades '
+          'widen the patrol leash across big boards.'),
   DefType.gate: DefSpec(DefType.gate,
       name: 'Gate',
       emoji: '🚪',
@@ -327,6 +334,49 @@ const Map<DefType, DefSpec> kDefSpecs = {
           'War provisions: guard posts within 3 tiles field VETERAN '
           'defenders — a level stronger, full of stew. Raiders LOVE burning '
           'these.'),
+  DefType.tributeChest: DefSpec(DefType.tributeChest,
+      name: 'Tribute Chest',
+      emoji: '🏆',
+      category: DefCategory.garrison,
+      cost: 100,
+      hp: 160,
+      blocks: true,
+      blurb:
+          'Stash 100⚡. If it survives the war, the crew splits 200⚡. '
+          'Raid magnet — hide it well.'),
+  DefType.commandTent: DefSpec(DefType.commandTent,
+      name: 'Command Tent',
+      emoji: '🎖️',
+      category: DefCategory.garrison,
+      cost: 80,
+      hp: 120,
+      blocks: true,
+      blurb:
+          'One per fighter. Fields a General — a strong ranged defender — '
+          'each raid. Lose the tent, lose the General.'),
+  DefType.pitchPot: DefSpec(DefType.pitchPot,
+      name: 'Pitch Pot',
+      emoji: '🫙',
+      category: DefCategory.trap,
+      cost: 28,
+      hp: 1,
+      hidden: true,
+      oneShot: true,
+      chipOnEnter: 8,
+      blurb:
+          'Hidden tar bomb. Triggers underfoot: chips and dumps heavy slow '
+          'across a small radius. Elephant-proofing.'),
+  DefType.citadelCore: DefSpec(DefType.citadelCore,
+      name: 'Citadel Core',
+      emoji: '🧿',
+      category: DefCategory.hq,
+      cost: 200,
+      hp: 480,
+      blocks: true,
+      defBuffAdj: 0.35,
+      blurb:
+          'One per crew. No gun — a landmark aura that toughens nearby walls '
+          'and hastens towers. Raiders will come for it.'),
 };
 
 /// The palette a player can place (castle is placed separately, one per player).
@@ -346,11 +396,73 @@ const List<DefType> kBuildPalette = [
   DefType.ballista,
   DefType.watchtower,
   DefType.storehouse,
+  DefType.tributeChest,
+  DefType.commandTent,
+  DefType.pitchPot,
+  DefType.citadelCore,
 ];
+
+/// League-gated defenses (everything else in [kBuildPalette] is always free).
+const Set<DefType> kLeagueGatedDefs = {
+  DefType.tributeChest,
+  DefType.commandTent,
+  DefType.pitchPot,
+  DefType.citadelCore,
+};
+
+String defUnlockKey(DefType t) {
+  switch (t) {
+    case DefType.tributeChest:
+      return 'tributeChest';
+    case DefType.commandTent:
+      return 'commandTent';
+    case DefType.pitchPot:
+      return 'pitchPot';
+    case DefType.citadelCore:
+      return 'citadelCore';
+    default:
+      return t.name;
+  }
+}
 
 // ── troops ────────────────────────────────────────────────────────────────────
 
-enum TroopType { soldier, runner, brute, sapper, archer, healer }
+enum TroopType {
+  soldier,
+  runner,
+  brute,
+  sapper,
+  archer,
+  healer,
+  // league unlocks (appended — never reorder; saves use .index)
+  javelin,
+  fogger,
+  elephant,
+  general, // defense-only: spawned by Command Tent, not trained
+}
+
+/// League-gated troops. Bronze always has the rest of the classic roster.
+const Set<TroopType> kLeagueGatedTroops = {
+  TroopType.healer,
+  TroopType.javelin,
+  TroopType.fogger,
+  TroopType.elephant,
+};
+
+String troopUnlockKey(TroopType t) {
+  switch (t) {
+    case TroopType.healer:
+      return 'healer';
+    case TroopType.javelin:
+      return 'javelin';
+    case TroopType.fogger:
+      return 'fogger';
+    case TroopType.elephant:
+      return 'elephant';
+    default:
+      return t.name;
+  }
+}
 
 class TroopSpec {
   final TroopType type;
@@ -439,6 +551,48 @@ const Map<TroopType, TroopSpec> kTroopSpecs = {
       blurb:
           'Mends the most-wounded ally nearby every beat. Never fights. '
           'Protect her and the push never stops.'),
+  TroopType.javelin: TroopSpec(TroopType.javelin,
+      name: 'Javelin',
+      emoji: '🗡️',
+      cost: 32,
+      hp: 65,
+      atk: 16,
+      moveBudget: 5,
+      vsStructure: 0.85,
+      blurb:
+          'Mid-range spears. Bonus damage vs garrison defenders and Generals.'),
+  TroopType.fogger: TroopSpec(TroopType.fogger,
+      name: 'Fogger',
+      emoji: '🌫️',
+      cost: 28,
+      hp: 55,
+      atk: 12,
+      moveBudget: 5,
+      vsStructure: 0.9,
+      blurb:
+          'Drops ONE smoke cloud (towers spot like forest — short range only), '
+          'then fights as a light skirmisher.'),
+  TroopType.elephant: TroopSpec(TroopType.elephant,
+      name: 'War Elephant',
+      emoji: '🐘',
+      cost: 90,
+      hp: 520,
+      atk: 20,
+      moveBudget: 2,
+      vsStructure: 1.1,
+      blurb:
+          'A walking fortress. Slow, enormous, shrugs barbed wire, soaks '
+          'tower fire so the crew can work.'),
+  TroopType.general: TroopSpec(TroopType.general,
+      name: 'General',
+      emoji: '🫡',
+      cost: 0,
+      hp: 180,
+      atk: 28,
+      moveBudget: 4,
+      vsStructure: 0.9,
+      blurb:
+          'Elite ranged defender from a Command Tent. Long reach, tough hide.'),
 };
 
 // ── XP / leveling ─────────────────────────────────────────────────────────────

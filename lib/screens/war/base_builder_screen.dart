@@ -43,10 +43,10 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
     // Only the 🪓 Clear tool highlights its valid targets (forests).
     final buildable = <int>{};
     if (_clearTool) {
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < base.rows; r++) {
+        for (var c = 0; c < base.cols; c++) {
           if (base.isInterior(r, c) && base.grid[r][c].terrain == Terrain.forest) {
-            buildable.add(r * Base.cols + c);
+            buildable.add(r * base.cols + c);
           }
         }
       }
@@ -95,6 +95,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                   buildable: buildable,
                   rangeRings: rings,
                   selected: _selectedCell,
+                  biome: g.currentBiome,
                 ),
               ),
             ),
@@ -562,14 +563,34 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
             for (final type in kBuildPalette)
               chip(
                 emoji: kDefSpecs[type]!.emoji,
-                name: kDefSpecs[type]!.name,
+                name: g.defUnlocked(type)
+                    ? kDefSpecs[type]!.name
+                    : '🔒 ${kDefSpecs[type]!.name}',
                 cost: kDefSpecs[type]!.cost,
                 selected: _defTool == type,
-                onTap: () => setState(() {
-                  _castleTool = false;
-                  _clearTool = false;
-                  _defTool = type;
-                }),
+                onTap: () {
+                  if (!g.defUnlocked(type)) {
+                    final need = g.defUnlockDivision(type) as int;
+                    final label = [
+                      'Bronze',
+                      'Silver',
+                      'Gold',
+                      'Platinum',
+                      'Diamond',
+                      'Champion',
+                      'Radiant'
+                    ][need.clamp(0, 6)];
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(
+                            '${kDefSpecs[type]!.name} unlocks in $label League')));
+                    return;
+                  }
+                  setState(() {
+                    _castleTool = false;
+                    _clearTool = false;
+                    _defTool = type;
+                  });
+                },
                 onInfo: () => showDefenseCard(context, type),
               ),
             chip(

@@ -56,8 +56,8 @@ class WarAi {
     // splits into twins — the city IS the map)
     final archetype = style.archetype ??
         rng.intRange(0, citadel ? 2 : 3); // 0 keep, 1 bailey, 2 twins
-    final cr = (Base.rows ~/ 2 + rng.intRange(-4, 5)).clamp(7, Base.rows - 8);
-    final cc = (Base.cols ~/ 2 + rng.intRange(-4, 5)).clamp(7, Base.cols - 8);
+    final cr = (base.rows ~/ 2 + rng.intRange(-4, 5)).clamp(7, base.rows - 8);
+    final cc = (base.cols ~/ 2 + rng.intRange(-4, 5)).clamp(7, base.cols - 8);
     final horizontal = rng.unit() < 0.5; // twin forts split axis
     for (var i = 0; i < n; i++) {
       // citadel castles spread WIDER: at spread 3 two castles' no-split
@@ -67,9 +67,9 @@ class WarAi {
         // two compounds, castles dealt alternately between them
         final off = (i % 2 == 0) ? -5 : 5;
         if (horizontal) {
-          ac = (cc + off).clamp(5, Base.cols - 6);
+          ac = (cc + off).clamp(5, base.cols - 6);
         } else {
-          ar = (cr + off).clamp(5, Base.rows - 6);
+          ar = (cr + off).clamp(5, base.rows - 6);
         }
         spread = 1;
         // don't pitch a fort in the drink — nudge off water/rock ground
@@ -88,13 +88,13 @@ class WarAi {
 
         for (var k = 0; k < 3 && badness(ar, ac) > 8; k++) {
           if (horizontal) {
-            ac += ac < Base.cols ~/ 2 ? 3 : -3;
+            ac += ac < base.cols ~/ 2 ? 3 : -3;
           } else {
-            ar += ar < Base.rows ~/ 2 ? 3 : -3;
+            ar += ar < base.rows ~/ 2 ? 3 : -3;
           }
         }
-        ar = ar.clamp(5, Base.rows - 6);
-        ac = ac.clamp(5, Base.cols - 6);
+        ar = ar.clamp(5, base.rows - 6);
+        ac = ac.clamp(5, base.cols - 6);
       }
       final spot = _castleSpot(base, ar, ac, i, n, rng, spread: spread);
       if (spot != null) base.placeCastle(players[i].id, spot.r, spot.c);
@@ -111,13 +111,13 @@ class WarAi {
       {int spread = 2}) {
     final angle = i * (2 * math.pi / (n == 0 ? 1 : n)) + rng.unit() * 0.8;
     final dist = n == 1 ? 0 : spread + rng.intRange(0, 2);
-    final row = (cr + (math.sin(angle) * dist).round()).clamp(4, Base.rows - 5);
-    final col = (cc + (math.cos(angle) * dist).round()).clamp(4, Base.cols - 5);
+    final row = (cr + (math.sin(angle) * dist).round()).clamp(4, base.rows - 5);
+    final col = (cc + (math.cos(angle) * dist).round()).clamp(4, base.cols - 5);
     for (var rad = 0; rad < 6; rad++) {
       for (var dr = -rad; dr <= rad; dr++) {
         for (var dc = -rad; dc <= rad; dc++) {
-          final r = (row + dr).clamp(3, Base.rows - 4);
-          final c = (col + dc).clamp(3, Base.cols - 4);
+          final r = (row + dr).clamp(3, base.rows - 4);
+          final c = (col + dc).clamp(3, base.cols - 4);
           if (base.canPlace(r, c)) return Cell(r, c);
         }
       }
@@ -231,14 +231,14 @@ class WarAi {
     final gateCells = <int>[];
     bool gateClear(int r, int c) {
       for (final k in gateCells) {
-        if ((k ~/ Base.cols - r).abs() <= 1 && (k % Base.cols - c).abs() <= 1) {
+        if ((k ~/ base.cols - r).abs() <= 1 && (k % base.cols - c).abs() <= 1) {
           return false;
         }
       }
       return true;
     }
 
-    void registerGate(int r, int c) => gateCells.add(r * Base.cols + c);
+    void registerGate(int r, int c) => gateCells.add(r * base.cols + c);
 
     var coreRegions = const <List<int>>[]; // the core's wards, for furnishing
     var coreArea = 0; // the core's footprint (Lab readout + density tests)
@@ -271,10 +271,10 @@ class WarAi {
             .clamp(2, 7);
       }
       // the wall NEVER lands on the castles: stay ≥2 beyond their bbox
-      var r0 = math.min(gr0 - 2, math.max(gr0 - pad(), 3)).clamp(3, Base.rows - 4);
-      var r1 = math.max(gr1 + 2, math.min(gr1 + pad(), Base.rows - 4)).clamp(3, Base.rows - 4);
-      var c0 = math.min(gc0 - 2, math.max(gc0 - pad(), 3)).clamp(3, Base.cols - 4);
-      var c1 = math.max(gc1 + 2, math.min(gc1 + pad(), Base.cols - 4)).clamp(3, Base.cols - 4);
+      var r0 = math.min(gr0 - 2, math.max(gr0 - pad(), 3)).clamp(3, base.rows - 4);
+      var r1 = math.max(gr1 + 2, math.min(gr1 + pad(), base.rows - 4)).clamp(3, base.rows - 4);
+      var c0 = math.min(gc0 - 2, math.max(gc0 - pad(), 3)).clamp(3, base.cols - 4);
+      var c1 = math.max(gc1 + 2, math.min(gc1 + pad(), base.cols - 4)).clamp(3, base.cols - 4);
 
       // hug the bank: a side drowning in water pulls in toward dry land
       int wet(int side, int a0, int a1, int b0, int b1) {
@@ -349,7 +349,7 @@ class WarAi {
             rng.intRange(-(run.length ~/ 4), run.length ~/ 4 + 1);
         final g = run[j.clamp(2, run.length - 3)];
         if (!gateClear(g[0], g[1])) continue;
-        gateKeys.add(g[0] * Base.cols + g[1]);
+        gateKeys.add(g[0] * base.cols + g[1]);
         registerGate(g[0], g[1]);
         gateSides.add(side);
       }
@@ -358,7 +358,7 @@ class WarAi {
         final longest = runs.reduce((a, b) => a.length >= b.length ? a : b);
         if (longest.length >= 3) {
           final g = longest[longest.length ~/ 2];
-          gateKeys.add(g[0] * Base.cols + g[1]);
+          gateKeys.add(g[0] * base.cols + g[1]);
           registerGate(g[0], g[1]);
         }
       }
@@ -401,14 +401,14 @@ class WarAi {
         final r = o[0], c = o[1];
         if (!base.inBounds(r, c)) continue;
         final terr = base.grid[r][c].terrain;
-        final isGate = gateKeys.contains(r * Base.cols + c);
+        final isGate = gateKeys.contains(r * base.cols + c);
         if (terr == Terrain.bridge) {
           // the bridge is a PASSAGE — the door stands at its landward end
           final dr = r + o[2], dc = c + o[3];
           if (!base.inBounds(dr, dc)) continue;
           if (base.grid[dr][dc].terrain == Terrain.forest) {
             base.grid[dr][dc].terrain = Terrain.plains;
-            base.cleared.add(dr * Base.cols + dc);
+            base.cleared.add(dr * base.cols + dc);
           }
           if (gateClear(dr, dc) && buy(dr, dc, DefType.gate)) {
             gateInfo.add([dr, dc, -o[2], -o[3]]);
@@ -421,7 +421,7 @@ class WarAi {
         if (terr == Terrain.forest) {
           // the clan CLEARS land for its wall — never a forest hole
           base.grid[r][c].terrain = Terrain.plains;
-          base.cleared.add(r * Base.cols + c);
+          base.cleared.add(r * base.cols + c);
         }
         if (buy(r, c, isGate ? DefType.gate : DefType.wall)) {
           piecesBought.add([r, c]);
@@ -559,7 +559,7 @@ class WarAi {
               if (!TerrainData.passable(base.grid[rr][cc].terrain)) continue;
               if (base.grid[rr][cc].terrain == Terrain.forest) {
                 base.grid[rr][cc].terrain = Terrain.plains;
-                base.cleared.add(rr * Base.cols + cc);
+                base.cleared.add(rr * base.cols + cc);
               }
               if (i == doorAt) {
                 if (buy(rr, cc, DefType.gate)) {
@@ -672,7 +672,7 @@ class WarAi {
             if (!TerrainData.passable(base.grid[rr][cc].terrain)) continue;
             if (base.grid[rr][cc].terrain == Terrain.forest) {
               base.grid[rr][cc].terrain = Terrain.plains;
-              base.cleared.add(rr * Base.cols + cc);
+              base.cleared.add(rr * base.cols + cc);
             }
             if (i == doorAt) {
               if (buy(rr, cc, DefType.gate)) {
@@ -843,7 +843,7 @@ class WarAi {
           for (final kc in keepCells) {
             if (base.grid[kc[0]][kc[1]].terrain == Terrain.forest) {
               base.grid[kc[0]][kc[1]].terrain = Terrain.plains;
-              base.cleared.add(kc[0] * Base.cols + kc[1]);
+              base.cleared.add(kc[0] * base.cols + kc[1]);
             }
             final isDoor = kc[0] == door[0] && kc[1] == door[1];
             if (buy(kc[0], kc[1], isDoor ? DefType.gate : DefType.wall) &&
@@ -874,8 +874,8 @@ class WarAi {
         // which side does the traffic come from?
         var bridgeSide = -1;
         var bd = 1 << 30;
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < base.rows; r++) {
+          for (var c = 0; c < base.cols; c++) {
             if (base.grid[r][c].terrain != Terrain.bridge) continue;
             final d = (r - (r0 + r1) ~/ 2).abs() + (c - (c0 + c1) ~/ 2).abs();
             if (d < bd) {
@@ -926,8 +926,8 @@ class WarAi {
 
     // ── a bridge butting straight into a rampart gets a DOOR: crossings
     // funnel into gates, never into blank wall ──
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
         if (base.grid[r][c].terrain != Terrain.bridge) continue;
         for (final d in const [
           [-1, 0],
@@ -1046,8 +1046,8 @@ class WarAi {
 
     // mines guard the bridge exits (the highways in)
     if (depth >= 5) {
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < base.rows; r++) {
+        for (var c = 0; c < base.cols; c++) {
           if (base.grid[r][c].terrain != Terrain.bridge) continue;
           for (final d in const [
             [-1, 0],
@@ -1092,8 +1092,8 @@ class WarAi {
       }
 
       for (final pass in const [0, 1, 2]) {
-        for (var r = 0; r < Base.rows; r++) {
-          for (var c = 0; c < Base.cols; c++) {
+        for (var r = 0; r < base.rows; r++) {
+          for (var c = 0; c < base.cols; c++) {
             final st = base.structAt(r, c);
             if (st == null || st.isCastle) continue;
             final wants = switch (pass) {
@@ -1175,8 +1175,8 @@ class WarAi {
     // {wall, gate, castle, impassable terrain} (diagonals count — the corner
     // staircases live on them). Anything looser gets torn down and refunded.
     for (var pass = 0; pass < 2; pass++) {
-      for (var r = 0; r < Base.rows; r++) {
-        for (var c = 0; c < Base.cols; c++) {
+      for (var r = 0; r < base.rows; r++) {
+        for (var c = 0; c < base.cols; c++) {
           final s = base.structAt(r, c);
           if (s == null ||
               (s.type != DefType.wall && s.type != DefType.gate)) {
@@ -1209,8 +1209,8 @@ class WarAi {
 
     // what actually stands, post-cleanup — the Lab readout and tests read it
     var built = 0;
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
         if (base.structAt(r, c) != null) built++;
       }
     }
@@ -1239,8 +1239,8 @@ class WarAi {
       }
     }
 
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    for (var r = 0; r < st.base.rows; r++) {
+      for (var c = 0; c < st.base.cols; c++) {
         if (!st.visible(r, c)) continue;
         final s = st.base.structAt(r, c);
         if (s != null && s.alive && !(s.spec.hidden && !s.triggered)) {
@@ -1275,7 +1275,7 @@ class WarAi {
     }
     for (final f in st.fogFrontier()) {
       final depth = math.min(math.min(f.r, f.c),
-          math.min(Base.rows - 1 - f.r, Base.cols - 1 - f.c));
+          math.min(st.base.rows - 1 - f.r, st.base.cols - 1 - f.c));
       // NEARBY fog beats a landmark on the far side of the map: scout what's
       // in front of you before committing to the long march
       var v = 60 + depth * 1.5;
@@ -1330,11 +1330,15 @@ class WarAi {
   /// Move-point price of stepping onto a cell: forest slows everyone to half
   /// speed, wire drags too. Capped at 2 (the movePoints ceiling) so nothing
   /// becomes permanently uncrossable.
-  static double _stepCost(AttackState st, int r, int c) {
+  static double _stepCost(AttackState st, int r, int c, [Troop? mover]) {
     final terr = st.base.grid[r][c].terrain;
     var cost = (terr == Terrain.forest || terr == Terrain.hill) ? 2.0 : 1.0;
     final s = st.base.structAt(r, c);
-    if (s != null && s.alive) cost += s.spec.extraMoveCost;
+    if (s != null &&
+        s.alive &&
+        !(mover?.type == TroopType.elephant && s.type == DefType.barbedWire)) {
+      cost += s.spec.extraMoveCost;
+    }
     return math.min(2.0, cost);
   }
 
@@ -1343,6 +1347,11 @@ class WarAi {
   static bool aiStep(AttackState st, Troop t) {
     if (!t.alive) return false;
     t.done = false;
+
+    // Fogger blooms smoke once, then fights.
+    if (t.type == TroopType.fogger && !t.smokeUsed) {
+      st.dropSmoke(t);
+    }
 
     // HEALERS have one job — mend the wounded, follow the push
     if (t.type == TroopType.healer) return _healerStep(st, t);
@@ -1353,7 +1362,7 @@ class WarAi {
     // 2) objective (sticky until dead/revealed/stale)
     Cell? objective;
     if (t.objectiveKey != null && t.objectiveAge < 6) {
-      final r = t.objectiveKey! ~/ Base.cols, c = t.objectiveKey! % Base.cols;
+      final r = t.objectiveKey! ~/ st.base.cols, c = t.objectiveKey! % st.base.cols;
       final s = st.base.structAt(r, c);
       final stillStruct = s != null && s.alive;
       final stillFog = !st.visible(r, c);
@@ -1361,7 +1370,7 @@ class WarAi {
     }
     objective ??= pickObjective(st, t);
     if (objective == null) return false;
-    t.objectiveKey = objective.r * Base.cols + objective.c;
+    t.objectiveKey = objective.r * st.base.cols + objective.c;
     t.objectiveAge++;
 
     // 3) route (around walls, rivers, AND friends)
@@ -1417,7 +1426,7 @@ class WarAi {
             break; // not adjacent yet — walk closer next rounds
           }
           if (st.troopAt(next[0], next[1]) != null) break;
-          final cost = _stepCost(st, next[0], next[1]);
+          final cost = _stepCost(st, next[0], next[1], t);
           if (t.movePoints < cost) {
             // WIRE underfoot and no legs left? CUT it (sappers hold the bomb)
             final w = st.base.structAt(next[0], next[1]);
@@ -1461,9 +1470,9 @@ class WarAi {
         }
       }
       if (side != null &&
-          t.movePoints >= _stepCost(st, side[0], side[1]) &&
+          t.movePoints >= _stepCost(st, side[0], side[1], t) &&
           st.moveTroop(t, side[0], side[1])) {
-        t.movePoints -= _stepCost(st, side[0], side[1]);
+        t.movePoints -= _stepCost(st, side[0], side[1], t);
         return true;
       }
       // fully boxed with NO breach plan — that's idle, and if the whole army
@@ -1477,7 +1486,7 @@ class WarAi {
     while (i < route.length && i < 2 && t.alive) {
       final next = route[i];
       if (st.troopAt(next[0], next[1]) != null) break;
-      final cost = _stepCost(st, next[0], next[1]);
+      final cost = _stepCost(st, next[0], next[1], t);
       if (t.movePoints < cost) {
         // WIRE underfoot and no legs left? CUT it — nobody stalls at a fence
         // (sappers hold their bomb for something better)
@@ -1551,7 +1560,7 @@ class WarAi {
     while (i < route.length && i < 2 && t.alive) {
       final next = route[i];
       if (st.troopAt(next[0], next[1]) != null) break;
-      final cost = _stepCost(st, next[0], next[1]);
+      final cost = _stepCost(st, next[0], next[1], t);
       if (t.movePoints < cost) break;
       if (!st.moveTroop(t, next[0], next[1])) break;
       t.movePoints -= cost;
@@ -1710,40 +1719,41 @@ class WarAi {
     // what do we KNOW? centroid of every scouted structure + guns per half
     var sr = 0.0, sc = 0.0, known = 0;
     final counts = <int>[0, 0, 0, 0]; // N, S, W, E
-    for (var r = 0; r < Base.rows; r++) {
-      for (var c = 0; c < Base.cols; c++) {
+    final b = st.base;
+    for (var r = 0; r < b.rows; r++) {
+      for (var c = 0; c < b.cols; c++) {
         if (!st.visible(r, c)) continue;
-        final s = st.base.structAt(r, c);
+        final s = b.structAt(r, c);
         if (s == null || !s.alive) continue;
         sr += r;
         sc += c;
         known++;
         if (!s.spec.isShooter) continue;
-        if (r < Base.rows ~/ 2) counts[0]++;
-        if (r >= Base.rows ~/ 2) counts[1]++;
-        if (c < Base.cols ~/ 2) counts[2]++;
-        if (c >= Base.cols ~/ 2) counts[3]++;
+        if (r < b.rows ~/ 2) counts[0]++;
+        if (r >= b.rows ~/ 2) counts[1]++;
+        if (c < b.cols ~/ 2) counts[2]++;
+        if (c >= b.cols ~/ 2) counts[3]++;
       }
     }
     if (known == 0) {
       // nothing scouted — pick a flank and commit
       final side = rng.intRange(0, 4);
-      final mid = Base.cols ~/ 2 + rng.intRange(-6, 7);
+      final mid = b.cols ~/ 2 + rng.intRange(-6, 7);
       switch (side) {
         case 0:
-          return Cell(0, mid.clamp(0, Base.cols - 1));
+          return Cell(0, mid.clamp(0, b.cols - 1));
         case 1:
-          return Cell(Base.rows - 1, mid.clamp(0, Base.cols - 1));
+          return Cell(b.rows - 1, mid.clamp(0, b.cols - 1));
         case 2:
-          return Cell(mid.clamp(0, Base.rows - 1), 0);
+          return Cell(mid.clamp(0, b.rows - 1), 0);
         default:
-          return Cell(mid.clamp(0, Base.rows - 1), Base.cols - 1);
+          return Cell(mid.clamp(0, b.rows - 1), b.cols - 1);
       }
     }
     // land CLOSE to the base we know about, discounted by the guns watching
     // that approach — no more marching the whole map for no reason
     final cr = sr / known, cc = sc / known;
-    final marchDist = <double>[cr, Base.rows - 1 - cr, cc, Base.cols - 1 - cc];
+    final marchDist = <double>[cr, b.rows - 1 - cr, cc, b.cols - 1 - cc];
     var side = 0;
     var best = 1e18;
     for (var s = 0; s < 4; s++) {
@@ -1757,13 +1767,13 @@ class WarAi {
     final j = rng.intRange(-3, 4);
     switch (side) {
       case 0:
-        return Cell(0, (cc.round() + j).clamp(0, Base.cols - 1));
+        return Cell(0, (cc.round() + j).clamp(0, b.cols - 1));
       case 1:
-        return Cell(Base.rows - 1, (cc.round() + j).clamp(0, Base.cols - 1));
+        return Cell(b.rows - 1, (cc.round() + j).clamp(0, b.cols - 1));
       case 2:
-        return Cell((cr.round() + j).clamp(0, Base.rows - 1), 0);
+        return Cell((cr.round() + j).clamp(0, b.rows - 1), 0);
       default:
-        return Cell((cr.round() + j).clamp(0, Base.rows - 1), Base.cols - 1);
+        return Cell((cr.round() + j).clamp(0, b.rows - 1), b.cols - 1);
     }
   }
 
