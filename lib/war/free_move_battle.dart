@@ -329,6 +329,12 @@ class FreeMoveBattle {
       if (t.type == TroopType.sapper && s.type != DefType.barbedWire) {
         return s.type == DefType.gate ? 160 : 150;
       }
+      // A War Elephant is a living battering ram — a wall in reach is a wall
+      // to flatten, not to walk around. (Barbed wire it just tramples; it
+      // shrugs the chip damage, so there's nothing to stop and hit.)
+      if (t.type == TroopType.elephant && s.type != DefType.barbedWire) {
+        return s.type == DefType.gate ? 110 : 100;
+      }
       return 0;
     }
     if (t.type == TroopType.brute &&
@@ -512,10 +518,13 @@ class FreeMoveBattle {
     // a plain march (the fallback to the middle) never smashes its way there
     if (plain) return route;
     // the long way around is a trap: if smashing straight through is far
-    // shorter, breach instead — same call the classic engine makes
-    if (route.length > 10) {
+    // shorter, breach instead — same call the classic engine makes. A War
+    // Elephant barely bothers detouring at all: any wall between it and its
+    // target gets rammed unless walking round is genuinely no longer.
+    final ram = t.type == TroopType.elephant;
+    if (route.length > (ram ? 2 : 10)) {
       final direct = st.routeTo(t, obj.r, obj.c, throughWalls: true);
-      if (direct.isNotEmpty && direct.length + 8 < route.length) {
+      if (direct.isNotEmpty && direct.length + (ram ? 0 : 8) < route.length) {
         route = const [];
       }
     }

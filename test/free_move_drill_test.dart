@@ -334,6 +334,58 @@ void main() {
     }
   });
 
+  test('a war elephant rams the wall instead of standing at it', () {
+    // a plains yard with a solid wall band sealing the castle off, and the
+    // ONLY gap far away — a detour a battering ram should refuse to take.
+    final base = Base(WarSide.enemy, 3);
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        base.grid[r][c].terrain = Terrain.plains;
+      }
+    }
+    final mid = base.cols ~/ 2;
+    // wall band just inside the landing ring, its only gap far to the left —
+    // and the castle right behind it, so the ram meets the wall almost at once
+    final wallRow = base.rows - 4;
+    for (var c = 3; c < base.cols - 1; c++) {
+      base.place(wallRow, c, DefType.wall, 'def');
+    }
+    base.placeCastle('def', wallRow - 3, mid);
+    final st = AttackState(
+      base: base,
+      attacker: WarSide.you,
+      attackerName: 'Drill',
+      pools: MapPools({'drill': 1e9}),
+      freeActions: true,
+      intel: {for (var k = 0; k < base.rows * base.cols; k++) k},
+    );
+    final b = armed(st);
+    final drop = base.rows - 1;
+    for (var i = 0; i < 3; i++) {
+      final t = st.spawn(TroopType.elephant, 'drill', drop, mid, allowStack: true);
+      expect(t, isNotNull);
+      b.placeAt(t!, mid.toDouble(), drop.toDouble());
+    }
+    var walls0 = 0;
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        final s = base.structAt(r, c);
+        if (s != null && s.alive && s.type == DefType.wall) walls0++;
+      }
+    }
+    run(b, 40);
+    var walls1 = 0;
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        final s = base.structAt(r, c);
+        if (s != null && s.alive && s.type == DefType.wall) walls1++;
+      }
+    }
+    expect(walls1, lessThan(walls0),
+        reason: 'the elephant walked to the wall in front of it and just '
+            'stood there instead of smashing through');
+  });
+
   test('classic drill still runs the tile engine untouched', () {
     final st = drill();
     final classic = LiveBattle(st, canDeploy: () => true);
