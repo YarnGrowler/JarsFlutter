@@ -1451,46 +1451,52 @@ class AttackState {
   void _mortarStrike(Structure s, int r, int c, Troop target) =>
       _shell(s, r, c, target.r, target.c);
 
+  /// Euclidean splash radius in tiles. ~1.5 covers the full 8-neighbour ring
+  /// (diagonal ≈ 1.41); L3+ shells reach past 2 tiles.
+  static double mortarSplashRadius(int level) => level >= 3 ? 2.2 : 1.5;
+
   void _shell(Structure s, int r, int c, int impactR, int impactC) {
     _fx(FxEvent(FxKind.shot, Cell(impactR, impactC),
         from: Cell(r, c), bySide: defender, defType: s.type));
+    final splashR = mortarSplashRadius(s.level);
+    final scorched = splashR.ceil();
     // the shell TEARS the ground — repeated strikes scar it deeper, and a
     // forest hit is FLATTENED
-    for (final d in const [
-      [0, 0],
-      [-1, 0],
-      [1, 0],
-      [0, -1],
-      [0, 1]
-    ]) {
-      final rr = impactR + d[0], cc = impactC + d[1];
-      if (!base.inBounds(rr, cc)) continue;
-      final k = rr * base.cols + cc;
-      base.scorch[k] = (base.scorch[k] ?? 0) + (d[0] == 0 && d[1] == 0 ? 2 : 1);
+    for (var dr = -scorched; dr <= scorched; dr++) {
+      for (var dc = -scorched; dc <= scorched; dc++) {
+        final rr = impactR + dr, cc = impactC + dc;
+        if (!base.inBounds(rr, cc)) continue;
+        final dist = math.sqrt(dr * dr + dc * dc);
+        if (dist > splashR) continue;
+        final k = rr * base.cols + cc;
+        base.scorch[k] =
+            (base.scorch[k] ?? 0) + (dr == 0 && dc == 0 ? 2 : 1);
+      }
     }
     if (base.grid[impactR][impactC].terrain == Terrain.forest) {
       base.grid[impactR][impactC].terrain = Terrain.plains;
       base.cleared.add(impactR * base.cols + impactC);
     }
     var hits = 0;
-    final maxSplash = s.level >= 3 ? 2 : 1; // L3 shells blast a WIDER field
     for (final t in troops.toList()) {
       if (!t.alive) continue;
-      final d = (t.r - impactR).abs() > (t.c - impactC).abs()
-          ? (t.r - impactR).abs()
-          : (t.c - impactC).abs();
-      if (d > maxSplash) continue;
+      final dr = (t.r - impactR).abs();
+      final dc = (t.c - impactC).abs();
+      final dist = math.sqrt(dr * dr + dc * dc);
+      if (dist > splashR) continue;
       final terr = TerrainData.defBonus(base.at(t.r, t.c)!.terrain);
-      final baseDmg = d == 0
-          ? s.damage
-          : d == 1
-              ? (s.damage / 2).round()
-              : (s.damage / 4).round();
+      // Falloff by distance: full at center, ~2/3 in the inner ring, ~1/3 out.
+      final falloff = dist < 0.01
+          ? 1.0
+          : dist <= 1.2
+              ? 0.65
+              : 0.3;
+      final baseDmg = (s.damage * falloff).round().clamp(1, s.damage);
       final dmg = (baseDmg * (1 - terr)).round();
       t.hp -= dmg;
       hits++;
       _flash(t.r, t.c);
-      _fx(FxEvent(d == 0 ? FxKind.trap : FxKind.melee, Cell(t.r, t.c),
+      _fx(FxEvent(dist < 0.01 ? FxKind.trap : FxKind.melee, Cell(t.r, t.c),
           amount: dmg, bySide: defender, defType: s.type));
       if (!t.alive) {
         troopsLost++;

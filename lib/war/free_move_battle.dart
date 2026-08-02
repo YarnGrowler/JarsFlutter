@@ -421,8 +421,9 @@ class FreeMoveBattle {
         _pickObjective(u) ??
         Cell(st.base.rows ~/ 2, st.base.cols ~/ 2);
     // If the prize is across water (closer tiles are river), don't bee-line
-    // into the bank — walk toward a bridge instead.
-    if (_waterBlocksApproach(t.r, t.c, goal)) {
+    // into the bank — walk toward a bridge instead. Never retarget bridges
+    // while already on one (that ping-pongs the plank).
+    if (!_onBridge(t.r, t.c) && _waterBlocksApproach(t.r, t.c, goal)) {
       final bridge = _bridgeWaypoint(u, goal);
       if (bridge != null) goal = bridge;
     }
@@ -463,26 +464,32 @@ class FreeMoveBattle {
     _steer(u, h, bestC.toDouble(), bestR.toDouble());
   }
 
-  /// True when the next step that would shrink manhattan distance to [goal]
-  /// is water — i.e. the unit is staring across a river at the prize.
+  bool _onBridge(int r, int c) =>
+      st.base.inBounds(r, c) &&
+      st.base.grid[r][c].terrain == Terrain.bridge;
+
+  /// True when the unit is staring across a river at the prize: at least one
+  /// manhattan-reducing step is water, and NONE of those steps are walkable
+  /// land/bridge. Standing on a bridge never counts — BFS owns the crossing.
   bool _waterBlocksApproach(int r, int c, Cell goal) {
+    if (_onBridge(r, c)) return false;
     final dr = (goal.r - r).sign;
     final dc = (goal.c - c).sign;
-    if (dr != 0) {
-      final nr = r + dr, nc = c;
-      if (st.base.inBounds(nr, nc) &&
-          st.base.grid[nr][nc].terrain == Terrain.river) {
-        return true;
+    var riverHit = false;
+    var passableCloser = false;
+    void probe(int nr, int nc) {
+      if (!st.base.inBounds(nr, nc)) return;
+      final terr = st.base.grid[nr][nc].terrain;
+      if (terr == Terrain.river) {
+        riverHit = true;
+        return;
       }
+      if (TerrainData.passable(terr)) passableCloser = true;
     }
-    if (dc != 0) {
-      final nr = r, nc = c + dc;
-      if (st.base.inBounds(nr, nc) &&
-          st.base.grid[nr][nc].terrain == Terrain.river) {
-        return true;
-      }
-    }
-    return false;
+
+    if (dr != 0) probe(r + dr, c);
+    if (dc != 0) probe(r, c + dc);
+    return riverHit && !passableCloser;
   }
 
   void _steer(_Unit u, double h, double tx, double ty) {
@@ -586,15 +593,54 @@ class FreeMoveBattle {
   void _replan(_Unit u) {
     final t = u.t;
     if (_objsStale) _rebuildObjectives();
-    u.blockKey = null;
     u.leg = 0;
+    // Keep a live smash mark across replans — wiping it every think let a unit
+    // on a sealed wall flip back to the long walk-around and circle the keep.
+    if (u.blockKey != null) {
+      final br = u.blockKey! ~/ st.base.cols;
+      final bc = u.blockKey! % st.base.cols;
+      final wall = st.base.structAt(br, bc);
+      if (wall == null || !wall.alive || !wall.spec.blocks) {
+        u.blockKey = null;
+      }
+    }
 
     final yard = Cell(st.base.rows ~/ 2, st.base.cols ~/ 2);
     final obj = _pickObjective(u);
-    // Prize across the river with a bridge elsewhere? Don't pathfind "at"
-    // the water — walk to the crossing first (then replan on arrival).
-    if (obj != null && _waterBlocksApproach(t.r, t.c, obj)) {
-      final bridge = _bridgeWaypoint(u, obj);
+
+    // Already committed to a wall — march to it (or stand and swing). Never
+    // abandon for a scenic lap around the curtain.
+    if (u.blockKey != null) {
+      final br = u.blockKey! ~/ st.base.cols;
+      final bc = u.blockKey! % st.base.cols;
+      final toWall = _routeToward(u, Cell(br, bc), plain: true);
+      if (toWall.isNotEmpty) {
+        u.route = toWall;
+        u.think = 1.2 + (t.id.hashCode & 7) * 0.08;
+        return;
+      }
+      // Adjacent / sealed against it — empty route, _targetInReach smashes.
+      u.route = const [];
+      u.think = 0.8;
+      return;
+    }
+
+    // Prefer a real BFS road first — bridges are walkable terrain, so this
+    // already crosses rivers. Staging via a bridge tile FIRST made units on a
+    // multi-plank crossing retarget the tile behind them and ping-pong forever.
+    if (obj != null) {
+      final direct = _routeToward(u, obj);
+      if (direct.isNotEmpty) {
+        u.route = direct;
+        u.think = 1.4 + (t.id.hashCode & 7) * 0.08;
+        return;
+      }
+    }
+    // Far bank sealed (walls) or no objective yet — stage via a crossing, but
+    // never while already on the plank (BFS / smash owns that stretch).
+    if (!_onBridge(t.r, t.c) &&
+        (obj == null || _waterBlocksApproach(t.r, t.c, obj))) {
+      final bridge = _bridgeWaypoint(u, obj ?? yard);
       if (bridge != null) {
         final via = _routeToward(u, bridge, plain: true);
         if (via.isNotEmpty) {
@@ -616,10 +662,9 @@ class FreeMoveBattle {
       // unit opens its OWN road instead of waiting for someone else to.
       u.route = _routeToward(u, obj ?? yard);
     }
-    if (u.route.isEmpty) {
-      // Classic river stare: the prize is visible across the water but the
-      // bridge is far to the side. BFS to the goal can fail when walls seal
-      // the far bank — march to a reachable bridge first and replan after.
+    if (u.route.isEmpty && !_onBridge(t.r, t.c)) {
+      // Classic river stare: BFS can't land next to the prize — march to the
+      // far side of a reachable bridge first and replan after.
       final bridge = _bridgeWaypoint(u, obj ?? yard);
       if (bridge != null) {
         u.route = _routeToward(u, bridge, plain: true);
@@ -629,10 +674,12 @@ class FreeMoveBattle {
     u.think = u.route.isEmpty ? 0.35 : 1.4 + (t.id.hashCode & 7) * 0.08;
   }
 
-  /// Nearest reachable bridge that helps toward [goal] — the detour troops
-  /// should take instead of faceplanting into the riverbank.
+  /// Far-side of the nearest useful crossing toward [goal] — the detour troops
+  /// should take instead of faceplanting into the riverbank. Returns null when
+  /// the unit is already on a bridge (don't bounce between planks).
   Cell? _bridgeWaypoint(_Unit u, Cell goal) {
     final t = u.t;
+    if (_onBridge(t.r, t.c)) return null;
     Cell? best;
     var bestScore = 1 << 30;
     for (var r = 0; r < st.base.rows; r++) {
@@ -640,9 +687,11 @@ class FreeMoveBattle {
         if (st.base.grid[r][c].terrain != Terrain.bridge) continue;
         final path = st.routeTo(t, r, c);
         if (path.isEmpty) continue;
-        // short walk to the bridge + closeness of that crossing to the prize
+        // Prefer the FAR exit of a multi-tile bridge (closest to the prize),
+        // not the near entrance — otherwise units stage onto plank 1, replan
+        // to plank 1 again, and never commit across.
         final score =
-            path.length * 3 + (r - goal.r).abs() + (c - goal.c).abs();
+            path.length * 2 + ((r - goal.r).abs() + (c - goal.c).abs()) * 5;
         if (score < bestScore) {
           bestScore = score;
           best = Cell(r, c);
@@ -667,14 +716,16 @@ class FreeMoveBattle {
     }
     // a plain march (the fallback to the middle) never smashes its way there
     if (plain) return route;
-    // the long way around is a trap: if smashing straight through is far
-    // shorter, breach instead — same call the classic engine makes. A War
-    // Elephant barely bothers detouring at all: any wall between it and its
-    // target gets rammed unless walking round is genuinely no longer.
+    // Prefer breaching early — a "short" walk-around along a curtain wall is
+    // exactly the circling cluster behind a keep. Elephants barely detour.
     final ram = t.type == TroopType.elephant;
-    if (route.length > (ram ? 2 : 10)) {
+    if (route.isNotEmpty) {
       final direct = st.routeTo(t, obj.r, obj.c, throughWalls: true);
-      if (direct.isNotEmpty && direct.length + (ram ? 0 : 8) < route.length) {
+      final pad = ram ? 0 : 3;
+      final longEnough = route.length > (ram ? 2 : 5);
+      if (direct.isNotEmpty &&
+          longEnough &&
+          direct.length + pad < route.length) {
         route = const [];
       }
     }

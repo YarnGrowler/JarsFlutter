@@ -469,6 +469,133 @@ void main() {
     expect(usedBridge || crossed >= 2, isTrue);
   });
 
+  test('sealed keep: troops smash the wall instead of circling it', () {
+    // Regression: walk-around looked "short enough", blockKey got wiped on
+    // every replan, and the wave paced laps around the curtain forever.
+    final base = Base(WarSide.enemy, 31);
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        base.grid[r][c].terrain = Terrain.plains;
+      }
+    }
+    const cr = 12, cc = 20;
+    base.placeCastle('def', cr, cc);
+    // diamond / box keep — only way in is through a wall
+    for (var r = cr - 3; r <= cr + 3; r++) {
+      for (var c = cc - 3; c <= cc + 3; c++) {
+        if (r == cr - 3 ||
+            r == cr + 3 ||
+            c == cc - 3 ||
+            c == cc + 3) {
+          if (base.canPlace(r, c)) {
+            base.place(r, c, DefType.wall, 'def');
+          }
+        }
+      }
+    }
+    final st = AttackState(
+      base: base,
+      attacker: WarSide.you,
+      attackerName: 'Drill',
+      pools: MapPools({'drill': 1e9}),
+      freeActions: true,
+      intel: {for (var k = 0; k < base.rows * base.cols; k++) k},
+    );
+    final b = armed(st);
+    final drop = base.rows - 1;
+    for (var i = 0; i < 10; i++) {
+      final c = cc - 2 + (i % 5);
+      final t =
+          st.spawn(TroopType.soldier, 'drill', drop, c, allowStack: true);
+      if (t != null) b.placeAt(t, c.toDouble(), drop.toDouble());
+    }
+
+    var wallsBefore = 0;
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        final s = base.structAt(r, c);
+        if (s != null && s.alive && s.type == DefType.wall) wallsBefore++;
+      }
+    }
+    run(b, 28);
+    var wallsAfter = 0;
+    var inside = 0;
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        final s = base.structAt(r, c);
+        if (s != null && s.alive && s.type == DefType.wall) wallsAfter++;
+      }
+    }
+    for (final t in st.troops) {
+      if (!t.alive) continue;
+      if ((t.r - cr).abs() <= 2 && (t.c - cc).abs() <= 2) inside++;
+    }
+    expect(wallsAfter, lessThan(wallsBefore),
+        reason: 'nobody chewed the curtain — still circling outside');
+    expect(inside > 0 || wallsAfter <= wallsBefore - 2, isTrue,
+        reason: 'wave never committed a breach into the keep');
+  });
+
+  test('multi-tile bridges do not ping-pong — troops commit across', () {
+    // Regression: units on a plank treated the river beside them as still
+    // "blocking", retargeted the tile behind them, and walked back and forth.
+    final base = Base(WarSide.enemy, 23);
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        base.grid[r][c].terrain = Terrain.plains;
+      }
+    }
+    final riverRow = base.rows - 7;
+    final mid = base.cols ~/ 2;
+    for (var c = 0; c < base.cols; c++) {
+      base.grid[riverRow][c].terrain = Terrain.river;
+    }
+    // three-plank bridge offset from the drop so staging + commit both matter
+    for (final c in [mid - 1, mid, mid + 1]) {
+      base.grid[riverRow][c].terrain = Terrain.bridge;
+    }
+    base.placeCastle('def', 8, mid + 6);
+    final st = AttackState(
+      base: base,
+      attacker: WarSide.you,
+      attackerName: 'Drill',
+      pools: MapPools({'drill': 1e9}),
+      freeActions: true,
+      intel: {for (var k = 0; k < base.rows * base.cols; k++) k},
+    );
+    final b = armed(st);
+    final drop = base.rows - 1;
+    for (var i = 0; i < 8; i++) {
+      final c = mid - 2 + (i % 5);
+      final t =
+          st.spawn(TroopType.soldier, 'drill', drop, c, allowStack: true);
+      if (t != null) b.placeAt(t, c.toDouble(), drop.toDouble());
+    }
+
+    // Sample every half-second: a unit that has been north of the river must
+    // not later be south again (classic bridge ping-pong).
+    final everNorth = <String>{};
+    var regressions = 0;
+    for (var i = 0; i < (22 / FreeMoveBattle.simStep).round(); i++) {
+      b.tick(FreeMoveBattle.simStep);
+      if (i % 15 != 0) continue;
+      for (final t in st.troops) {
+        if (!t.alive) continue;
+        if (t.r < riverRow) {
+          everNorth.add(t.id);
+        } else if (t.r > riverRow && everNorth.contains(t.id)) {
+          regressions++;
+        }
+      }
+    }
+    final crossed =
+        st.troops.where((t) => t.alive && t.r < riverRow).length;
+    expect(crossed, greaterThanOrEqualTo(4),
+        reason: 'wave failed to commit across the multi-tile bridge');
+    expect(regressions, 0,
+        reason: 'troops walked back south after crossing (bridge ping-pong)');
+  });
+
   test('free-move troops never step onto river tiles — they use bridges', () {
     final base = Base(WarSide.enemy, 13);
     for (var r = 0; r < base.rows; r++) {

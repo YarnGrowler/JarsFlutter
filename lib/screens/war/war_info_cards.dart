@@ -54,7 +54,7 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
     if (type == DefType.ballista)
       const _Stat('🪁 Lobbed bolt', 'arcs clean over walls'),
     if (type == DefType.mortar)
-      _Stat('💥 Splash', level >= 3 ? '2 tiles wide' : '1 tile wide'),
+      _Stat('💥 Splash', level >= 3 ? '~2.2 tiles' : '~1.5 tiles'),
     if (type == DefType.tesla) ...[
       const _Stat('🪁 Lobbed arc', 'zaps clear walls — short range only'),
       _Stat(
@@ -105,7 +105,7 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
       if (type == DefType.guardPost)
         _Stat('📍 Patrol', '${patrolAt(level)} → ${patrolAt(next)} tiles'),
       if (type == DefType.mortar && next >= 3)
-        const _Stat('💥 Splash', '1 → 2 tiles wide'),
+        const _Stat('💥 Splash', '~1.5 → ~2.2 tiles'),
       if (type == DefType.warGenerator)
         _Stat(
             '⚗️ Pump rate',

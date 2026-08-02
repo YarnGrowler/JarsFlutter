@@ -191,10 +191,10 @@ const Map<DefType, DefSpec> kDefSpecs = {
       maxLevel: 5,
       range: 6,
       minRange: 2,
-      damage: 24, // center hit; splash deals half to everything adjacent
+      damage: 24, // center hit; splash reaches ~1.5 tiles (full 8-neighbour ring)
       fireEveryTicks: 3,
       blurb:
-          'Long-range SPLASH artillery — shells blast the whole impact area. Blind up close: guard its feet.'),
+          'Long-range SPLASH artillery — shells blast ~1.5 tiles around impact (wider at L3). Blind up close: guard its feet.'),
   DefType.landmine: DefSpec(DefType.landmine,
       name: 'Land Mine',
       emoji: '💣',
