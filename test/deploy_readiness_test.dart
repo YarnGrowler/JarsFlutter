@@ -789,6 +789,35 @@ void main() {
           reason: 'never lands on whoever happens to be active instead');
     });
 
+    test(
+        'REGRESSION: only the admin can place a TEAMMATE\'s castle — '
+        'your own is always fine', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.isRoomAdmin = false;
+
+      expect(g.placeCastle(10, 10), isNull,
+          reason: 'anyone can always place their OWN castle');
+      expect(g.youBase.castles.containsKey('me'), isTrue);
+
+      final err = g.placeCastle(12, 12, forPlayerId: 'f0');
+      expect(err, isNotNull,
+          reason: 'a non-admin cannot place a teammate\'s castle');
+      expect(g.youBase.castles.containsKey('f0'), isFalse);
+
+      g.isRoomAdmin = true;
+      expect(g.placeCastle(12, 12, forPlayerId: 'f0'), isNull,
+          reason: 'the admin can, for an offline teammate who can\'t');
+      expect(g.youBase.castles['f0'], isNotNull);
+    });
+
     test('the room admin CAN use every war-wide control', () {
       final g = WarGame.fresh();
       g.startPrep();

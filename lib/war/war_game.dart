@@ -579,11 +579,20 @@ class WarGame extends ChangeNotifier {
   }
 
   // editor actions (as the active human, on your base)
-  String? placeCastle(int r, int c) {
+  ///
+  /// [forPlayerId] lets the room ADMIN place or relocate a TEAMMATE's castle
+  /// — real players build their own base sector, but a crewmate who's never
+  /// online can leave the shared base impossible to finish laying out.
+  /// Placing your own castle needs no permission; placing someone else's does.
+  String? placeCastle(int r, int c, {String? forPlayerId}) {
     if (phase != WarPhase.prep) return null;
+    final ownerId = forPlayerId ?? active.id;
+    if (ownerId != active.id && !canControlWar) {
+      return 'Only the room admin can place a teammate\'s castle.';
+    }
     if (!youBase.canPlace(r, c)) return 'Blocked ground.';
     // moving an existing castle refunds nothing (free), just relocate
-    youBase.placeCastle(active.id, r, c);
+    youBase.placeCastle(ownerId, r, c);
     _save();
     notifyListeners();
     return null;

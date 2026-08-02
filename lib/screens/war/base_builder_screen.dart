@@ -28,6 +28,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
   bool _clearTool = false;
   DefType? _defTool;
   Cell? _selectedCell; // a placed structure being inspected
+  String? _castleForId; // admin-only: whose castle the castle tool places
 
   @override
   Widget build(BuildContext context) {
@@ -226,7 +227,8 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
     }
     // place with the armed tool
     if (_castleTool) {
-      final err = g.placeCastle(cell.r, cell.c) as String?;
+      final err =
+          g.placeCastle(cell.r, cell.c, forPlayerId: _castleForId) as String?;
       _feedback(err);
       if (err == null) setState(() => _selectedCell = cell);
     } else if (_defTool != null) {
@@ -355,12 +357,19 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
     }
     if (_castleTool) {
       final spec = kDefSpecs[DefType.castle]!;
-      return _toolStrip(
+      final strip = _toolStrip(
         emoji: spec.emoji,
         name: spec.name,
         stats: '❤ ${spec.hp} · free · your heart — protect it',
         onInfo: () => showDefenseCard(context, DefType.castle),
       );
+      // Admin-only: pick which crewmate this castle is for. A teammate who's
+      // never online otherwise leaves the shared base impossible to finish —
+      // this lets the admin place (or relocate) it on their behalf.
+      final clan = g.youClan as List;
+      if (!(g.canControlWar as bool) || clan.length <= 1) return strip;
+      return Column(
+          mainAxisSize: MainAxisSize.min, children: [_castleForRow(g), strip]);
     }
     final type = _defTool;
     if (type == null) return const SizedBox.shrink();
@@ -385,6 +394,53 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
       name: locked ? '🔒 ${spec.name}' : spec.name,
       stats: parts.join(' · '),
       onInfo: () => showDefenseCard(context, type),
+    );
+  }
+
+  /// "placing for: 🐐 Casey •" chips — the • marks a crewmate with no
+  /// castle down yet. Tapping switches who the castle tool builds for.
+  Widget _castleForRow(dynamic g) {
+    final clan = g.youClan as List;
+    final myId = g.active.id as String;
+    final castles = g.youBase.castles as Map;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+      color: const Color(0xFF10131C),
+      child: SizedBox(
+        height: 32,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: clan.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 6),
+          itemBuilder: (_, i) {
+            final p = clan[i];
+            final id = p.id as String;
+            final placing = (_castleForId ?? myId) == id;
+            final hasCastle = castles.containsKey(id);
+            return GestureDetector(
+              onTap: () =>
+                  setState(() => _castleForId = id == myId ? null : id),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: placing
+                      ? JarsColors.gold.withValues(alpha: 0.22)
+                      : JarsColors.surface,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                      color: placing ? JarsColors.gold : JarsColors.border),
+                ),
+                child: Text(
+                    '${p.emoji} ${p.name}${hasCastle ? '' : ' •'}',
+                    style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: placing ? FontWeight.w700 : FontWeight.w400,
+                        color: JarsColors.textPrimary)),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
