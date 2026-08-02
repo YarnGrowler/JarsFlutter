@@ -1801,12 +1801,25 @@ class WarGame extends ChangeNotifier {
     // wiped every raid's watchable replay while leaving the DAMAGE it dealt
     // behind (that part always lived on youBase/enemyBase, which WAS
     // serialized) — "I can see the damage but there's no replay."
-    feed
-      ..clear()
-      ..addAll([
-        for (final ej in (j['feed'] as List? ?? const []))
-          WarLogEntry.fromJson(ej as Map<String, dynamic>)
-      ]);
+    //
+    // MERGE, don't replace: two teammates can each bank a live raid on their
+    // own device around the same moment. Whichever one's save loses the
+    // compare-and-swap race gets its whole blob overwritten by the winner's
+    // via this exact method — a plain replace would silently drop that
+    // teammate's raid (and its replay) even though it genuinely happened.
+    // Keyed on the fields that make a raid unique in practice, not an
+    // explicit id (none existed before this and adding one is a bigger,
+    // riskier save-format change than this warrants).
+    String feedKey(WarLogEntry e) => '${e.minute}|${e.attackerSide.index}|'
+        '${e.attackerName}|${e.troopsSent}|${e.gained.toStringAsFixed(2)}|'
+        '${e.resourcesSpent.toStringAsFixed(2)}';
+    final haveKeys = {for (final e in feed) feedKey(e)};
+    for (final ej in (j['feed'] as List? ?? const [])) {
+      final e = WarLogEntry.fromJson(ej as Map<String, dynamic>);
+      if (haveKeys.add(feedKey(e))) feed.add(e);
+    }
+    feed.sort((a, b) => a.minute.compareTo(b.minute));
+    _trimFeed();
     lastEnemyReplay = null;
     lastEnemyRaider = j['lastEnemyRaider'] as String? ?? '';
     for (final e in feed) {

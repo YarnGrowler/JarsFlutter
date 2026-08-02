@@ -2,7 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jars/core/league_config.dart';
 import 'package:jars/models/league.dart';
 import 'package:jars/war/war_base.dart';
+import 'package:jars/war/war_engine.dart';
 import 'package:jars/war/war_game.dart';
+import 'package:jars/war/war_sim.dart';
 import 'package:jars/war/war_types.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1030,6 +1032,59 @@ void main() {
           reason: 'the replay must survive too, not just the damage it dealt');
       expect(reloaded.lastEnemyReplay, isNotNull,
           reason: 'the quick "last enemy raid" replay survives too');
+    });
+
+    test(
+        'REGRESSION: merging in a teammate\'s sync never drops a raid you '
+        'already recorded locally', () {
+      // Two teammates can each bank a live raid on their own device around
+      // the same moment; whichever save loses the compare-and-swap race
+      // gets its blob overwritten by the winner's via loadFromJson. A plain
+      // replace there would silently drop the loser's raid (and replay)
+      // even though it genuinely happened — both must survive.
+      final g = freshGame(50);
+      g.startWar();
+      g.feed.add(WarLogEntry(
+        minute: 5,
+        attackerSide: WarSide.you,
+        attackerName: 'Me',
+        gained: 12,
+        defenderDestruction: 12,
+        troopsLost: 1,
+        troopsSent: 3,
+        resourcesSpent: 90,
+        razed: false,
+        replay: [const RaidFrame([], [], [], [], 'x')],
+      ));
+
+      // a teammate's device pushes a DIFFERENT raid, unaware of mine yet
+      final teammateBlob = Map<String, dynamic>.from(g.toJson());
+      teammateBlob['feed'] = [
+        WarLogEntry(
+          minute: 6,
+          attackerSide: WarSide.enemy,
+          attackerName: 'Grik',
+          gained: 8,
+          defenderDestruction: 8,
+          troopsLost: 0,
+          troopsSent: 2,
+          resourcesSpent: 0,
+          razed: false,
+          replay: [const RaidFrame([], [], [], [], 'y')],
+        ).toJson(),
+      ];
+      g.loadFromJson(teammateBlob);
+
+      expect(g.feed.length, 2,
+          reason: 'both raids survive — neither got overwritten');
+      expect(
+          g.feed.any((e) => e.attackerName == 'Me' && e.replay != null),
+          isTrue,
+          reason: 'my own raid, recorded before the sync landed');
+      expect(
+          g.feed.any((e) => e.attackerName == 'Grik' && e.replay != null),
+          isTrue,
+          reason: 'the teammate\'s raid, from the incoming sync');
     });
 
     test('the countdown counts DOWN toward the next raid', () {
