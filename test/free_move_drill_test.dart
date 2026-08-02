@@ -425,6 +425,50 @@ void main() {
         reason: 'most of the wave stayed planted on the landing tile');
   });
 
+  test('troops seek a distant bridge instead of staring across the river', () {
+    // Castle dead ahead across a river; the ONLY bridge is far to the left.
+    // Old bug: units bee-lined to the bank and froze instead of pathing over.
+    final base = Base(WarSide.enemy, 19);
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        base.grid[r][c].terrain = Terrain.plains;
+      }
+    }
+    final riverRow = base.rows - 6;
+    final mid = base.cols ~/ 2;
+    for (var c = 0; c < base.cols; c++) {
+      base.grid[riverRow][c].terrain = Terrain.river;
+    }
+    const bridgeC = 2; // far from the drop
+    base.grid[riverRow][bridgeC].terrain = Terrain.bridge;
+    base.placeCastle('def', 8, mid);
+    final st = AttackState(
+      base: base,
+      attacker: WarSide.you,
+      attackerName: 'Drill',
+      pools: MapPools({'drill': 1e9}),
+      freeActions: true,
+      intel: {for (var k = 0; k < base.rows * base.cols; k++) k},
+    );
+    final b = armed(st);
+    final drop = base.rows - 1;
+    for (var i = 0; i < 6; i++) {
+      final t =
+          st.spawn(TroopType.soldier, 'drill', drop, mid, allowStack: true);
+      if (t != null) b.placeAt(t, mid.toDouble(), drop.toDouble());
+    }
+    run(b, 20);
+    final crossed = st.troops.where((t) => t.alive && t.r < riverRow).length;
+    expect(crossed, greaterThanOrEqualTo(2),
+        reason: 'raiders stared at the river instead of walking to the bridge');
+    // someone should have actually touched the distant bridge (or passed it)
+    final usedBridge = st.troops.any((t) =>
+        t.alive &&
+        (t.c - bridgeC).abs() <= 1 &&
+        (t.r - riverRow).abs() <= 1);
+    expect(usedBridge || crossed >= 2, isTrue);
+  });
+
   test('free-move troops never step onto river tiles — they use bridges', () {
     final base = Base(WarSide.enemy, 13);
     for (var r = 0; r < base.rows; r++) {

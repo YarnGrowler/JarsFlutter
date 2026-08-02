@@ -101,7 +101,7 @@ void main() {
     g.setDifficulty(20);
     final low = g.estimatedEnemyWarChest;
     expect(low, greaterThan(0));
-    expect(g.estimatedEnemyWarChestPerFoe * g.enemyClan.length,
+    expect(g.estimatedEnemyWarChestPerFoe * g.enemyWarSlots,
         closeTo(low, 0.001));
 
     g.setDifficulty(99);
@@ -114,5 +114,49 @@ void main() {
         g.estimatedEnemyWarChest,
         closeTo(effortBefore + 250 * WarCosts.enemyPrepMirror, 0.001),
         reason: 'crew prep mirrors into the enemy chest at enemyPrepMirror');
+  });
+
+  test('idle roster seats do not inflate the enemy at war start', () {
+    // 4 humans in the room, only 2 placed castles → enemy fields 2, not 4.
+    final g = WarGame.fresh()..startPrep();
+    g.applyRoomRoster(
+      realRoomId: 'gc',
+      myUserId: 'a',
+      myUsername: 'A',
+      members: const [
+        RosterMember('b', 'B'),
+        RosterMember('c', 'C'),
+        RosterMember('d', 'D'),
+      ],
+    );
+    // roster rebuild wipes castles — fresh prep board for the real crew
+    g.startPrep();
+    expect(g.enemyClan.length, 4);
+    expect(g.placeCastle(10, 10), isNull); // A
+    g.youBase.placeCastle('b', 12, 12); // B showed up
+    expect(g.warParticipants.map((p) => p.id).toSet(), {'a', 'b'});
+    expect(g.enemyWarSlots, 2);
+
+    for (final p in g.youClan) {
+      if (p.id == 'a' || p.id == 'b') p.prepEarned = 1000;
+      if (p.id == 'c' || p.id == 'd') p.prepEarned = 5000; // bait
+    }
+    g.startWar();
+    expect(g.enemyClan.length, 2,
+        reason: 'enemy trimmed to castle-placers only');
+    expect(g.youBase.castles.length, 4,
+        reason: 'idle seats still get auto-castles');
+    // A+B prep floor = 2000×0.7=1400; + ~355×2 skill ≈ 2.1k build chest.
+    // Idle C/D's 10k bait must not have funded a 4-foe megabase.
+    var spent = 0.0;
+    for (var r = 0; r < g.enemyBase.rows; r++) {
+      for (var c = 0; c < g.enemyBase.cols; c++) {
+        final s = g.enemyBase.structAt(r, c);
+        if (s != null && s.alive) spent += s.investedCost;
+      }
+    }
+    expect(spent, lessThan(4500),
+        reason: 'idle prep must not bankroll a mega-fort');
+    expect(g.enemyBase.castles.length, 2);
   });
 }

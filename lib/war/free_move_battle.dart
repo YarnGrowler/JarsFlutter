@@ -417,9 +417,15 @@ class FreeMoveBattle {
   /// walkable neighbours — keeps stranded units moving and probing for a road.
   void _wander(_Unit u, double h, {Cell? toward}) {
     final t = u.t;
-    final goal = toward ??
+    var goal = toward ??
         _pickObjective(u) ??
         Cell(st.base.rows ~/ 2, st.base.cols ~/ 2);
+    // If the prize is across water (closer tiles are river), don't bee-line
+    // into the bank — walk toward a bridge instead.
+    if (_waterBlocksApproach(t.r, t.c, goal)) {
+      final bridge = _bridgeWaypoint(u, goal);
+      if (bridge != null) goal = bridge;
+    }
     var bestR = t.r, bestC = t.c;
     var best = (t.r - goal.r).abs() + (t.c - goal.c).abs();
     // slight personal bias so a stuck pack fans out instead of oscillating
@@ -455,6 +461,28 @@ class FreeMoveBattle {
       return;
     }
     _steer(u, h, bestC.toDouble(), bestR.toDouble());
+  }
+
+  /// True when the next step that would shrink manhattan distance to [goal]
+  /// is water — i.e. the unit is staring across a river at the prize.
+  bool _waterBlocksApproach(int r, int c, Cell goal) {
+    final dr = (goal.r - r).sign;
+    final dc = (goal.c - c).sign;
+    if (dr != 0) {
+      final nr = r + dr, nc = c;
+      if (st.base.inBounds(nr, nc) &&
+          st.base.grid[nr][nc].terrain == Terrain.river) {
+        return true;
+      }
+    }
+    if (dc != 0) {
+      final nr = r, nc = c + dc;
+      if (st.base.inBounds(nr, nc) &&
+          st.base.grid[nr][nc].terrain == Terrain.river) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void _steer(_Unit u, double h, double tx, double ty) {
@@ -563,6 +591,19 @@ class FreeMoveBattle {
 
     final yard = Cell(st.base.rows ~/ 2, st.base.cols ~/ 2);
     final obj = _pickObjective(u);
+    // Prize across the river with a bridge elsewhere? Don't pathfind "at"
+    // the water — walk to the crossing first (then replan on arrival).
+    if (obj != null && _waterBlocksApproach(t.r, t.c, obj)) {
+      final bridge = _bridgeWaypoint(u, obj);
+      if (bridge != null) {
+        final via = _routeToward(u, bridge, plain: true);
+        if (via.isNotEmpty) {
+          u.route = via;
+          u.think = 1.0 + (t.id.hashCode & 7) * 0.08;
+          return;
+        }
+      }
+    }
     u.route = obj == null ? const [] : _routeToward(u, obj);
     if (u.route.isEmpty) {
       // Nothing reachable from here — a raider still never just stands there.
@@ -575,8 +616,40 @@ class FreeMoveBattle {
       // unit opens its OWN road instead of waiting for someone else to.
       u.route = _routeToward(u, obj ?? yard);
     }
+    if (u.route.isEmpty) {
+      // Classic river stare: the prize is visible across the water but the
+      // bridge is far to the side. BFS to the goal can fail when walls seal
+      // the far bank — march to a reachable bridge first and replan after.
+      final bridge = _bridgeWaypoint(u, obj ?? yard);
+      if (bridge != null) {
+        u.route = _routeToward(u, bridge, plain: true);
+      }
+    }
     // A failed plan retries soon, but never every step — see _walk.
     u.think = u.route.isEmpty ? 0.35 : 1.4 + (t.id.hashCode & 7) * 0.08;
+  }
+
+  /// Nearest reachable bridge that helps toward [goal] — the detour troops
+  /// should take instead of faceplanting into the riverbank.
+  Cell? _bridgeWaypoint(_Unit u, Cell goal) {
+    final t = u.t;
+    Cell? best;
+    var bestScore = 1 << 30;
+    for (var r = 0; r < st.base.rows; r++) {
+      for (var c = 0; c < st.base.cols; c++) {
+        if (st.base.grid[r][c].terrain != Terrain.bridge) continue;
+        final path = st.routeTo(t, r, c);
+        if (path.isEmpty) continue;
+        // short walk to the bridge + closeness of that crossing to the prize
+        final score =
+            path.length * 3 + (r - goal.r).abs() + (c - goal.c).abs();
+        if (score < bestScore) {
+          bestScore = score;
+          best = Cell(r, c);
+        }
+      }
+    }
+    return best;
   }
 
   /// Best road to [obj]: around the walls if there is one, through them if the

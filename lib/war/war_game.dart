@@ -707,6 +707,30 @@ class WarGame extends ChangeNotifier {
   /// admin can start the war the moment a single castle is down.
   bool get anyCastlePlaced => youBase.castles.isNotEmpty;
 
+  /// Crew who actually showed up for prep (placed their own castle). Idle
+  /// roommates stay on the roster and still get an auto-castle at war start,
+  /// but they must NOT inflate the enemy's headcount or build chest.
+  ///
+  /// Real rooms: only humans who placed (solo bot crewmates are ignored).
+  /// Solo/offline: whoever on your side already has a castle.
+  List<WarPlayer> get warParticipants {
+    final placed = [
+      for (final p in youClan)
+        if (youBase.castles.containsKey(p.id)) p
+    ];
+    if (roomId != null) {
+      return [for (final p in placed) if (!p.isBot) p];
+    }
+    return placed;
+  }
+
+  /// How many enemy castles / raid bots this war fields — one per participant,
+  /// never one per idle roster seat.
+  int get enemyWarSlots {
+    final n = warParticipants.length;
+    return n > 0 ? n : 1;
+  }
+
   /// slider → effective enemy skill (0.3 .. 1.5), FLOORED by how far your
   /// clan has climbed the league — Bronze asks nothing extra, Radiant floors
   /// you into citadel territory even if nobody's touched the difficulty
@@ -728,22 +752,34 @@ class WarGame extends ChangeNotifier {
   }
 
   /// Estimated total build chest the enemy team receives when war starts.
-  /// This is the exact start-war formula: difficulty/league budget for every
-  /// enemy castle, plus a fraction of the real crew's prep effort.
+  /// Matches [startWar]: participant prep × mirror + skill budget × fighter
+  /// slots (idle roster seats do not count).
   double get estimatedEnemyWarChest {
-    final foes = enemyClan.length;
-    if (foes == 0) return 0;
-    final crewFloor = youClan
-            .where((p) => !p.isBot)
-            .fold(0.0, (sum, p) => sum + p.prepEarned) *
-        WarCosts.enemyPrepMirror;
+    if (enemyClan.isEmpty) return 0;
+    final fighters = warParticipants;
+    // Real rooms: only castle-placers fund the floor (idle seats don't).
+    // Solo/offline: the human's prep always counts for the preview.
+    // Before anyone places, fall back to every real crewmate's prep so the
+    // difficulty dial still moves the estimate.
+    final List<WarPlayer> prepSource;
+    if (roomId == null) {
+      prepSource = youClan.where((p) => !p.isBot).toList();
+    } else if (fighters.isNotEmpty) {
+      prepSource = fighters;
+    } else {
+      prepSource = youClan.where((p) => !p.isBot).toList();
+    }
+    final crewFloor =
+        prepSource.fold(0.0, (sum, p) => sum + p.prepEarned) *
+            WarCosts.enemyPrepMirror;
+    final slots = enemyWarSlots;
     final basePerFoe =
         WarCosts.prepBudgetFor(_effectiveEnemySkill()) * _enemyForgeMultiplier;
-    return crewFloor + basePerFoe * foes;
+    return crewFloor + basePerFoe * slots;
   }
 
   double get estimatedEnemyWarChestPerFoe =>
-      enemyClan.isEmpty ? 0 : estimatedEnemyWarChest / enemyClan.length;
+      enemyClan.isEmpty ? 0 : estimatedEnemyWarChest / enemyWarSlots;
 
   static AiLevel _tierForSkill(double s) => s >= 0.9
       ? AiLevel.master
@@ -756,7 +792,16 @@ class WarGame extends ChangeNotifier {
   // ── WAR ─────────────────────────────────────────────────────────────────────
   void startWar() {
     if (!canControlWar) return; // only the room admin starts the war
-    // ensure every player has a castle
+
+    // Snapshot who actually prepped BEFORE we auto-castle the idle seats —
+    // those fighters alone size the enemy and fund its build chest.
+    final fighters = warParticipants.isNotEmpty
+        ? List<WarPlayer>.of(warParticipants)
+        : youClan.where((p) => !p.isBot).toList();
+    _trimEnemyClan(math.max(1, fighters.length));
+
+    // Idle crewmates still get a castle so the base isn't soft-locked, but
+    // they already lost their vote on enemy strength above.
     for (final p in youClan) {
       if (!youBase.castles.containsKey(p.id)) {
         final spot = _fallbackCastle(youBase, youBase.castles.length);
@@ -765,14 +810,11 @@ class WarGame extends ChangeNotifier {
     }
 
     // ── the build phase just ended — THIS is when the enemy's stronghold
-    // is sized and built. Their war chest mirrors a FRACTION of what your
-    // REAL crew earned this prep (never a number picked before anyone
-    // logged a workout), topped up by the difficulty dial / league
-    // standing. Bots (solo/offline crew) don't count — real effort only. ──
-    final crewTotal = youClan
-            .where((p) => !p.isBot)
-            .fold(0.0, (sum, p) => sum + p.prepEarned) *
-        WarCosts.enemyPrepMirror;
+    // is sized and built. Chest = participant prep × mirror + skill budget
+    // per FIGHTING foe (not per idle roommate). ──
+    final crewTotal =
+        fighters.fold(0.0, (sum, p) => sum + p.prepEarned) *
+            WarCosts.enemyPrepMirror;
     final foes = enemyClan;
     if (foes.isNotEmpty) {
       final effSkill = _effectiveEnemySkill();
@@ -830,6 +872,17 @@ class WarGame extends ChangeNotifier {
     youBaseFellAt = -1;
     _save();
     notifyListeners();
+  }
+
+  /// Drop surplus enemy bots so the war mirrors [keep] fighters — not the
+  /// full room roster. Call before [WarAi.designBase] so idle seats never
+  /// buy the enemy extra castles or hourly raid rolls.
+  void _trimEnemyClan(int keep) {
+    final foes = enemyClan;
+    if (foes.length <= keep) return;
+    final drop = {for (final p in foes.skip(keep)) p.id};
+    players.removeWhere((p) => drop.contains(p.id));
+    enemyBase.pruneCastlesNotIn({for (final p in enemyClan) p.id});
   }
 
   Cell? _fallbackCastle(Base base, int i) {
@@ -1021,6 +1074,8 @@ class WarGame extends ChangeNotifier {
         youIntel: youIntel,
         enemyIntel: enemyIntel,
         unlockTroops: unlockedTroopsNow,
+        // dial 29 → 29% per bot per hour (never a free guaranteed smash)
+        raidChance: difficulty / 100.0,
       );
       feed.addAll(entries);
       for (final e in entries) {

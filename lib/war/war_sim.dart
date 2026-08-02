@@ -43,6 +43,9 @@ class WarSim {
   /// Runs a single sim-hour. Mutates bases + pools; returns the raids that
   /// happened (newest actions appended). Skips [activePlayerId] (the human plays
   /// their own raids live).
+  ///
+  /// [raidChance] is per bot, per hour (typically difficulty/100 — so a dial
+  /// of 29 means each living enemy has a 29% shot to launch, not a guarantee).
   static List<WarLogEntry> runHour({
     required int hour,
     required int minute,
@@ -55,8 +58,10 @@ class WarSim {
     required Set<int> youIntel, // your clan's scouting of the ENEMY base
     required Set<int> enemyIntel, // their clan's scouting of YOURS
     Set<TroopType> unlockTroops = const {},
+    double raidChance = 0.5,
   }) {
     final out = <WarLogEntry>[];
+    final chance = raidChance.clamp(0.0, 1.0);
     for (final p in players) {
       if (p.id == activePlayerId) continue; // human raids are hands-on
       // Real teammates are never auto-played: no free hourly income, no
@@ -77,9 +82,8 @@ class WarSim {
         if (cs == null || cs.hp <= 0) continue;
       }
 
-      // decide whether to raid — sharp clans SAVE UP for bigger, deadlier waves
+      // decide whether to raid — must be banked up, then pass the dial roll
       final skill = p.skill;
-      final chance = 0.15 + skill * 0.6;
       if (pools.of(p.id) < 110 + skill * 120 || rng.unit() > chance) continue;
 
       final target = p.side == WarSide.you ? enemyBase : youBase;

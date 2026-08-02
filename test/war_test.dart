@@ -2289,7 +2289,8 @@ void main() {
             warSeed: 99,
             activePlayerId: 'you',
             youIntel: <int>{5 * Base.defaultSize + 5},
-            enemyIntel: <int>{});
+            enemyIntel: <int>{},
+            raidChance: 1.0); // force the roll — this test is about KO, not dial
       }
 
       expect(hour(razed: false), isNotEmpty, reason: 'alive → he raids');
