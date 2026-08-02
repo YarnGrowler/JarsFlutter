@@ -311,6 +311,38 @@ void main() {
       expect(bossmanfatDevice.active.name, 'BossmanFat');
     });
 
+    test(
+        'REGRESSION: a workout logged before War seats the room still pays ⚡',
+        () {
+      // BossmanFat logs a 100pt wall sit the instant the app opens — War
+      // sync hasn't applied the room roster yet (roomId still null). The
+      // old gate (`roomId == room.id`) silently dropped those points.
+      final g = WarGame.fresh();
+      g.startPrep();
+      expect(g.roomId, isNull);
+      final placeholderRes = g.active.resources;
+      expect(g.earnFromWorkout('the-gc', 100), isFalse,
+          reason: 'must queue while the room is not seated');
+      expect(g.active.resources, placeholderRes,
+          reason: 'queued credit must not land on the offline placeholder');
+
+      g.applyRoomRoster(
+        realRoomId: 'the-gc',
+        myUserId: 'bossmanfat-uid',
+        myUsername: 'BossmanFat',
+        members: friends([
+          ['ybb-uid', 'ybb']
+        ]),
+      );
+      expect(g.roomId, 'the-gc');
+      expect(g.active.id, 'bossmanfat-uid');
+      // Fresh room seat starts at 0⚡ (stipend already ran on the offline
+      // placeholder) — the queued wall sit is what shows up.
+      expect(g.active.resources, 100,
+          reason: 'queued wall-sit ⚡ must flush onto BossmanFat');
+      expect(g.active.prepEarned, 100);
+    });
+
     test('the no-op roster path corrects activePlayerId even with NO change',
         () {
       // narrower unit test of the same fix: applyRoomRoster's fast path

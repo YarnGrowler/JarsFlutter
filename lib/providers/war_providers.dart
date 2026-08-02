@@ -85,7 +85,21 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
     }
   }
 
-  final rows = await ref.watch(roomMembersProvider(room.id).future);
+  List<Map<String, dynamic>> rows;
+  try {
+    rows = await ref.watch(roomMembersProvider(room.id).future);
+  } catch (e) {
+    // Members fetch failed — still seat THIS player to the room so a
+    // workout log can't silently earn 0 war ⚡ while sync is unhappy.
+    if (kDebugMode) debugPrint('WarSync: members load failed: $e');
+    game.applyRoomRoster(
+      realRoomId: room.id,
+      myUserId: myId,
+      myUsername: 'You',
+      members: const [],
+    );
+    return;
+  }
   String usernameOf(Map<String, dynamic> row) {
     final profile = row['profiles'] as Map<String, dynamic>?;
     return profile?['username'] as String? ?? 'Player';
@@ -141,8 +155,23 @@ Future<void> _pushRoomSave(WarGame g) async {
       g.activePlayerId = myId;
       g.roomVersion = version;
       g.syncConflicts++;
+      // A workout credit that lost the CAS race must not vanish — put it
+      // back on this device's player and retry once.
+      g.reapplyUnsyncedEarn();
+      final (v2, s2, c2) =
+          await WarSyncService.save(roomId, g.toJson(), g.roomVersion);
+      if (c2) {
+        g.loadFromJson(s2);
+        g.activePlayerId = myId;
+        g.roomVersion = v2;
+        g.reapplyUnsyncedEarn();
+      } else {
+        g.roomVersion = v2;
+        g.clearUnsyncedEarn();
+      }
     } else {
       g.roomVersion = version;
+      g.clearUnsyncedEarn();
     }
     g.notifyListeners();
   } catch (e) {

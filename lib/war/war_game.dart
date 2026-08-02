@@ -285,6 +285,16 @@ class WarGame extends ChangeNotifier {
   /// trusted from a shared blob (same principle as `activePlayerId`).
   bool isRoomAdmin = true;
 
+  /// Workout ⚡ logged before [roomId] was seated to that room (War sync still
+  /// catching up). Flushed in [applyRoomRoster] so a wall-sit right after
+  /// opening the app never silently evaporates.
+  final Map<String, double> _pendingWorkoutEarn = {};
+
+  /// ⚡ credited locally but not yet confirmed on the room war row. A sync
+  /// conflict must put these back on [ _unsyncedEarnPlayerId ] after reload.
+  double _unsyncedEarn = 0;
+  String? _unsyncedEarnPlayerId;
+
   /// War-wide controls (who's fighting whom, how hard, when the day starts)
   /// are the room admin's call in a real room — nobody wants a teammate's
   /// stray tap resetting the season or cranking the difficulty for
@@ -431,8 +441,15 @@ class WarGame extends ChangeNotifier {
       // is the exact bug that let one player's building silently spend a
       // teammate's resources: `activePlayerId` is per-device identity, it
       // must NEVER be trusted from a shared blob.
+      var dirty = false;
       if (activePlayerId != myUserId) {
         activePlayerId = myUserId;
+        dirty = true;
+      }
+      final pending = _pendingWorkoutEarn[realRoomId] ?? 0;
+      _flushPendingWorkoutEarn();
+      if (pending > 0) dirty = true;
+      if (dirty) {
         _save();
         notifyListeners();
       }
@@ -497,6 +514,7 @@ class WarGame extends ChangeNotifier {
           isBot: true)));
     }
     activePlayerId = myUserId;
+    _flushPendingWorkoutEarn();
     _save();
     notifyListeners();
   }
@@ -1463,13 +1481,78 @@ class WarGame extends ChangeNotifier {
   /// works mid-raid too).
   void earn(double points) {
     if (points <= 0) return;
-    active.resources += points;
+    _creditEarn(points, activePlayerId);
+    _save();
+    notifyListeners();
+  }
+
+  /// Credit a real log to Clan War ⚡ for [forRoomId].
+  ///
+  /// Returns `true` when it lands on the live pool immediately. Returns
+  /// `false` when War sync hasn't seated this room yet — the points are
+  /// queued and flush the moment [applyRoomRoster] binds that room (the
+  /// exact silent-drop that ate BossmanFat's wall-sit).
+  bool earnFromWorkout(String forRoomId, double points) {
+    if (points <= 0) return false;
+    if (roomId == forRoomId) {
+      _creditEarn(points, activePlayerId);
+      _save();
+      notifyListeners();
+      return true;
+    }
+    _pendingWorkoutEarn[forRoomId] =
+        (_pendingWorkoutEarn[forRoomId] ?? 0) + points;
+    return false;
+  }
+
+  void _creditEarn(double points, String playerId) {
+    WarPlayer? p;
+    for (final pl in players) {
+      if (pl.id == playerId) {
+        p = pl;
+        break;
+      }
+    }
+    p ??= active;
+    p.resources += points;
     // track real prep-day effort — this is what floors the enemy's war
     // chest at startWar(), so it has to be everything you had, not just
     // whatever's left unspent by the time the day ends.
-    if (phase == WarPhase.prep) active.prepEarned += points;
-    _save();
-    notifyListeners();
+    if (phase == WarPhase.prep) p.prepEarned += points;
+    _unsyncedEarn += points;
+    _unsyncedEarnPlayerId = p.id;
+  }
+
+  void _flushPendingWorkoutEarn() {
+    final id = roomId;
+    if (id == null) return;
+    final pending = _pendingWorkoutEarn.remove(id);
+    if (pending == null || pending <= 0) return;
+    _creditEarn(pending, activePlayerId);
+  }
+
+  /// Put workout ⚡ back after a sync conflict reloaded a blob that never
+  /// saw them. Safe to call repeatedly — only the still-unsynced delta is
+  /// re-applied, and [clearUnsyncedEarn] runs on a successful room push.
+  void reapplyUnsyncedEarn() {
+    final amt = _unsyncedEarn;
+    final id = _unsyncedEarnPlayerId;
+    if (amt <= 0 || id == null || players.isEmpty) return;
+    WarPlayer? p;
+    for (final pl in players) {
+      if (pl.id == id) {
+        p = pl;
+        break;
+      }
+    }
+    if (p == null) return;
+    p.resources += amt;
+    if (phase == WarPhase.prep) p.prepEarned += amt;
+  }
+
+  void clearUnsyncedEarn() {
+    _unsyncedEarn = 0;
+    _unsyncedEarnPlayerId = null;
   }
 
   /// Gift live ⚡ from the player you're controlling to a teammate.
@@ -1676,6 +1759,8 @@ class WarGame extends ChangeNotifier {
     players.clear();
     activePlayerId = 'you';
     onRoomSave = null;
+    _pendingWorkoutEarn.clear();
+    clearUnsyncedEarn();
   }
 
   // A bare `SharedPreferences.getInstance().then(...)` per call races: two

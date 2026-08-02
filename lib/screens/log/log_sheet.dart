@@ -715,20 +715,20 @@ class _LogSheetState extends ConsumerState<LogSheet>
       final totalPts = subtotalPts + rankBonusPts;
       final totalEarned = totalPts.toDouble();
 
-      // Demo Mode: real exercise instantly fuels the player you're
-      // controlling in the Clan War — no network round-trip. Uses the FULL
-      // total (streak + rank bonus included, not just the base exercise
-      // points) so war points always match what you actually earned. Only
-      // once the game is seated to THIS room (the War tab has synced at
-      // least once this session) — otherwise the points would land on a
-      // not-yet-real placeholder player and vanish the next time the
-      // roster syncs.
-      if (kDemoMode && totalEarned >= 1 && WarGame.instance.roomId == room.id) {
-        WarGame.instance.earn(totalEarned);
+      // Demo Mode: real exercise fuels Clan War ⚡. Uses the FULL total
+      // (streak + rank bonus) so war points match the log. If War sync
+      // hasn't seated this room yet, [earnFromWorkout] queues the credit
+      // instead of silently dropping it (the wall-sit-for-nothing bug).
+      if (kDemoMode && totalEarned >= 1) {
+        final landed =
+            WarGame.instance.earnFromWorkout(room.id, totalEarned);
         if (mounted) {
+          final who = WarGame.instance.active.name;
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                '⚡ +${totalEarned.round()} WAR POINTS for ${WarGame.instance.active.name}'),
+            content: Text(landed
+                ? '⚡ +${totalEarned.round()} WAR POINTS for $who'
+                : '⚡ +${totalEarned.round()} WAR POINTS queued for $who — '
+                    'they land as soon as War syncs'),
             duration: const Duration(seconds: 2),
           ));
         }
