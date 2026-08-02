@@ -469,6 +469,56 @@ void main() {
     expect(usedBridge || crossed >= 2, isTrue);
   });
 
+  test('castle 3 tiles behind one wall — smash, do not lap the map', () {
+    final base = Base(WarSide.enemy, 41);
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        base.grid[r][c].terrain = Terrain.plains;
+      }
+    }
+    // Drop on the south ring; castle is only a few tiles inland, sealed by
+    // a single east-west wall. The open road around the wall is enormous.
+    const wallR = 35;
+    const castleR = 33;
+    const col = 20;
+    // Wall seals the direct approach but leaves a gap on the far left so a
+    // scenic walk-around EXISTS — the bug was taking that lap.
+    for (var c = 4; c < base.cols; c++) {
+      if (base.canPlace(wallR, c)) base.place(wallR, c, DefType.wall, 'def');
+    }
+    base.placeCastle('def', castleR, col);
+    final st = AttackState(
+      base: base,
+      attacker: WarSide.you,
+      attackerName: 'Drill',
+      pools: MapPools({'drill': 1e9}),
+      freeActions: true,
+      intel: {for (var k = 0; k < base.rows * base.cols; k++) k},
+    );
+    final b = armed(st);
+    final drop = base.rows - 1;
+    for (var i = 0; i < 6; i++) {
+      final t =
+          st.spawn(TroopType.soldier, 'drill', drop, col, allowStack: true);
+      if (t != null) b.placeAt(t, col.toDouble(), drop.toDouble());
+    }
+
+    final wallHpBefore = base.structAt(wallR, col)!.hp;
+    run(b, 10);
+    final wall = base.structAt(wallR, col);
+    final wallDamaged =
+        wall == null || !wall.alive || wall.hp < wallHpBefore;
+    // Nobody should have wandered far sideways to take the scenic entrance.
+    final maxDrift = st.troops
+        .where((t) => t.alive)
+        .map((t) => (t.c - col).abs())
+        .fold<int>(0, (a, b) => a > b ? a : b);
+    expect(wallDamaged, isTrue,
+        reason: 'ignored the wall in front of a 3-tile castle');
+    expect(maxDrift, lessThan(12),
+        reason: 'took the long way around instead of breaching');
+  });
+
   test('sealed keep: troops smash the wall instead of circling it', () {
     // Regression: walk-around looked "short enough", blockKey got wiped on
     // every replan, and the wave paced laps around the curtain forever.

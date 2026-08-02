@@ -161,6 +161,8 @@ class AttackState {
   int troopsSent = 0;
   int garrisonLost = 0;
   double resourcesSpent = 0;
+  /// ⚡ looted from smashed storehouses / war generators / tribute chests.
+  double plunderGained = 0;
   int _troopSeq = 0;
   late double _startDestruction;
 
@@ -968,6 +970,20 @@ class AttackState {
     }
   }
 
+  /// Spill a lootable building's ⚡ into [looterId]'s pool. Safe to call once
+  /// when hp crosses ≤0 — returns 0 for walls/towers/etc.
+  double _plunder(Structure s, int r, int c, String looterId) {
+    final amt = WarCosts.plunderAmount(s.type, s.level);
+    if (amt <= 0) return 0;
+    pools.add(looterId, amt);
+    plunderGained += amt;
+    _fx(FxEvent(FxKind.heal, Cell(r, c), amount: amt.round(), bySide: attacker));
+    log.add(AttackEvent(
+        '💰 +${amt.round()}⚡ looted from ${s.spec.name}',
+        at: Cell(r, c)));
+    return amt;
+  }
+
   /// One BOOM per sapper: full charge into a wall, quarter charge into
   /// anything else, splash to every adjacent structure — and the sapper dies.
   static const int sapperBomb = 170; // one-shots a wall (140 hp)
@@ -1006,6 +1022,7 @@ class AttackState {
       log.add(AttackEvent('🧨 → ${s.spec.emoji} $dmg dmg', at: Cell(r, c)));
       if (s.hp <= 0) {
         _grantXp(t, Xp.perStructure.toDouble());
+        _plunder(s, r, c, t.ownerId);
         _fx(FxEvent(FxKind.death, Cell(r, c), bySide: t.side, defType: s.type));
         log.add(
             AttackEvent('${s.spec.emoji} ${s.spec.name} destroyed', at: Cell(r, c)));
@@ -1021,6 +1038,7 @@ class AttackState {
         ns.triggered = true;
         _flash(r + dr, c + dc);
         if (ns.hp <= 0) {
+          _plunder(ns, r + dr, c + dc, t.ownerId);
           _fx(FxEvent(FxKind.death, Cell(r + dr, c + dc),
               bySide: t.side, defType: ns.type));
         }
@@ -1084,6 +1102,7 @@ class AttackState {
     }
     if (s.hp <= 0) {
       _grantXp(t, Xp.perStructure.toDouble());
+      _plunder(s, r, c, t.ownerId);
       _fx(FxEvent(FxKind.death, Cell(r, c), bySide: t.side, defType: s.type));
       log.add(AttackEvent('${s.spec.emoji} ${s.spec.name} destroyed', at: Cell(r, c)));
     } else if (pv.counter > 0 && t.alive) {

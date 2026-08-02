@@ -608,14 +608,14 @@ class FreeMoveBattle {
     final yard = Cell(st.base.rows ~/ 2, st.base.cols ~/ 2);
     final obj = _pickObjective(u);
 
-    // Already committed to a wall — march to it (or stand and swing). Never
-    // abandon for a scenic lap around the curtain.
+    // Already committed to a wall — march to a face of it (or stand and swing).
+    // Never abandon for a scenic lap around the curtain.
     if (u.blockKey != null) {
       final br = u.blockKey! ~/ st.base.cols;
       final bc = u.blockKey! % st.base.cols;
-      final toWall = _routeToward(u, Cell(br, bc), plain: true);
-      if (toWall.isNotEmpty) {
-        u.route = toWall;
+      final toFace = _shortRoadToWallFace(u, br, bc);
+      if (toFace.isNotEmpty) {
+        u.route = toFace;
         u.think = 1.2 + (t.id.hashCode & 7) * 0.08;
         return;
       }
@@ -674,6 +674,40 @@ class FreeMoveBattle {
     u.think = u.route.isEmpty ? 0.35 : 1.4 + (t.id.hashCode & 7) * 0.08;
   }
 
+  /// Shortest open road to a walkable tile touching the smash wall. If the only
+  /// open road is a marathon around the keep, cut through walls toward a face
+  /// instead — that was the "dance on the bridge until someone else breaches"
+  /// failure mode.
+  List<List<int>> _shortRoadToWallFace(_Unit u, int wr, int wc) {
+    final t = u.t;
+    final crow = (wr - t.r).abs() + (wc - t.c).abs();
+    List<List<int>> best = const [];
+    for (final d in _orth) {
+      final nr = wr + d[0], nc = wc + d[1];
+      if (!st.base.passable(nr, nc)) continue;
+      // already on the face — nothing to walk
+      if (nr == t.r && nc == t.c) return const [];
+      final p = st.routeTo(t, nr, nc);
+      if (p.isNotEmpty && (best.isEmpty || p.length < best.length)) {
+        best = p;
+      }
+    }
+    if (best.isNotEmpty && best.length <= crow * 2 + 2) return best;
+
+    // Open road missing or absurd — push through toward the wall tile and
+    // stop on the last open cell before it.
+    final smash = st.routeTo(t, wr, wc, throughWalls: true);
+    if (smash.isEmpty) return best;
+    final cut = <List<int>>[];
+    for (final step in smash) {
+      if (step[0] == wr && step[1] == wc) break;
+      final s = st.base.structAt(step[0], step[1]);
+      if (s != null && s.alive && s.spec.blocks) break;
+      cut.add(step);
+    }
+    return cut.isNotEmpty ? cut : best;
+  }
+
   /// Far-side of the nearest useful crossing toward [goal] — the detour troops
   /// should take instead of faceplanting into the riverbank. Returns null when
   /// the unit is already on a bridge (don't bounce between planks).
@@ -705,38 +739,37 @@ class FreeMoveBattle {
   /// detour is absurd. Marks the wall to smash in [u.blockKey] when breaching.
   List<List<int>> _routeToward(_Unit u, Cell obj, {bool plain = false}) {
     final t = u.t;
-    var route = st.routeTo(t, obj.r, obj.c);
-    if (route.isEmpty) {
+    var around = st.routeTo(t, obj.r, obj.c);
+    if (around.isEmpty) {
       for (final d in _orth) {
         final nr = obj.r + d[0], nc = obj.c + d[1];
         if (!st.base.passable(nr, nc)) continue;
-        route = st.routeTo(t, nr, nc);
-        if (route.isNotEmpty) break;
+        around = st.routeTo(t, nr, nc);
+        if (around.isNotEmpty) break;
       }
     }
     // a plain march (the fallback to the middle) never smashes its way there
-    if (plain) return route;
-    // Prefer breaching early — a "short" walk-around along a curtain wall is
-    // exactly the circling cluster behind a keep. Elephants barely detour.
-    final ram = t.type == TroopType.elephant;
-    if (route.isNotEmpty) {
-      final direct = st.routeTo(t, obj.r, obj.c, throughWalls: true);
-      final pad = ram ? 0 : 3;
-      final longEnough = route.length > (ram ? 2 : 5);
-      if (direct.isNotEmpty &&
-          longEnough &&
-          direct.length + pad < route.length) {
-        route = const [];
-      }
-    }
-    if (route.isNotEmpty) return route;
+    if (plain) return around;
 
-    final breach = st.routeTo(t, obj.r, obj.c, throughWalls: true);
-    if (breach.isEmpty) return const [];
+    final smash = st.routeTo(t, obj.r, obj.c, throughWalls: true);
+    if (smash.isEmpty) return around;
+
+    // Clash rule: a castle three tiles behind one wall must NEVER lose to a
+    // scenic lap around the whole base. Smash if the open road is meaningfully
+    // longer than the breach — or longer than ~2× crow-flies.
+    final crow = (obj.r - t.r).abs() + (obj.c - t.c).abs();
+    final ram = t.type == TroopType.elephant;
+    final preferSmash = around.isEmpty ||
+        (ram && around.length > smash.length) ||
+        around.length > smash.length + 1 ||
+        around.length > crow * 2 + 2;
+
+    if (!preferSmash) return around;
+
     // walk the breach line and mark the first wall on it as the target;
     // _targetInReach will swing at it the moment we're close enough
     final cut = <List<int>>[];
-    for (final step in breach) {
+    for (final step in smash) {
       final s = st.base.structAt(step[0], step[1]);
       if (s != null && s.alive && s.spec.blocks) {
         u.blockKey = _key(step[0], step[1]);

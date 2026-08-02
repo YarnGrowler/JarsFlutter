@@ -804,6 +804,103 @@ void main() {
       expect(g.deployTrained(st, TroopType.brute, drop.r, drop.c), isNull);
     });
 
+    test('raid survivors return to the army on END RAID / razed bank', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      final you = g.players.firstWhere((p) => p.id == 'you');
+      you.resources = 400;
+      expect(g.trainTroop(TroopType.soldier), isNull);
+      expect(g.trainTroop(TroopType.soldier), isNull);
+      expect(g.trainTroop(TroopType.soldier), isNull);
+      expect(you.armyCount(TroopType.soldier), 3);
+
+      final st = g.beginLiveAttack();
+      final drops = g.enemyBase.dropCells.toList();
+      final a = g.deployTrained(st, TroopType.soldier, drops[0].r, drops[0].c)!;
+      final b = g.deployTrained(st, TroopType.soldier, drops[1].r, drops[1].c)!;
+      final c = g.deployTrained(st, TroopType.soldier, drops[2].r, drops[2].c)!;
+      expect(you.armyCount(TroopType.soldier), 0);
+      // two make it home; one falls
+      a.hp = 0;
+      expect(b.alive && c.alive, isTrue);
+
+      g.commitLiveAttack();
+      expect(you.armyCount(TroopType.soldier), 2,
+          reason: 'living prepaid raiders refill the camp');
+    });
+
+    test('clash timer/razed bank also recalls survivors', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      final you = g.players.firstWhere((p) => p.id == 'you');
+      you.resources = 200;
+      expect(g.trainTroop(TroopType.archer), isNull);
+      expect(g.trainTroop(TroopType.archer), isNull);
+      final st = g.startClashBattle();
+      final drops = g.enemyBase.dropCells.toList();
+      g.deployTrained(st, TroopType.archer, drops[0].r, drops[0].c,
+          allowStack: true);
+      g.deployTrained(st, TroopType.archer, drops[0].r, drops[0].c,
+          allowStack: true);
+      expect(you.armyCount(TroopType.archer), 0);
+      g.bankClashBattle();
+      expect(you.armyCount(TroopType.archer), 2,
+          reason: 'time-up / battle-over must not delete the camp');
+    });
+
+    test('smashing a storehouse / war generator / chest loots their ⚡', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      final you = g.players.firstWhere((p) => p.id == 'you');
+      you.resources = 500;
+      expect(g.trainTroop(TroopType.brute), isNull);
+      final st = g.startClashBattle(); // freeActions — loot isn't masked by spend
+      // plant lootables inland on plains
+      var br = 12, bc = 12;
+      for (var r = 8; r < g.enemyBase.rows - 8; r++) {
+        for (var c = 8; c < g.enemyBase.cols - 8; c++) {
+          if (g.enemyBase.canPlace(r, c)) {
+            br = r;
+            bc = c;
+            break;
+          }
+        }
+      }
+      g.enemyBase.place(br, bc, DefType.storehouse, 'foe');
+      expect(g.enemyBase.canPlace(br, bc + 1), isTrue);
+      g.enemyBase.place(br, bc + 1, DefType.warGenerator, 'foe');
+      expect(g.enemyBase.canPlace(br, bc + 2), isTrue);
+      g.enemyBase.place(br, bc + 2, DefType.tributeChest, 'foe');
+      final store = g.enemyBase.structAt(br, bc)!;
+      final gen = g.enemyBase.structAt(br, bc + 1)!;
+      final chest = g.enemyBase.structAt(br, bc + 2)!;
+      final expectLoot = WarCosts.plunderAmount(DefType.storehouse, store.level) +
+          WarCosts.plunderAmount(DefType.warGenerator, gen.level) +
+          WarCosts.plunderAmount(DefType.tributeChest, chest.level);
+
+      final drop = g.enemyBase.dropCells.first;
+      final t = g.deployTrained(st, TroopType.brute, drop.r, drop.c)!;
+      final wallet = you.resources;
+      store.hp = 1;
+      t.r = br;
+      t.c = bc;
+      st.attackCell(t, br, bc);
+      gen.hp = 1;
+      t.done = false;
+      t.r = br;
+      t.c = bc + 1;
+      st.attackCell(t, br, bc + 1);
+      chest.hp = 1;
+      t.done = false;
+      t.r = br;
+      t.c = bc + 2;
+      st.attackCell(t, br, bc + 2);
+
+      expect(st.plunderGained, closeTo(expectLoot, 0.01));
+      expect(you.resources, closeTo(wallet + expectLoot, 0.01),
+          reason: 'loot lands in the raider pool');
+    });
+
     test('scouting is shared clan intel across raids', () {
       final g = WarGame.fresh()..startPrep();
       g.startWar();

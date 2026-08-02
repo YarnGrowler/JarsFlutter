@@ -1161,6 +1161,7 @@ class WarGame extends ChangeNotifier {
         (active.destructionDealt + la.gained).clamp(0.0, 100.0);
     active.troopsLost += la.troopsLost;
     active.resourcesSpent += la.resourcesSpent;
+    _recallSurvivors(la, active);
     if (la.gained >= 0.5) {
       feed.add(WarLogEntry(
         minute: clock.simMinutes,
@@ -1176,6 +1177,18 @@ class WarGame extends ChangeNotifier {
       _trimFeed();
     }
     liveAttack = null;
+  }
+
+  /// Living prepaid raiders march home into [owner]'s army. Dead stay dead;
+  /// ⚡ was paid at the Training Grounds, so survivors refill the camp — not a
+  /// cash refund. Called on END RAID, timer/razed bank, and war end.
+  void _recallSurvivors(AttackState st, WarPlayer owner) {
+    for (final t in st.troops) {
+      if (!t.alive) continue;
+      if (t.side != st.attacker) continue;
+      if (t.ownerId != owner.id) continue;
+      owner.army[t.type] = (owner.army[t.type] ?? 0) + 1;
+    }
   }
 
   // ── Clash-style auto-battle (session-scoped, freeActions economy) ───────────
@@ -1354,6 +1367,7 @@ class WarGame extends ChangeNotifier {
         (active.destructionDealt + st.gained).clamp(0.0, 100.0);
     active.troopsLost += st.troopsLost;
     active.resourcesSpent += st.resourcesSpent;
+    _recallSurvivors(st, active);
     if (st.gained >= 0.5 || st.troopsLost > 0) {
       feed.add(WarLogEntry(
         minute: clock.simMinutes,

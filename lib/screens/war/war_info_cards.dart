@@ -87,13 +87,20 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
       const _Stat('👁 Eyes', 'forests hide nothing within 3 tiles'),
       const _Stat('🪖 Rally', 'guards within 3 tiles patrol +2 farther'),
     ],
-    if (type == DefType.storehouse)
+    if (type == DefType.storehouse) ...[
       const _Stat('🍖 Provisions', 'tents within 3 field VETERAN guards'),
+      _Stat('💰 Loot', '${WarCosts.plunderAmount(type, level).round()}⚡ if smashed'),
+    ],
+    if (type == DefType.tributeChest)
+      const _Stat('💰 Loot', '100⚡ if smashed mid-raid'),
     if (type == DefType.gate)
       const _Stat('🚪 Doorway', 'YOUR garrison passes; attackers cannot'),
-    if (type == DefType.warGenerator)
+    if (type == DefType.warGenerator) ...[
       _Stat('⚗️ Pump rate',
           '${warGeneratorRatePerHour(level).round()}⚡/hr on war day'),
+      _Stat('💰 Loot',
+          '${WarCosts.plunderAmount(type, level).round()}⚡ if smashed (~2h tank)'),
+    ],
   ];
 
   // what the NEXT level buys — shown until you're maxed

@@ -350,9 +350,9 @@ const Map<DefType, DefSpec> kDefSpecs = {
       upgradeCost: 40,
       maxLevel: 3,
       blurb:
-          'War provisions: guard posts within 3 tiles field VETERAN '
-          'defenders — a level stronger, full of stew. Raiders LOVE burning '
-          'these.'),
+          'War treasury: L1 holds 50⚡, L2 100⚡, L3 150⚡ — smash it and the '
+          '⚡ spills to the raider. Also feeds nearby Guard Posts with veteran '
+          'stew.'),
   DefType.tributeChest: DefSpec(DefType.tributeChest,
       name: 'Tribute Chest',
       emoji: '🏆',
@@ -361,8 +361,8 @@ const Map<DefType, DefSpec> kDefSpecs = {
       hp: 160,
       blocks: true,
       blurb:
-          'Stash 100⚡. If it survives the war, the crew splits 200⚡. '
-          'Raid magnet — hide it well.'),
+          'Stash 100⚡. Smash it mid-raid to loot it now; if it survives the '
+          'war, the crew splits 200⚡. Raid magnet — hide it well.'),
   DefType.commandTent: DefSpec(DefType.commandTent,
       name: 'Command Tent',
       emoji: '🎖️',
@@ -407,8 +407,8 @@ const Map<DefType, DefSpec> kDefSpecs = {
       maxLevel: 3,
       blurb:
           'War-day elixir pump. L1 drips 6⚡/hr; L2 pumps 15⚡/hr; L3 floods '
-          '28⚡/hr. Accrues whenever anyone in the room opens the war — until '
-          'the day ends or the pump is smashed.'),
+          '28⚡/hr. Accrues to the owner on war day — smash an enemy tank and '
+          'loot ~2 hours of its drip.'),
 };
 
 /// The palette a player can place (castle is placed separately, one per player).
@@ -742,6 +742,21 @@ class WarCosts {
   static const double enemyPrepMirror = 0.70;
 
   static const double warStartResources = 120; // per BOT at war start (crew AND enemy)
+
+  /// ⚡ spilled to the raider who smashes a lootable building.
+  static double plunderAmount(DefType type, int level) {
+    switch (type) {
+      case DefType.storehouse:
+        return 50.0 * level.clamp(1, 5); // L1 50 · L2 100 · L3 150
+      case DefType.warGenerator:
+        // ~2 hours of pump sitting in the tank
+        return warGeneratorRatePerHour(level) * 2;
+      case DefType.tributeChest:
+        return 100.0;
+      default:
+        return 0;
+    }
+  }
 
   /// Real players get a modest raiding stipend at war start too, not the same
   /// bot-sized war chest — the rest of a real war-day budget should come
