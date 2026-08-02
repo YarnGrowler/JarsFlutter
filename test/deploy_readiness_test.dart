@@ -930,6 +930,39 @@ void main() {
               'when per-head prepEarned reads as barely anyone showed up');
     });
 
+    test(
+        'REGRESSION: a manual per-foe budget skips the formula entirely and '
+        'directly controls what the enemy builds', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.startWar();
+
+      g.isRoomAdmin = false;
+      expect(g.regenerateEnemyBase(perFoeBudget: 5000), isNotNull,
+          reason: 'a non-admin cannot set the budget manually either');
+
+      g.isRoomAdmin = true;
+      // `p.resources` reflects LEFTOVER after WarAi.designBase spends it,
+      // not the allocation itself — so the meaningful check is the
+      // OBSERVABLE effect: a bigger manual number builds a bigger fort.
+      expect(g.regenerateEnemyBase(perFoeBudget: 50), isNull);
+      final smallBuild = structureValue(g.enemyBase);
+
+      expect(g.regenerateEnemyBase(perFoeBudget: 5000), isNull);
+      final bigBuild = structureValue(g.enemyBase);
+
+      expect(bigBuild, greaterThan(smallBuild),
+          reason: 'the manual number alone controls the build — no formula, '
+              'no prepEarned, no built-value floor involved');
+    });
+
     test('the room admin CAN use every war-wide control', () {
       final g = WarGame.fresh();
       g.startPrep();

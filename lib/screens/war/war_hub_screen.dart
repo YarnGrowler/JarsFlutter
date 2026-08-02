@@ -577,8 +577,16 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
               // rebuilds the enemy from scratch off CURRENT numbers.
               if (g.canControlWar) ...[
                 const SizedBox(height: 8),
-                _btn('🔄 Regenerate enemy base', JarsColors.surface,
-                    () => _confirmRegenerateEnemy(context, g)),
+                Row(children: [
+                  Expanded(
+                      child: _btn('🔄 Regenerate enemy base',
+                          JarsColors.surface,
+                          () => _confirmRegenerateEnemy(context, g))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _btn('✏️ Set budget', JarsColors.surface,
+                          () => _showManualBudgetDialog(context, g))),
+                ]),
               ],
               if (g.feed.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -1067,6 +1075,54 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
     );
     if (ok != true) return;
     final err = g.regenerateEnemyBase();
+    if (err != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+
+  /// Admin-only: skip the automatic formula entirely and set exactly how
+  /// much ⚡ EACH enemy castle gets, then rebuild them with it.
+  Future<void> _showManualBudgetDialog(BuildContext context, WarGame g) async {
+    final ctrl = TextEditingController(
+        text: g.estimatedEnemyWarChestPerFoe.round().toString());
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text('Set enemy budget per castle',
+            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                'Skips the automatic formula — every enemy castle gets '
+                'EXACTLY this much ⚡, no top-up. Rebuilds their stronghold '
+                'with it right away.',
+                style: GoogleFonts.inter(color: JarsColors.textSecondary)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              style: GoogleFonts.spaceMono(color: JarsColors.textPrimary),
+              decoration: const InputDecoration(hintText: '⚡ per castle'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text('Rebuild',
+                  style: GoogleFonts.inter(color: JarsColors.red, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final amt = double.tryParse(ctrl.text);
+    if (amt == null || amt <= 0) return;
+    final err = g.regenerateEnemyBase(perFoeBudget: amt);
     if (err != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
     }

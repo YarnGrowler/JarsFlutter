@@ -903,23 +903,35 @@ class WarGame extends ChangeNotifier {
   /// still reads as barely anyone showed up. Built value can't be diluted
   /// that way: it's a direct measure of "how much fortress exists," not a
   /// per-head average.
-  String? regenerateEnemyBase() {
+  ///
+  /// [perFoeBudget], if given, throws out the automatic formula entirely —
+  /// every foe gets EXACTLY that many ⚡, full stop. For when the admin
+  /// just wants to set the number themselves rather than keep tuning what
+  /// counts toward an estimate.
+  String? regenerateEnemyBase({double? perFoeBudget}) {
     if (!canControlWar) return 'Only the room admin can do that.';
     if (phase != WarPhase.war) return 'Only mid-war.';
     final foes = enemyClan;
     if (foes.isEmpty) return null;
-    final fighters = warParticipants.isNotEmpty
-        ? warParticipants
-        : youClan.where((p) => !p.isBot).toList();
-    final prepFloor = fighters.fold(0.0, (sum, p) => sum + p.prepEarned) *
-        WarCosts.enemyPrepMirror;
-    final investFloor = youBase.builtValue * WarCosts.enemyPrepMirror;
-    final crewTotal = math.max(prepFloor, investFloor);
     final effSkill = _effectiveEnemySkill();
     final tier = _tierForSkill(effSkill);
     enemyDifficulty = tier;
-    final perFoeFloor = crewTotal / foes.length;
-    final forgeMul = _enemyForgeMultiplier;
+    double perFoeFloor;
+    double forgeMul;
+    if (perFoeBudget != null) {
+      perFoeFloor = perFoeBudget;
+      forgeMul = 0; // manual number IS the total — no automatic top-up
+    } else {
+      final fighters = warParticipants.isNotEmpty
+          ? warParticipants
+          : youClan.where((p) => !p.isBot).toList();
+      final prepFloor = fighters.fold(0.0, (sum, p) => sum + p.prepEarned) *
+          WarCosts.enemyPrepMirror;
+      final investFloor = youBase.builtValue * WarCosts.enemyPrepMirror;
+      final crewTotal = math.max(prepFloor, investFloor);
+      perFoeFloor = crewTotal / foes.length;
+      forgeMul = _enemyForgeMultiplier;
+    }
     for (final p in foes) {
       p.ai = tier;
       p.skillMul = effSkill / AiData.skill(tier);
