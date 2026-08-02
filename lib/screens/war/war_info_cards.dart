@@ -48,11 +48,15 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
               ? 'every volley'
               : 'every ${spec.fireEveryTicks} volleys'),
     if (type == DefType.cannon)
-      const _Stat('📏 Flat shot', 'walls and mountains block the line'),
+      const _Stat('📏 Flat shot', 'walls / gates / blockers stop the shot'),
+    if (type == DefType.archerTower)
+      const _Stat('🏹 Lobbed', 'arrows clear walls — height does the work'),
     if (type == DefType.ballista)
       const _Stat('🪁 Lobbed bolt', 'arcs clean over walls'),
     if (type == DefType.mortar)
       _Stat('💥 Splash', level >= 3 ? '2 tiles wide' : '1 tile wide'),
+    if (type == DefType.tesla)
+      const _Stat('🪁 Lobbed arc', 'zaps clear walls — short range only'),
     if (type == DefType.pitchThrower) ...[
       const _Stat('🔥 Boiling pitch', 'burns EVERY attacker beside it'),
       const _Stat('🕯 Clings', '+3/beat for 3 beats — and SLOWS them'),

@@ -99,7 +99,10 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                 ),
               ),
             ),
-            if (selStruct != null) _inspectPanel(g, sel!, selStruct),
+            if (selStruct != null)
+              _inspectPanel(g, sel!, selStruct)
+            else
+              _shopToolPanel(g),
             _palette(g),
           ],
         ),
@@ -338,6 +341,101 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
     );
   }
 
+  /// Shop selection strip — same shape as the map inspect panel: name, key
+  /// stats, and ⓘ. Shown whenever a palette tool is armed and nothing on
+  /// the map is selected.
+  Widget _shopToolPanel(dynamic g) {
+    if (_clearTool) {
+      return _toolStrip(
+        emoji: '🪓',
+        name: 'Clear Forest',
+        stats: '⚡${WarCosts.clearForest.round()} · turn forest into plains',
+        onInfo: null,
+      );
+    }
+    if (_castleTool) {
+      final spec = kDefSpecs[DefType.castle]!;
+      return _toolStrip(
+        emoji: spec.emoji,
+        name: spec.name,
+        stats: '❤ ${spec.hp} · free · your heart — protect it',
+        onInfo: () => showDefenseCard(context, DefType.castle),
+      );
+    }
+    final type = _defTool;
+    if (type == null) return const SizedBox.shrink();
+    final spec = kDefSpecs[type]!;
+    final locked = !(g.defUnlocked(type) as bool);
+    final parts = <String>[
+      '⚡${spec.cost}',
+      '❤ ${spec.hp}',
+      if (spec.isShooter) '⚔ ${spec.damage} · 🎯 ${spec.range}',
+      if (spec.isShooter && spec.minRange > 0) 'blind <${spec.minRange}',
+      if (type == DefType.cannon) 'flat — walls block',
+      if (type == DefType.archerTower ||
+          type == DefType.mortar ||
+          type == DefType.ballista ||
+          type == DefType.tesla)
+        'lobs over walls',
+      if (spec.hidden) 'hidden',
+      if (locked) 'LOCKED',
+    ];
+    return _toolStrip(
+      emoji: spec.emoji,
+      name: locked ? '🔒 ${spec.name}' : spec.name,
+      stats: parts.join(' · '),
+      onInfo: () => showDefenseCard(context, type),
+    );
+  }
+
+  Widget _toolStrip({
+    required String emoji,
+    required String name,
+    required String stats,
+    required VoidCallback? onInfo,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: const BoxDecoration(
+        color: Color(0xFF10131C),
+        border: Border(top: BorderSide(color: JarsColors.border)),
+      ),
+      child: Row(children: [
+        Text(emoji, style: const TextStyle(fontSize: 20)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.spaceGrotesk(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      color: JarsColors.textPrimary)),
+              Text(stats,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                      fontSize: 10.5, color: JarsColors.textSecondary)),
+            ],
+          ),
+        ),
+        if (onInfo != null)
+          GestureDetector(
+            onTap: onInfo,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text('ⓘ',
+                  style: GoogleFonts.inter(
+                      fontSize: 16, color: JarsColors.textTertiary)),
+            ),
+          ),
+      ]),
+    );
+  }
+
   /// The inspect panel for a selected placed defense (range + info, plus sell
   /// when the piece is yours).
   Widget _inspectPanel(dynamic g, Cell cell, dynamic s) {
@@ -557,6 +655,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                 _castleTool = true;
                 _clearTool = false;
                 _defTool = null;
+                _selectedCell = null;
               }),
               onInfo: () => showDefenseCard(context, DefType.castle),
             ),
@@ -589,6 +688,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                     _castleTool = false;
                     _clearTool = false;
                     _defTool = type;
+                    _selectedCell = null;
                   });
                 },
                 onInfo: () => showDefenseCard(context, type),
@@ -602,6 +702,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                 _castleTool = false;
                 _clearTool = true;
                 _defTool = null;
+                _selectedCell = null;
               }),
             ),
           ],
