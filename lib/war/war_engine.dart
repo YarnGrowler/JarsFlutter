@@ -746,31 +746,99 @@ class AttackState {
     }
   }
 
-  /// Jars-2.0-style dynamic defense: teslas strike troops the moment they move
-  /// within range (if their owner can pay for the shot).
+  /// Max raiders a Tesla arcs across in one zap (damage pool is split).
+  static const int teslaMaxTargets = 4;
+
+  /// Jars-2.0-style dynamic defense: teslas strike the moment a troop moves
+  /// within range — the whole arc chain fires (up to [teslaMaxTargets]).
   void _teslaZap(Troop t) {
     for (var r = 0; r < base.rows; r++) {
       for (var c = 0; c < base.cols; c++) {
         final s = base.structAt(r, c);
         if (s == null || !s.alive || !s.spec.zapsMovers) continue;
         if (s.cooldown > 0) continue;
-        final d = (t.r - r).abs() > (t.c - c).abs() ? (t.r - r).abs() : (t.c - c).abs();
-        if (d > s.spec.range) continue;
+        final effRange =
+            s.spec.range + (base.grid[r][c].terrain == Terrain.hill ? 1 : 0);
+        final d = math.max((t.r - r).abs(), (t.c - c).abs());
+        if (d > effRange) continue;
         if (!_pay(s.ownerId, WarCosts.defend)) continue;
-        s.triggered = true;
-        s.cooldown = 1;
-        final terr = TerrainData.defBonus(base.at(t.r, t.c)!.terrain);
-        final dmg = (s.spec.damage * (1 - terr)).round();
-        t.hp -= dmg;
-        _reveal(r, c, radius: 1);
-        _flash(t.r, t.c);
-        _fx(FxEvent(FxKind.zap, Cell(t.r, t.c),
-            from: Cell(r, c), amount: dmg, bySide: defender, defType: s.type));
-        log.add(AttackEvent('⚡ Tesla zapped ${t.spec.name} for $dmg',
-            at: Cell(t.r, t.c)));
+        _teslaArc(s, r, c, effRange,
+            moveTriggered: true, prefer: t);
         if (!t.alive) return;
       }
     }
+  }
+
+  /// Chain lightning: dump the Tesla's damage pool across the closest
+  /// attackers in range (1 → full hit, 2 → half each, … up to 4).
+  void _teslaArc(Structure s, int r, int c, int effRange,
+      {bool moveTriggered = false, Troop? prefer}) {
+    final hits = _attackersInRange(r, c, effRange,
+        max: teslaMaxTargets,
+        // a mover already touched the coil — fog can't mute the arc
+        ignoreFog: moveTriggered,
+        prefer: prefer);
+    if (hits.isEmpty) return;
+    s.triggered = true;
+    s.cooldown = moveTriggered ? 1 : _reloadFor(s, r, c);
+    s.aimAngle = math.atan2(
+        (hits.first.r - r).toDouble(), (hits.first.c - c).toDouble());
+    if (moveTriggered) _reveal(r, c, radius: 1);
+
+    final n = hits.length;
+    final pool = s.damage;
+    var share = pool ~/ n;
+    var rem = pool % n;
+    var killed = 0;
+    for (final target in hits) {
+      var raw = share;
+      if (rem > 0) {
+        raw++;
+        rem--;
+      }
+      final terr = TerrainData.defBonus(base.at(target.r, target.c)!.terrain);
+      final dmg = (raw * (1 - terr)).round();
+      if (dmg <= 0) continue;
+      target.hp -= dmg;
+      _flash(target.r, target.c);
+      _fx(FxEvent(FxKind.zap, Cell(target.r, target.c),
+          from: Cell(r, c), amount: dmg, bySide: defender, defType: s.type));
+      if (!target.alive) {
+        troopsLost++;
+        killed++;
+        _fx(FxEvent(FxKind.death, Cell(target.r, target.c),
+            bySide: defender, emoji: target.spec.emoji));
+      }
+    }
+    log.add(AttackEvent(
+        n == 1
+            ? '⚡ Tesla zapped ${hits.first.spec.name}'
+            : '⚡ Tesla arced across $n ($pool pool)${killed > 0 ? ' · $killed fell' : ''}',
+        at: Cell(r, c)));
+  }
+
+  /// Closest live attackers within Chebyshev [range], capped at [max].
+  List<Troop> _attackersInRange(int r, int c, int range,
+      {required int max, bool ignoreFog = false, Troop? prefer}) {
+    final scored = <(int, Troop)>[];
+    for (final t in troops) {
+      if (!t.alive) continue;
+      final d = math.max((t.r - r).abs(), (t.c - c).abs());
+      if (d > range) continue;
+      if (!ignoreFog && d > _spotRange(range, t)) continue;
+      scored.add((d, t));
+    }
+    scored.sort((a, b) {
+      // the troop that just stepped on the coil goes first in a move-zap
+      if (prefer != null) {
+        if (identical(a.$2, prefer)) return -1;
+        if (identical(b.$2, prefer)) return 1;
+      }
+      final byDist = a.$1.compareTo(b.$1);
+      if (byDist != 0) return byDist;
+      return a.$2.hp.compareTo(b.$2.hp);
+    });
+    return [for (final e in scored.take(max)) e.$2];
   }
 
   // ── the positional multiplier (Jars 3.0 formula) ────────────────────────────
@@ -1125,6 +1193,11 @@ class AttackState {
         // high ground: a tower on a HILL sees one tile farther
         final effRange =
             s.spec.range + (base.grid[r][c].terrain == Terrain.hill ? 1 : 0);
+        // TESLA: chain arc — dump its damage pool across up to 4 raiders
+        if (s.type == DefType.tesla) {
+          _teslaArc(s, r, c, effRange);
+          continue;
+        }
         final target = _nearestAttackerInRange(r, c, effRange,
             minRange: s.spec.minRange,
             // only CANNONS fire flat — walls block them. Archers loose from
@@ -1151,8 +1224,7 @@ class AttackState {
         final dmg = (s.damage * (1 - terr)).round();
         target.hp -= dmg;
         _flash(target.r, target.c);
-        _fx(FxEvent(s.type == DefType.tesla ? FxKind.zap : FxKind.shot,
-            Cell(target.r, target.c),
+        _fx(FxEvent(FxKind.shot, Cell(target.r, target.c),
             from: Cell(r, c), amount: dmg, bySide: defender, defType: s.type));
         log.add(AttackEvent('${s.spec.emoji} fires $dmg at ${target.spec.name}',
             at: Cell(target.r, target.c)));

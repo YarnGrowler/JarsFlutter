@@ -184,6 +184,48 @@ void main() {
       expect(st.base.structAt(Base.defaultSize - 4, 3)!.triggered, isTrue);
     });
 
+    test('a tesla splits its damage pool across up to 4 raiders', () {
+      final base = Base(WarSide.enemy, 17);
+      flatten(base, [
+        for (var r = 0; r < Base.defaultSize; r++)
+          for (var c = 2; c <= 5; c++) [r, c]
+      ]);
+      base.placeCastle('def', 2, 3);
+      base.place(10, 3, DefType.tesla, 'def');
+      final st = AttackState(
+          base: base,
+          attacker: WarSide.you,
+          attackerName: 'Me',
+          pools: MapPools({'me': 999, 'def': 999}),
+          freeActions: true,
+          intel: {for (var k = 0; k < base.rows * base.cols; k++) k});
+      // land on the ring, then park four soldiers in the coil's bubble
+      final spots = [
+        [10, 4],
+        [10, 5],
+        [11, 3],
+        [11, 4],
+      ];
+      final drop = base.rows - 1;
+      final squad = <Troop>[];
+      for (var i = 0; i < spots.length; i++) {
+        final t = st.spawn(TroopType.soldier, 'me', drop, 3 + i)!;
+        t.r = spots[i][0];
+        t.c = spots[i][1];
+        squad.add(t);
+      }
+      final hp0 = [for (final t in squad) t.hp];
+      st.defendersReact();
+      final lost = [
+        for (var i = 0; i < squad.length; i++) hp0[i] - squad[i].hp
+      ];
+      expect(lost.every((d) => d > 0), isTrue,
+          reason: 'every raider in the pack should take a share');
+      expect(lost.reduce((a, b) => a + b), 24,
+          reason: 'L1 pool is 24 split across the four');
+      expect(lost.toSet().length, 1, reason: 'even split — 6 each');
+    });
+
     test('defenders never gain XP — no unkillable guards', () {
       final base = Base(WarSide.enemy, 11);
       flatten(base, [

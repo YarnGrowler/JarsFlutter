@@ -242,11 +242,13 @@ const Map<DefType, DefSpec> kDefSpecs = {
       upgradeCost: 45,
       maxLevel: 5,
       range: 2,
-      damage: 22,
+      damage: 24, // pool split across up to 4 raiders in range
       fireEveryTicks: 1,
       zapsMovers: true,
       blurb:
-          'Hidden until it strikes — and it ZAPS troops the moment they move in range.'),
+          'Hidden chain lightning. Dumps a 24⚡ pool across up to 4 raiders '
+          'in range (24 solo, 12 each for two, 6 each for four) — and zaps '
+          'again the moment anyone moves nearby.'),
   DefType.guardPost: DefSpec(DefType.guardPost,
       name: 'Guard Post',
       emoji: '⛺',

@@ -55,13 +55,19 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
       const _Stat('🪁 Lobbed bolt', 'arcs clean over walls'),
     if (type == DefType.mortar)
       _Stat('💥 Splash', level >= 3 ? '2 tiles wide' : '1 tile wide'),
-    if (type == DefType.tesla)
+    if (type == DefType.tesla) ...[
       const _Stat('🪁 Lobbed arc', 'zaps clear walls — short range only'),
+      _Stat(
+          '⛓ Chain',
+          'splits ${dmgAt(level)} pool across up to 4 '
+          '(${dmgAt(level)} / ${dmgAt(level) ~/ 2} / ${dmgAt(level) ~/ 4} each)'),
+    ],
     if (type == DefType.pitchThrower) ...[
       const _Stat('🔥 Boiling pitch', 'burns EVERY attacker beside it'),
       const _Stat('🕯 Clings', '+3/beat for 3 beats — and SLOWS them'),
     ],
-    if (spec.zapsMovers) const _Stat('⚡ Dynamic', 'zaps troops as they MOVE'),
+    if (spec.zapsMovers)
+      const _Stat('⚡ Dynamic', 'arcs again when a troop MOVES in range'),
     if (spec.chipOnEnter > 0) _Stat('🩸 On contact', '${spec.chipOnEnter} dmg'),
     if (spec.extraMoveCost > 0)
       _Stat('🐌 Slows', '+${spec.extraMoveCost} move cost'),

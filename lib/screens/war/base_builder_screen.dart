@@ -564,7 +564,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                 borderRadius: BorderRadius.circular(9),
                 border: Border.all(color: JarsColors.red.withValues(alpha: 0.6)),
               ),
-              child: Text('SELL +⚡${spec.cost}',
+              child: Text('SELL +⚡${(s.investedCost as num).round()}',
                   style: GoogleFonts.spaceGrotesk(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800,
