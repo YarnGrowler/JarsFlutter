@@ -1719,6 +1719,8 @@ class WarGame extends ChangeNotifier {
         'raid': liveAttack?.toJson(),
         'youIntel': youIntel.toList(),
         'enemyIntel': enemyIntel.toList(),
+        'feed': [for (final e in feed) e.toJson()],
+        'lastEnemyRaider': lastEnemyRaider,
       };
 
   /// Rehydrate every field from a [toJson] blob — pure deserialization, no
@@ -1773,6 +1775,26 @@ class WarGame extends ChangeNotifier {
     enemyIntel = {
       for (final v in (j['enemyIntel'] as List? ?? const [])) (v as num).toInt()
     };
+    // Raid history + replays — without this, an app reload (or a mobile
+    // browser reclaiming a backgrounded tab, the everyday version of that)
+    // wiped every raid's watchable replay while leaving the DAMAGE it dealt
+    // behind (that part always lived on youBase/enemyBase, which WAS
+    // serialized) — "I can see the damage but there's no replay."
+    feed
+      ..clear()
+      ..addAll([
+        for (final ej in (j['feed'] as List? ?? const []))
+          WarLogEntry.fromJson(ej as Map<String, dynamic>)
+      ]);
+    lastEnemyReplay = null;
+    lastEnemyRaider = j['lastEnemyRaider'] as String? ?? '';
+    for (final e in feed) {
+      if (e.attackerSide == WarSide.enemy &&
+          e.replay != null &&
+          e.replay!.isNotEmpty) {
+        lastEnemyReplay = e.replay;
+      }
+    }
     // resume an in-progress raid — nothing the player built up is lost
     if (j['raid'] != null && phase == WarPhase.war) {
       liveAttack = AttackState.restore(

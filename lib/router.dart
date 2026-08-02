@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,6 +32,8 @@ import 'screens/ranks/ranks_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'providers/war_providers.dart';
 import 'services/auth_service.dart';
+import 'war/war_game.dart';
+import 'war/war_types.dart';
 import 'core/onboarding_campaign.dart';
 import 'core/onboarding_redo.dart';
 import 'core/theme.dart';
@@ -385,11 +389,49 @@ final routerProvider = Provider<GoRouter>((ref) {
 // `WarGame.instance.roomId` still null, silently earning zero war points.
 // Watching it once, here, on the shell that's mounted for the whole
 // authenticated app regardless of which tab is showing, closes that gap.
-class _WarSyncKeepAlive extends ConsumerWidget {
+//
+// ALSO drives the wall-clock catch-up (`syncToWallClock`) — previously that
+// only ever fired from war_hub_screen's initState + its own 1s ticker, so a
+// player who navigated straight to the battle/defense screen (or just sat
+// there instead of the hub) never got the enemy's already-happened raids
+// simulated locally: the feed stayed stale and "WATCH" replay buttons found
+// nothing, even hours into a war that had genuinely moved on. Ticking it
+// here too means every screen — not just the hub — comes home to a war
+// that kept going, with no detour through the hub required.
+class _WarSyncKeepAlive extends ConsumerStatefulWidget {
   const _WarSyncKeepAlive();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_WarSyncKeepAlive> createState() => _WarSyncKeepAliveState();
+}
+
+class _WarSyncKeepAliveState extends ConsumerState<_WarSyncKeepAlive> {
+  Timer? _clockTick;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) WarGame.instance.syncToWallClock();
+    });
+    // cheap when nothing new has happened (an early return before any real
+    // work) — matches the hub's own polling cadence so a raid landing while
+    // you're elsewhere still shows up within a second of it happening.
+    _clockTick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (WarGame.instance.phase == WarPhase.war) {
+        WarGame.instance.syncToWallClock();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.watch(warRoomSyncProvider);
     return const SizedBox.shrink();
   }

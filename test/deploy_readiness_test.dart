@@ -932,6 +932,51 @@ void main() {
       expect(g.lastVerdict, isNotNull, reason: 'a verdict was struck');
     });
 
+    test(
+        'REGRESSION: a raid\'s replay survives save/load, not just the '
+        'damage it dealt', () {
+      // The exact bug report: "the enemy attacked, I can see the damage on
+      // my base, but it says no replay and asks me to fast-forward." A
+      // reload (app restart, or a mobile browser reclaiming a backgrounded
+      // tab — the everyday version of the same thing) used to wipe `feed`
+      // entirely, since it was never part of toJson()/loadFromJson() — only
+      // the BASE damage (serialized separately) survived. The clock also
+      // wouldn't re-simulate that hour on reload (it already shows as
+      // having passed), so the replay was gone for good, forever, even
+      // though the raid genuinely happened.
+      var fakeMs = 1700000000000;
+      WarGame.nowMs = () => fakeMs;
+      addTearDown(() => WarGame.nowMs = () => DateTime.now().millisecondsSinceEpoch);
+
+      final g = freshGame(99); // high difficulty: the enemy WILL raid
+      g.startWar();
+      int hourMs(int h) => h * WarGame.realSecondsPerSimHour * 1000;
+      fakeMs += hourMs(5);
+      g.syncToWallClock();
+      final enemyRaid = g.feed.firstWhere(
+          (e) => e.attackerSide == WarSide.enemy && e.replay != null);
+      expect(enemyRaid.replay, isNotEmpty,
+          reason: 'sanity: the enemy really did raid, with a real replay');
+      final damageBefore = g.youBase.destructionPercent;
+      expect(damageBefore, greaterThan(0),
+          reason: 'sanity: the raid actually damaged the base');
+
+      // simulate exactly what a reload does: a FRESH instance loads the
+      // exact same JSON this one would have saved.
+      final reloaded = WarGame.fresh();
+      reloaded.loadFromJson(g.toJson());
+
+      expect(reloaded.youBase.destructionPercent, damageBefore,
+          reason: 'the damage always survived reloads — unaffected');
+      final restoredRaid = reloaded.feed.firstWhere(
+          (e) => e.attackerSide == WarSide.enemy && e.replay != null,
+          orElse: () => throw StateError('the raid itself vanished from feed'));
+      expect(restoredRaid.replay, isNotEmpty,
+          reason: 'the replay must survive too, not just the damage it dealt');
+      expect(reloaded.lastEnemyReplay, isNotNull,
+          reason: 'the quick "last enemy raid" replay survives too');
+    });
+
     test('the countdown counts DOWN toward the next raid', () {
       final g = freshGame(50);
       g.startWar();
