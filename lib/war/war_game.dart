@@ -883,6 +883,58 @@ class WarGame extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Bumped each [regenerateEnemyBase] call so the reroll never repeats the
+  /// same layout twice in a row. Not persisted — worst case a reload just
+  /// means the next reroll after that lands on a seed it's used before.
+  int _enemyRegenSeed = 0;
+
+  /// Admin-only, mid-war: tear down and rebuild the enemy's stronghold —
+  /// fresh layout, war chest recomputed from CURRENT crew prep (not
+  /// whatever was locked in the moment [startWar] ran). For when the
+  /// headcount/budget came out wrong — a teammate's castle got placed
+  /// after the snapshot, more prep got logged since, or the layout itself
+  /// just rolled badly.
+  String? regenerateEnemyBase() {
+    if (!canControlWar) return 'Only the room admin can do that.';
+    if (phase != WarPhase.war) return 'Only mid-war.';
+    final foes = enemyClan;
+    if (foes.isEmpty) return null;
+    final fighters = warParticipants.isNotEmpty
+        ? warParticipants
+        : youClan.where((p) => !p.isBot).toList();
+    final crewTotal = fighters.fold(0.0, (sum, p) => sum + p.prepEarned) *
+        WarCosts.enemyPrepMirror;
+    final effSkill = _effectiveEnemySkill();
+    final tier = _tierForSkill(effSkill);
+    enemyDifficulty = tier;
+    final perFoeFloor = crewTotal / foes.length;
+    final forgeMul = _enemyForgeMultiplier;
+    for (final p in foes) {
+      p.ai = tier;
+      p.skillMul = effSkill / AiData.skill(tier);
+      p.resources = perFoeFloor + WarCosts.prepBudgetFor(p.skill) * forgeMul;
+    }
+    _enemyRegenSeed++;
+    enemyBase = Base(WarSide.enemy,
+        seedFromParts([warSeed, 'enemyRegen', _enemyRegenSeed]),
+        size: mapSize, config: _terrainForDivision());
+    final wards = currentDivision.wards;
+    WarAi.designBase(
+      enemyBase,
+      foes,
+      SeededRng(seedFromParts([warSeed, 'enemyDesign', _enemyRegenSeed])),
+      style: StrongholdStyle(
+        minRooms: wards >= 2 ? 8 + wards * 6 : null,
+        unlockDefs: unlockedDefsNow,
+      ),
+    );
+    // a torn-down-and-rebuilt fortress isn't the one anyone scouted
+    enemyIntel = {};
+    _save();
+    notifyListeners();
+    return null;
+  }
+
   /// Drop surplus enemy bots so the war mirrors [keep] fighters — not the
   /// full room roster. Call before [WarAi.designBase] so idle seats never
   /// buy the enemy extra castles or hourly raid rolls.
@@ -1588,10 +1640,26 @@ class WarGame extends ChangeNotifier {
   /// judgment call, whatever the room's admin decides. Unlike a peer
   /// donation (which moves ⚡ OUT of the giver's own pool), this creates it,
   /// so it isn't capped by anyone's current balance.
+  ///
+  /// Deliberately does NOT go through [_creditEarn]: a manual grant always
+  /// counts toward [WarPlayer.prepEarned] — and so toward the enemy's war
+  /// chest floor via [regenerateEnemyBase] — even mid-war, when organic
+  /// workout-earn no longer touches prepEarned. That's the whole point of
+  /// pairing this with regenerateEnemyBase: reimburse whoever the roster
+  /// timing shortchanged, then rebuild the enemy off the corrected numbers.
   void grantPoints(String playerId, double amount) {
     if (!canControlWar) return;
     if (amount <= 0) return;
-    _creditEarn(amount, playerId);
+    WarPlayer? p;
+    for (final pl in players) {
+      if (pl.id == playerId) {
+        p = pl;
+        break;
+      }
+    }
+    if (p == null) return;
+    p.resources += amount;
+    p.prepEarned += amount;
     _save();
     notifyListeners();
   }

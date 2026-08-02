@@ -570,6 +570,16 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                           () => _confirmEndDay(context, g))),
                 ]),
               ],
+              // Admin-only, real (not dev-gated): the enemy's war chest is
+              // sized off whoever counted as a "fighter" the moment war
+              // started — a teammate's castle placed late, or by the admin
+              // on their behalf, can leave that snapshot wrong. This
+              // rebuilds the enemy from scratch off CURRENT numbers.
+              if (g.canControlWar) ...[
+                const SizedBox(height: 8),
+                _btn('🔄 Regenerate enemy base', JarsColors.surface,
+                    () => _confirmRegenerateEnemy(context, g)),
+              ],
               if (g.feed.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text('WAR FEED',
@@ -1031,6 +1041,35 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
       ),
     );
     if (ok == true) g.advanceToEndOfDay();
+  }
+
+  Future<void> _confirmRegenerateEnemy(BuildContext context, WarGame g) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text('Regenerate the enemy base?',
+            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+        content: Text(
+            'Tears down their stronghold and rebuilds it fresh, with the '
+            'war chest recalculated from your crew\'s CURRENT logged prep. '
+            'Any destruction your clan already dealt to it is lost, and '
+            'scouting starts over.',
+            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text('Regenerate',
+                  style: GoogleFonts.inter(color: JarsColors.red, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final err = g.regenerateEnemyBase();
+    if (err != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
   }
 
   Future<void> _confirmNextWar(BuildContext context, WarGame g) async {

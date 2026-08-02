@@ -820,6 +820,70 @@ void main() {
       expect(g.youBase.castles['f0'], isNotNull);
     });
 
+    test(
+        'placing a teammate\'s castle for them does NOT retroactively grant '
+        'them prep credit', () {
+      // The exact bug report: 5-6 real castles down (several placed by the
+      // ADMIN, via placeCastle's forPlayerId, for teammates who never
+      // personally opened the app), but the enemy's war chest sized as if
+      // only ONE person's worth of crew existed. This is WORKING AS
+      // DESIGNED, not a bug: a castle placement is a LAYOUT decision, never
+      // a stand-in for real logged effort — otherwise the enemy's budget
+      // (deliberately built to reflect real crew effort, not a guess or a
+      // headcount) could be inflated by an admin favor alone, with zero
+      // actual work behind it. Confirmed here so a future session doesn't
+      // "fix" this the way this one almost did.
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      final f0Before = g.youClan.firstWhere((p) => p.id == 'f0').prepEarned;
+
+      g.isRoomAdmin = true;
+      g.placeCastle(12, 12, forPlayerId: 'f0');
+
+      final f0After = g.youClan.firstWhere((p) => p.id == 'f0').prepEarned;
+      expect(f0After, f0Before,
+          reason: 'a castle placed on someone\'s behalf funds nothing — '
+              'only their OWN logged effort (or an explicit admin grant) '
+              'ever counts toward the enemy\'s war-chest floor');
+    });
+
+    test(
+        'REGRESSION: regenerateEnemyBase is admin-only, and picks up a '
+        'manual reimbursement made mid-war', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.startWar();
+
+      g.isRoomAdmin = false;
+      expect(g.regenerateEnemyBase(), isNotNull,
+          reason: 'a non-admin cannot regenerate the enemy');
+
+      g.isRoomAdmin = true;
+      final before = structureValue(g.enemyBase);
+      // f0's prep stipend never landed before war started (simulating the
+      // bug above) — the admin manually corrects it mid-war...
+      g.grantPoints('f0', 3000);
+      // ...then rebuilds the enemy off the corrected numbers.
+      expect(g.regenerateEnemyBase(), isNull);
+      expect(structureValue(g.enemyBase), greaterThan(before),
+          reason: 'the reimbursement actually reached the enemy\'s war '
+              'chest this time, unlike a plain organic earn would mid-war');
+    });
+
     test('the room admin CAN use every war-wide control', () {
       final g = WarGame.fresh();
       g.startPrep();
