@@ -555,6 +555,21 @@ class Base {
     return ((1 - aliveWeightHp / total) * 100).clamp(0, 100);
   }
 
+  /// Total ⚡ cost of every structure currently standing — an honest,
+  /// hard-to-dilute measure of "how much did this crew actually invest,"
+  /// independent of how many nominal roster seats exist or who personally
+  /// earned the ⚡ that got spent (co-op: anyone can build anywhere).
+  double get builtValue {
+    var v = 0.0;
+    for (final row in grid) {
+      for (final tile in row) {
+        final s = tile.structure;
+        if (s != null) v += s.spec.cost;
+      }
+    }
+    return v;
+  }
+
   int get castleCount => castleCells.length;
   int get castlesRazed {
     var n = 0;

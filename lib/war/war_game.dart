@@ -894,6 +894,15 @@ class WarGame extends ChangeNotifier {
   /// headcount/budget came out wrong — a teammate's castle got placed
   /// after the snapshot, more prep got logged since, or the layout itself
   /// just rolled badly.
+  ///
+  /// Floors the chest at whichever is bigger: raw `Σ prepEarned` (workouts
+  /// + admin grants), or what the crew's shared base actually cost to
+  /// BUILD. The co-op base lets anyone spend anywhere, so a crew heavily
+  /// carried by one grinder's earnings can build a real fortress while
+  /// `Σ prepEarned` — divided across every castle-holding roster seat —
+  /// still reads as barely anyone showed up. Built value can't be diluted
+  /// that way: it's a direct measure of "how much fortress exists," not a
+  /// per-head average.
   String? regenerateEnemyBase() {
     if (!canControlWar) return 'Only the room admin can do that.';
     if (phase != WarPhase.war) return 'Only mid-war.';
@@ -902,8 +911,10 @@ class WarGame extends ChangeNotifier {
     final fighters = warParticipants.isNotEmpty
         ? warParticipants
         : youClan.where((p) => !p.isBot).toList();
-    final crewTotal = fighters.fold(0.0, (sum, p) => sum + p.prepEarned) *
+    final prepFloor = fighters.fold(0.0, (sum, p) => sum + p.prepEarned) *
         WarCosts.enemyPrepMirror;
+    final investFloor = youBase.builtValue * WarCosts.enemyPrepMirror;
+    final crewTotal = math.max(prepFloor, investFloor);
     final effSkill = _effectiveEnemySkill();
     final tier = _tierForSkill(effSkill);
     enemyDifficulty = tier;

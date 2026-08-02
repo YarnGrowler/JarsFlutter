@@ -884,6 +884,52 @@ void main() {
               'chest this time, unlike a plain organic earn would mid-war');
     });
 
+    test(
+        'REGRESSION: regenerateEnemyBase floors on what the crew actually '
+        'BUILT, not just a per-head prepEarned average', () {
+      // The exact follow-up bug report: "our total defensive spend is
+      // 5000... regenerate only builds the enemy with 355." A crew heavily
+      // carried by one grinder's real workout effort can build a genuine
+      // fortress (co-op: anyone's ⚡ can build anywhere on the shared
+      // base) — but Σ prepEarned divided across every castle-holding
+      // roster seat still reads as "barely anyone contributed," starving
+      // the enemy even though real ⚡ was clearly earned and spent.
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A'],
+            ['f1', 'B'],
+            ['f2', 'C'],
+            ['f3', 'D'],
+            ['f4', 'E'],
+          ]));
+      g.isRoomAdmin = true;
+      // everyone gets a castle (headcount = 6) — but only 'me' ever earns
+      // anything.
+      var col = 10;
+      for (final p in g.youClan) {
+        g.placeCastle(10, col, forPlayerId: p.id);
+        col += 2;
+      }
+      g.startWar();
+      final lowPrepFloor = structureValue(g.enemyBase);
+
+      // the crew built a real fortress anyway.
+      for (var i = 0; i < 40; i++) {
+        g.youBase.place(20 + i ~/ 10, 5 + i % 10, DefType.wall, 'me');
+      }
+      expect(g.youBase.builtValue, greaterThan(300));
+
+      expect(g.regenerateEnemyBase(), isNull);
+      expect(structureValue(g.enemyBase), greaterThan(lowPrepFloor),
+          reason: 'a genuinely built-up shared base floors the enemy even '
+              'when per-head prepEarned reads as barely anyone showed up');
+    });
+
     test('the room admin CAN use every war-wide control', () {
       final g = WarGame.fresh();
       g.startPrep();
