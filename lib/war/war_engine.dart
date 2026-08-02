@@ -1023,6 +1023,7 @@ class AttackState {
       if (s.hp <= 0) {
         _grantXp(t, Xp.perStructure.toDouble());
         _plunder(s, r, c, t.ownerId);
+        _addGrave(r, c);
         _fx(FxEvent(FxKind.death, Cell(r, c), bySide: t.side, defType: s.type));
         log.add(
             AttackEvent('${s.spec.emoji} ${s.spec.name} destroyed', at: Cell(r, c)));
@@ -1039,6 +1040,7 @@ class AttackState {
         _flash(r + dr, c + dc);
         if (ns.hp <= 0) {
           _plunder(ns, r + dr, c + dc, t.ownerId);
+          _addGrave(r + dr, c + dc);
           _fx(FxEvent(FxKind.death, Cell(r + dr, c + dc),
               bySide: t.side, defType: ns.type));
         }
@@ -1103,6 +1105,7 @@ class AttackState {
     if (s.hp <= 0) {
       _grantXp(t, Xp.perStructure.toDouble());
       _plunder(s, r, c, t.ownerId);
+      _addGrave(r, c);
       _fx(FxEvent(FxKind.death, Cell(r, c), bySide: t.side, defType: s.type));
       log.add(AttackEvent('${s.spec.emoji} ${s.spec.name} destroyed', at: Cell(r, c)));
     } else if (pv.counter > 0 && t.alive) {
@@ -1420,20 +1423,26 @@ class AttackState {
     // persists across raids and saves); the raid copy feeds the replay frames
     for (final t in [...troops, ...garrison]) {
       if (t.alive) continue;
-      final used = {
-        for (final g in base.graves)
-          if (g[0] == t.r && g[1] == t.c) g[2]
-      };
-      var slot = 0;
-      while (used.contains(slot) && slot < 3) {
-        slot++;
-      }
-      final grave = [t.r, t.c, slot];
-      if (base.graves.length < 250) base.graves.add(grave);
-      if (graves.length < 120) graves.add(grave);
+      _addGrave(t.r, t.c);
     }
     troops.removeWhere((t) => !t.alive);
     garrison.removeWhere((t) => !t.alive);
+  }
+
+  /// Marks a tombstone at (r,c) — troop deaths AND destroyed structures both
+  /// land here, so rubble tiles get a grave same as a fallen fighter would.
+  void _addGrave(int r, int c) {
+    final used = {
+      for (final g in base.graves)
+        if (g[0] == r && g[1] == c) g[2]
+    };
+    var slot = 0;
+    while (used.contains(slot) && slot < 3) {
+      slot++;
+    }
+    final grave = [r, c, slot];
+    if (base.graves.length < 250) base.graves.add(grave);
+    if (graves.length < 120) graves.add(grave);
   }
 
   /// Blind bombardment: pick a concealed raider in range, roll the dice, and

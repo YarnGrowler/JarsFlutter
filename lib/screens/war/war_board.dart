@@ -234,8 +234,20 @@ class WarBoardPainter extends CustomPainter {
     if (replayFrame != null) {
       _drawReplay(canvas, replayFrame!);
     } else {
+      // Viewport-cull troops same as terrain/structures — with hundreds of
+      // troops on a big board, painting every one of them every frame
+      // regardless of visibility was the main cost driver when zoomed out.
+      // The +/-1 margin matches _cull()'s own buffer so a troop gliding
+      // across the viewport edge never pops in/out mid-stride.
       for (final tr in troops) {
-        if (tr.alive) _troop(canvas, tr);
+        if (!tr.alive) continue;
+        if (tr.r < _r0 - 1 ||
+            tr.r > _r1 + 1 ||
+            tr.c < _c0 - 1 ||
+            tr.c > _c1 + 1) {
+          continue;
+        }
+        _troop(canvas, tr);
       }
     }
     if (fog != null) _fogPass(canvas);
@@ -1994,6 +2006,16 @@ class WarBoardPainter extends CustomPainter {
   }
 
   void _rubble(Canvas canvas, Rect rect, int r, int c) {
+    if (!_hiDetail) {
+      // zoomed out: rubble is just dark debris, no smolder/smoke particles —
+      // a base with dozens of destroyed structures was paying full particle
+      // cost per tile every frame regardless of zoom (unlike _burnFx, which
+      // already had this shortcut).
+      canvas.drawOval(
+          rect.deflate(rect.width * 0.15),
+          Paint()..color = const Color(0xFF3A3F49).withValues(alpha: 0.6));
+      return;
+    }
     final p = Paint()..color = const Color(0xFF3A3F49).withValues(alpha: 0.8);
     for (var i = 0; i < 4; i++) {
       final fx = 0.25 + _hash(r, c, 10 + i) * 0.5;

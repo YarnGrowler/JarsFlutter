@@ -87,6 +87,20 @@ void main() {
       expect(t.xp, greaterThan(0));
     });
 
+    test('a destroyed structure leaves a grave, same as a fallen troop', () {
+      final st = scenario();
+      final t = st.spawn(TroopType.sapper, 'me', Base.defaultSize - 1, 3)!;
+      t.r = Base.defaultSize - 3;
+      final wall = st.base.structAt(Base.defaultSize - 4, 3)!;
+      wall.hp = 1; // guarantee this hit finishes it off
+      st.attackCell(t, Base.defaultSize - 4, 3);
+      expect(wall.alive, isFalse, reason: 'sanity: the wall is actually gone');
+      expect(
+          st.graves.any((g) => g[0] == Base.defaultSize - 4 && g[1] == 3),
+          isTrue,
+          reason: 'a destroyed structure gets a tombstone too, same as troops');
+    });
+
     test('defenses are AUTONOMOUS — even a broke clan\'s towers fight', () {
       final rich = scenario(defenderFunds: 999);
       final broke = scenario(defenderFunds: 0);

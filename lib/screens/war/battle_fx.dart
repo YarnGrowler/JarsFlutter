@@ -82,8 +82,21 @@ class _FxPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Viewport cull: with hundreds of troops/structures in play, arrows,
+    // blasts, and damage numbers happening off-screen were still fully
+    // drawn every frame — the single biggest cost when zoomed out enough
+    // to see the whole board. Inflated generously since shots arc and
+    // damage numbers float upward past their origin cell.
+    final visible =
+        (Offset.zero & size).inflate(tile * 3);
     for (final f in fx) {
       final e = f.e;
+      final toPt = _c(e.to);
+      final fromPt = e.from != null ? _c(e.from!) : null;
+      if (!visible.contains(toPt) &&
+          (fromPt == null || !visible.contains(fromPt))) {
+        continue;
+      }
       // floating damage number (encoded as melee with negative amount)
       if (e.amount < 0) {
         _damageNumber(canvas, f);
