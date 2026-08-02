@@ -250,10 +250,7 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
             ],
             const SizedBox(height: 20),
             GestureDetector(
-              onTap: () {
-                WarGame.instance.nextWar();
-                context.go('/war');
-              },
+              onTap: () => _confirmNextWar(context),
               child: Container(
                 height: 52,
                 alignment: Alignment.center,
@@ -275,6 +272,31 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
   }
 
   bool get _haveRealData => _verdict != null;
+
+  Future<void> _confirmNextWar(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text('Start the next war?',
+            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+        content: Text(
+            'Clears this war\'s base and builds a fresh one for prep — for '
+            'everyone in the room. There\'s no going back to this war after.',
+            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text('Next war',
+                  style: GoogleFonts.inter(color: JarsColors.gold, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    WarGame.instance.nextWar();
+    if (context.mounted) context.go('/war');
+  }
 
   void _watchRaid(BuildContext context, WarLogEntry e) {
     // your clan's raids hit the ENEMY base; theirs hit yours. The war is

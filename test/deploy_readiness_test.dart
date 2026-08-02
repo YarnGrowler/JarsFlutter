@@ -763,6 +763,32 @@ void main() {
               'them while they\'re away');
     });
 
+    test('REGRESSION: only the admin can grant ⚡, and it lands on the '
+        'right teammate', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      final before = g.resourcesOf('f0');
+
+      g.isRoomAdmin = false;
+      g.grantPoints('f0', 500);
+      expect(g.resourcesOf('f0'), before,
+          reason: 'a non-admin cannot manually credit anyone');
+
+      g.isRoomAdmin = true;
+      g.grantPoints('f0', 500);
+      expect(g.resourcesOf('f0'), before + 500,
+          reason: 'the admin can, and it lands on the named player');
+      expect(g.resourcesOf('me'), isNot(before + 500),
+          reason: 'never lands on whoever happens to be active instead');
+    });
+
     test('the room admin CAN use every war-wide control', () {
       final g = WarGame.fresh();
       g.startPrep();

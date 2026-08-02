@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/debug_tools.dart';
 import '../../core/theme.dart';
 import '../../providers/war_providers.dart';
 import '../../war/war_game.dart';
@@ -539,7 +540,14 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                 ),
               const SizedBox(height: 12),
               _warClockCard(g),
-              if (g.canControlWar) ...[
+              // Dev-only: skipping the wall clock is a testing convenience,
+              // never a real player's call — the war runs on its own now
+              // (Tier 1 auto-advance). A real admin accidentally landing on
+              // "End Day" used to instantly resolve the ENTIRE rest of the
+              // war in one tap, no warning, no undo. Gated behind
+              // kDebugTools so it's invisible outside dev builds; kept
+              // behind a confirm dialog even there as a second guard.
+              if (g.canControlWar && kDebugTools) ...[
                 const SizedBox(height: 8),
                 Text('SKIP AHEAD · testing',
                     style: GoogleFonts.inter(
@@ -559,7 +567,7 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                       child: _btn('End Day', JarsColors.surface,
-                          () => g.advanceToEndOfDay())),
+                          () => _confirmEndDay(context, g))),
                 ]),
               ],
               if (g.feed.isNotEmpty) ...[
@@ -610,7 +618,8 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                         () => context.go('/war/report'))),
                 const SizedBox(width: 10),
                 Expanded(
-                    child: _btn('➡ NEXT WAR', JarsColors.gold, () => g.nextWar(),
+                    child: _btn('➡ NEXT WAR', JarsColors.gold,
+                        () => _confirmNextWar(context, g),
                         dark: true)),
               ]),
             ],
@@ -631,11 +640,21 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                   letterSpacing: 1,
                   color: JarsColors.textTertiary)),
           const Spacer(),
-          Text(
-              g.roomId != null
-                  ? 'long-press a crewmate to donate ⚡'
-                  : 'tap to control · long-press to donate ⚡',
-              style: GoogleFonts.inter(fontSize: 10, color: JarsColors.textTertiary)),
+          if (g.canControlWar)
+            GestureDetector(
+              onTap: () => _showGrantDialog(context, g),
+              child: Text('⚡ reimburse',
+                  style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: JarsColors.gold)),
+            )
+          else
+            Text(
+                g.roomId != null
+                    ? 'long-press a crewmate to donate ⚡'
+                    : 'tap to control · long-press to donate ⚡',
+                style: GoogleFonts.inter(fontSize: 10, color: JarsColors.textTertiary)),
         ]),
         const SizedBox(height: 8),
         SizedBox(
@@ -693,6 +712,73 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Admin-only: manually credit ⚡ to any crewmate — a correction, a
+  /// compensation, whatever the room needs. Stays open across grants so the
+  /// admin can work down a whole list without reopening it each time.
+  Future<void> _showGrantDialog(BuildContext context, WarGame g) async {
+    if (g.youClan.isEmpty) return;
+    WarPlayer selected = g.youClan.first;
+    final amountCtrl = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (dCtx) => StatefulBuilder(
+        builder: (dCtx, setDState) => AlertDialog(
+          backgroundColor: JarsColors.surfaceRaised,
+          title: Text('Reimburse ⚡',
+              style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButton<WarPlayer>(
+                value: selected,
+                isExpanded: true,
+                dropdownColor: JarsColors.surfaceRaised,
+                items: [
+                  for (final p in g.youClan)
+                    DropdownMenuItem(
+                        value: p,
+                        child: Text('${p.emoji} ${p.name} (⚡${g.resourcesOf(p.id).round()})',
+                            style: GoogleFonts.inter(color: JarsColors.textPrimary))),
+                ],
+                onChanged: (v) {
+                  if (v != null) setDState(() => selected = v);
+                },
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: amountCtrl,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                style: GoogleFonts.spaceMono(color: JarsColors.textPrimary),
+                decoration: const InputDecoration(hintText: 'Amount'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dCtx),
+                child: const Text('Done')),
+            TextButton(
+              onPressed: () {
+                final amt = double.tryParse(amountCtrl.text);
+                if (amt == null || amt <= 0) return;
+                g.grantPoints(selected.id, amt);
+                amountCtrl.clear();
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('⚡ +${amt.round()} to ${selected.name}')));
+                setDState(() {});
+              },
+              child: Text('Grant',
+                  style: GoogleFonts.inter(
+                      color: JarsColors.gold, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -921,6 +1007,53 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
       ),
     );
     if (ok == true) await g.resetSeason();
+  }
+
+  Future<void> _confirmEndDay(BuildContext context, WarGame g) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text('Skip straight to war\'s end?',
+            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+        content: Text(
+            'Instantly resolves every remaining hour of this war — every AI '
+            'raid that would have happened lands right now, for everyone in '
+            'the room. There\'s no undo.',
+            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text('End the day',
+                  style: GoogleFonts.inter(color: JarsColors.red, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok == true) g.advanceToEndOfDay();
+  }
+
+  Future<void> _confirmNextWar(BuildContext context, WarGame g) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text('Start the next war?',
+            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+        content: Text(
+            'Clears this war\'s base and builds a fresh one for prep — for '
+            'everyone in the room. There\'s no going back to this war after.',
+            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text('Next war',
+                  style: GoogleFonts.inter(color: JarsColors.gold, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok == true) g.nextWar();
   }
 
   Widget _ladder(WarGame g, dynamic table) {

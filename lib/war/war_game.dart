@@ -1575,6 +1575,18 @@ class WarGame extends ChangeNotifier {
     return false;
   }
 
+  /// Admin-only manual credit — compensation for a bug, a correction, a
+  /// judgment call, whatever the room's admin decides. Unlike a peer
+  /// donation (which moves ⚡ OUT of the giver's own pool), this creates it,
+  /// so it isn't capped by anyone's current balance.
+  void grantPoints(String playerId, double amount) {
+    if (!canControlWar) return;
+    if (amount <= 0) return;
+    _creditEarn(amount, playerId);
+    _save();
+    notifyListeners();
+  }
+
   void _creditEarn(double points, String playerId) {
     WarPlayer? p;
     for (final pl in players) {
