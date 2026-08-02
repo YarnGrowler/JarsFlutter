@@ -729,13 +729,14 @@ class WarGame extends ChangeNotifier {
 
   /// Estimated total build chest the enemy team receives when war starts.
   /// This is the exact start-war formula: difficulty/league budget for every
-  /// enemy castle, plus the real crew's prep effort floor.
+  /// enemy castle, plus a fraction of the real crew's prep effort.
   double get estimatedEnemyWarChest {
     final foes = enemyClan.length;
     if (foes == 0) return 0;
     final crewFloor = youClan
-        .where((p) => !p.isBot)
-        .fold(0.0, (sum, p) => sum + p.prepEarned);
+            .where((p) => !p.isBot)
+            .fold(0.0, (sum, p) => sum + p.prepEarned) *
+        WarCosts.enemyPrepMirror;
     final basePerFoe =
         WarCosts.prepBudgetFor(_effectiveEnemySkill()) * _enemyForgeMultiplier;
     return crewFloor + basePerFoe * foes;
@@ -764,14 +765,14 @@ class WarGame extends ChangeNotifier {
     }
 
     // ── the build phase just ended — THIS is when the enemy's stronghold
-    // is sized and built. Their war chest is floored at what your REAL crew
-    // actually earned this prep (never a number picked before anyone logged
-    // a workout), topped up by the difficulty dial / league standing —
-    // whichever asks for more. Bots (solo/offline crew) don't count toward
-    // this — it's real effort or nothing. ──
+    // is sized and built. Their war chest mirrors a FRACTION of what your
+    // REAL crew earned this prep (never a number picked before anyone
+    // logged a workout), topped up by the difficulty dial / league
+    // standing. Bots (solo/offline crew) don't count — real effort only. ──
     final crewTotal = youClan
-        .where((p) => !p.isBot)
-        .fold(0.0, (sum, p) => sum + p.prepEarned);
+            .where((p) => !p.isBot)
+            .fold(0.0, (sum, p) => sum + p.prepEarned) *
+        WarCosts.enemyPrepMirror;
     final foes = enemyClan;
     if (foes.isNotEmpty) {
       final effSkill = _effectiveEnemySkill();

@@ -734,6 +734,11 @@ class WarCosts {
   static double prepBudgetFor(double skill) =>
       prepBudget *
       (0.6 + 0.9 * skill + (skill > 1.0 ? (skill - 1.0) * 30 : 0.0));
+
+  /// Share of your real crew's prep earnings mirrored into the enemy build
+  /// chest. Full 1:1 made them feel overtuned once the room was grinding.
+  static const double enemyPrepMirror = 0.70;
+
   static const double warStartResources = 120; // per BOT at war start (crew AND enemy)
 
   /// Real players get a modest raiding stipend at war start too, not the same

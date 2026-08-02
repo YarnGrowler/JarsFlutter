@@ -110,7 +110,9 @@ void main() {
 
     final effortBefore = g.estimatedEnemyWarChest;
     g.active.prepEarned += 250;
-    expect(g.estimatedEnemyWarChest, closeTo(effortBefore + 250, 0.001),
-        reason: 'real crew prep earnings are the team-wide chest floor');
+    expect(
+        g.estimatedEnemyWarChest,
+        closeTo(effortBefore + 250 * WarCosts.enemyPrepMirror, 0.001),
+        reason: 'crew prep mirrors into the enemy chest at enemyPrepMirror');
   });
 }
