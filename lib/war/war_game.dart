@@ -948,11 +948,26 @@ class WarGame extends ChangeNotifier {
         seedFromParts([warSeed, 'enemyRegen', _enemyRegenSeed]),
         size: mapSize, config: _terrainForDivision());
     final wards = currentDivision.wards;
+    // Room count (the generator's actual measure of "how big a fortress")
+    // is driven by SKILL, not by how much ⚡ a foe is carrying — money only
+    // gates what a room gets FURNISHED with, never how many rooms exist,
+    // and the leftover-spend pass is bounded by an iteration count tied to
+    // skill/room-target too, not by remaining funds. So a manual budget
+    // alone (no matching skill bump) would just leave the extra ⚡ unspent
+    // and the layout unchanged — "I set it to 50000 and got nothing
+    // insane." Translate the pooled manual budget into an explicit room
+    // target instead, so the size actually reflects the number chosen.
+    // ~400⚡/room roughly matches a furnished citadel room at high skill
+    // (v18 tuning: ~14.1k⚡ pooled ≈ 30-37 rooms at skill 1.49).
+    final manualRooms = perFoeBudget == null
+        ? null
+        : ((perFoeBudget * foes.length) / 400).round().clamp(2, 72);
     WarAi.designBase(
       enemyBase,
       foes,
       SeededRng(seedFromParts([warSeed, 'enemyDesign', _enemyRegenSeed])),
       style: StrongholdStyle(
+        rooms: manualRooms,
         minRooms: wards >= 2 ? 8 + wards * 6 : null,
         unlockDefs: unlockedDefsNow,
       ),

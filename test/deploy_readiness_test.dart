@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jars/core/league_config.dart';
 import 'package:jars/models/league.dart';
+import 'package:jars/war/war_ai.dart';
 import 'package:jars/war/war_base.dart';
 import 'package:jars/war/war_engine.dart';
 import 'package:jars/war/war_game.dart';
@@ -954,13 +955,24 @@ void main() {
       // OBSERVABLE effect: a bigger manual number builds a bigger fort.
       expect(g.regenerateEnemyBase(perFoeBudget: 50), isNull);
       final smallBuild = structureValue(g.enemyBase);
+      final smallRooms = WarAi.lastBuildStats?.rooms ?? 0;
 
-      expect(g.regenerateEnemyBase(perFoeBudget: 5000), isNull);
+      // deliberately a HUGE number — room count (the generator's real
+      // measure of size) is driven by skill, not by wallet size, unless
+      // the manual budget is explicitly translated into a room target.
+      // "I set it to 50000 and got nothing insane" is exactly what this
+      // guards against.
+      expect(g.regenerateEnemyBase(perFoeBudget: 30000), isNull);
       final bigBuild = structureValue(g.enemyBase);
+      final bigRooms = WarAi.lastBuildStats?.rooms ?? 0;
 
       expect(bigBuild, greaterThan(smallBuild),
           reason: 'the manual number alone controls the build — no formula, '
               'no prepEarned, no built-value floor involved');
+      expect(bigRooms, greaterThan(smallRooms),
+          reason: 'a huge manual budget must actually grow the fortress '
+              '(room count), not just leave the extra ⚡ unspent while the '
+              'same small skill-driven layout gets rebuilt');
     });
 
     test(
