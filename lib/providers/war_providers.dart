@@ -59,16 +59,42 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
 
   if (_syncedRoomId != room.id) {
     try {
+      // Captured BEFORE the fetch: WarGame.load() already applied whatever
+      // this device saved LOCALLY (SharedPreferences always gets written
+      // regardless of whether the remote push behind it ever landed). If
+      // that local save is further along than what the server hands back —
+      // a push that silently failed, conflicted against a stale version,
+      // or simply hadn't landed yet when this device reloaded — blindly
+      // applying the fetched state would REVERT real progress. Exactly the
+      // reported bug: NEXT WAR confirmed, then every reload came back
+      // showing the old battle report and the old base.
+      final localSeason = game.seasonIndex;
+      final localWar = game.warIndex;
       final (version, state) =
           await WarSyncService.ensure(room.id, game.toJson());
-      game.loadFromJson(state);
-      // `activePlayerId` is PER-DEVICE identity, never shared state — a
-      // remote blob's 'active' field belongs to whoever last saved it, not
-      // to us. Reassert immediately, before anything can rebuild and read
-      // the wrong one (see the identical guard in applyRoomRoster below).
-      game.activePlayerId = myId;
-      game.roomVersion = version;
-      WarGame.onRoomSave = _pushRoomSave;
+      final remoteSeason = (state['season'] as num?)?.toInt() ?? 0;
+      final remoteWar = (state['war'] as num?)?.toInt() ?? 0;
+      final localIsAhead = localSeason > remoteSeason ||
+          (localSeason == remoteSeason && localWar > remoteWar);
+      if (localIsAhead) {
+        // Don't pull the stale remote state — push the local (further
+        // along) one to correct the server instead. game's fields already
+        // reflect what WarGame.load() set them to; just fix roomVersion
+        // so the push's compare-and-swap has the right expected version.
+        game.roomVersion = version;
+        WarGame.onRoomSave = _pushRoomSave;
+        await _pushRoomSave(game);
+      } else {
+        game.loadFromJson(state);
+        // `activePlayerId` is PER-DEVICE identity, never shared state — a
+        // remote blob's 'active' field belongs to whoever last saved it,
+        // not to us. Reassert immediately, before anything can rebuild and
+        // read the wrong one (see the identical guard in applyRoomRoster
+        // below).
+        game.activePlayerId = myId;
+        game.roomVersion = version;
+        WarGame.onRoomSave = _pushRoomSave;
+      }
       _warRealtimeSub?.cancel();
       _warRealtimeSub = WarSyncService.stream(room.id).listen(
         (rows) => _applyRemote(game, rows, myId),
