@@ -807,7 +807,7 @@ class WarGame extends ChangeNotifier {
     final fighters = warParticipants.isNotEmpty
         ? List<WarPlayer>.of(warParticipants)
         : youClan.where((p) => !p.isBot).toList();
-    _trimEnemyClan(math.max(1, fighters.length));
+    _resizeEnemyClan(math.max(1, fighters.length));
 
     // Idle crewmates still get a castle so the base isn't soft-locked, but
     // they already lost their vote on enemy strength above.
@@ -911,6 +911,15 @@ class WarGame extends ChangeNotifier {
   String? regenerateEnemyBase({double? perFoeBudget}) {
     if (!canControlWar) return 'Only the room admin can do that.';
     if (phase != WarPhase.war) return 'Only mid-war.';
+    final fighters = warParticipants.isNotEmpty
+        ? warParticipants
+        : youClan.where((p) => !p.isBot).toList();
+    // The enemy clan was sized to whatever counted as a "fighter" the
+    // MOMENT startWar() ran — a castle placed (by anyone, including the
+    // admin on a teammate's behalf) since then never grew it. "6 castles
+    // down, still only fighting 1 tiny enemy" is exactly that: the clan
+    // itself never resized, no matter how the budget got tuned.
+    _resizeEnemyClan(math.max(1, fighters.length));
     final foes = enemyClan;
     if (foes.isEmpty) return null;
     final effSkill = _effectiveEnemySkill();
@@ -922,9 +931,6 @@ class WarGame extends ChangeNotifier {
       perFoeFloor = perFoeBudget;
       forgeMul = 0; // manual number IS the total — no automatic top-up
     } else {
-      final fighters = warParticipants.isNotEmpty
-          ? warParticipants
-          : youClan.where((p) => !p.isBot).toList();
       final prepFloor = fighters.fold(0.0, (sum, p) => sum + p.prepEarned) *
           WarCosts.enemyPrepMirror;
       final investFloor = youBase.builtValue * WarCosts.enemyPrepMirror;
@@ -953,20 +959,47 @@ class WarGame extends ChangeNotifier {
     );
     // a torn-down-and-rebuilt fortress isn't the one anyone scouted
     enemyIntel = {};
+    // Any raid in progress (or one you'd merely opened and backed out of —
+    // it persists until END RAID) still points at the OLD Base object by
+    // reference. Without clearing these, the next "RAID ENEMY" tap would
+    // silently resume the stale AttackState against the fortress that no
+    // longer exists — old scouting, old damage, the same tiny base, as if
+    // nothing had regenerated at all.
+    liveAttack = null;
+    clashState = null;
     _save();
     notifyListeners();
     return null;
   }
 
-  /// Drop surplus enemy bots so the war mirrors [keep] fighters — not the
-  /// full room roster. Call before [WarAi.designBase] so idle seats never
-  /// buy the enemy extra castles or hourly raid rolls.
-  void _trimEnemyClan(int keep) {
+  /// Resize the enemy clan to exactly [target] foes — drops surplus bots
+  /// (the war mirrors real fighters, not the full room roster) or adds new
+  /// ones, using the SAME naming scheme [applyRoomRoster] seeds enemies
+  /// with. Call before [WarAi.designBase] so idle seats never buy the enemy
+  /// extra castles/raids, and so a regenerate after MORE castles have gone
+  /// down since [startWar] actually fields the right number of foes.
+  void _resizeEnemyClan(int target) {
     final foes = enemyClan;
-    if (foes.length <= keep) return;
-    final drop = {for (final p in foes.skip(keep)) p.id};
-    players.removeWhere((p) => drop.contains(p.id));
-    enemyBase.pruneCastlesNotIn({for (final p in enemyClan) p.id});
+    if (foes.length > target) {
+      final drop = {for (final p in foes.skip(target)) p.id};
+      players.removeWhere((p) => drop.contains(p.id));
+      enemyBase.pruneCastlesNotIn({for (final p in enemyClan) p.id});
+    } else if (foes.length < target) {
+      for (var i = foes.length; i < target; i++) {
+        final c = _enemyChars[i % _enemyChars.length];
+        final wave = i ~/ _enemyChars.length;
+        final name =
+            wave == 0 ? c[1] as String : '${c[1]} ${_romanNumeral(wave + 1)}';
+        players.add(WarPlayer(
+            id: 'foe_$i',
+            name: name,
+            emoji: c[2] as String,
+            colorValue: c[3] as int,
+            side: WarSide.enemy,
+            ai: enemyDifficulty,
+            isBot: true));
+      }
+    }
   }
 
   Cell? _fallbackCastle(Base base, int i) {

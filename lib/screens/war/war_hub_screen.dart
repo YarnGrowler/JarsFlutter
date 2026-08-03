@@ -896,83 +896,91 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [
-          Text('ENEMY DIFFICULTY',
-              style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                  color: JarsColors.textTertiary)),
-          if (!g.canControlWar) ...[
-            const SizedBox(width: 5),
-            Icon(Icons.lock_rounded, size: 11, color: JarsColors.textTertiary),
-          ],
-          const Spacer(),
-          Text(
-              '${g.difficulty} · ${AiData.label(g.enemyDifficulty)}'
-              '${g.difficulty > 75 ? '+' : ''}',
-              style: GoogleFonts.spaceGrotesk(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: JarsColors.red)),
-        ]),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 4,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-          ),
-          child: Slider(
-            value: g.difficulty.toDouble(),
-            min: 1,
-            max: 100,
-            activeColor:
-                g.canControlWar ? JarsColors.red : JarsColors.textTertiary,
-            inactiveColor: JarsColors.border,
-            // only the room admin sets the difficulty for everyone
-            onChanged: g.canControlWar
-                ? (v) => g.setDifficulty(v.round())
-                : null,
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            color: JarsColors.red.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: JarsColors.red.withValues(alpha: 0.28)),
-          ),
-          child: Row(children: [
-            const Icon(Icons.savings_outlined,
-                size: 16, color: JarsColors.gold),
-            const SizedBox(width: 7),
-            Expanded(
-              child: Text('EST. ENEMY WAR CHEST',
-                  style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.7,
-                      color: JarsColors.textSecondary)),
-            ),
-            Text('${g.estimatedEnemyWarChest.round()}⚡ total',
+        // The difficulty dial + "EST. ENEMY WAR CHEST" prediction are a
+        // PREP-time planning tool — once war starts, the enemy's actual
+        // state is whatever startWar()/regenerateEnemyBase() actually set,
+        // and this estimate was never wired to reflect either (let alone a
+        // manual budget override). Showing it mid-war just reads as "the
+        // budget didn't change" when it was never live in the first place.
+        if (g.phase == WarPhase.prep) ...[
+          Row(children: [
+            Text('ENEMY DIFFICULTY',
+                style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                    color: JarsColors.textTertiary)),
+            if (!g.canControlWar) ...[
+              const SizedBox(width: 5),
+              Icon(Icons.lock_rounded, size: 11, color: JarsColors.textTertiary),
+            ],
+            const Spacer(),
+            Text(
+                '${g.difficulty} · ${AiData.label(g.enemyDifficulty)}'
+                '${g.difficulty > 75 ? '+' : ''}',
                 style: GoogleFonts.spaceGrotesk(
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
-                    color: JarsColors.gold)),
-            const SizedBox(width: 5),
-            Text('· ${g.estimatedEnemyWarChestPerFoe.round()} each',
+                    color: JarsColors.red)),
+          ]),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+            ),
+            child: Slider(
+              value: g.difficulty.toDouble(),
+              min: 1,
+              max: 100,
+              activeColor:
+                  g.canControlWar ? JarsColors.red : JarsColors.textTertiary,
+              inactiveColor: JarsColors.border,
+              // only the room admin sets the difficulty for everyone
+              onChanged: g.canControlWar
+                  ? (v) => g.setDifficulty(v.round())
+                  : null,
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: JarsColors.red.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(color: JarsColors.red.withValues(alpha: 0.28)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.savings_outlined,
+                  size: 16, color: JarsColors.gold),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text('EST. ENEMY WAR CHEST',
+                    style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.7,
+                        color: JarsColors.textSecondary)),
+              ),
+              Text('${g.estimatedEnemyWarChest.round()}⚡ total',
+                  style: GoogleFonts.spaceGrotesk(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: JarsColors.gold)),
+              const SizedBox(width: 5),
+              Text('· ${g.estimatedEnemyWarChestPerFoe.round()} each',
+                  style: GoogleFonts.inter(
+                      fontSize: 10.5, color: JarsColors.textTertiary)),
+            ]),
+          ),
+          const SizedBox(height: 6),
+          Text(
+              'Updates with difficulty, league/map size, team size and real crew prep earnings.',
+              style: GoogleFonts.inter(
+                  fontSize: 9.5, color: JarsColors.textTertiary)),
+          if (!g.canControlWar)
+            Text('Only the room admin can change this.',
                 style: GoogleFonts.inter(
                     fontSize: 10.5, color: JarsColors.textTertiary)),
-          ]),
-        ),
-        const SizedBox(height: 6),
-        Text(
-            'Updates with difficulty, league/map size, team size and real crew prep earnings.',
-            style: GoogleFonts.inter(
-                fontSize: 9.5, color: JarsColors.textTertiary)),
-        if (!g.canControlWar)
-          Text('Only the room admin can change this.',
-              style: GoogleFonts.inter(
-                  fontSize: 10.5, color: JarsColors.textTertiary)),
+        ],
         Text(
             'Season: War ${g.warIndex + 1} of ${g.warsPerSeason} · Record '
             '${g.seasonResults.where((w) => w == true).length}W–'

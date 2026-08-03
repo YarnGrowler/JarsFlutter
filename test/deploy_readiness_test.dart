@@ -963,6 +963,72 @@ void main() {
               'no prepEarned, no built-value floor involved');
     });
 
+    test(
+        'REGRESSION: regenerateEnemyBase re-syncs the enemy clan to match '
+        'how many real castles are actually down', () {
+      // The exact bug report: "the enemy should always have the amount of
+      // castles equal to the amount of castles my crew has placed... maybe
+      // cuz its only one castle." Whatever the exact prior trigger (a
+      // stale rebuild, a roster desync, whatever), the enemy clan can end
+      // up NOT matching the crew's real castle count — and only tuning
+      // the BUDGET (v21.12/v21.13) never corrects the headcount itself.
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A'],
+            ['f1', 'B'],
+            ['f2', 'C'],
+            ['f3', 'D'],
+            ['f4', 'E'],
+          ]));
+      g.isRoomAdmin = true;
+      var col = 10;
+      for (final p in g.youClan) {
+        g.placeCastle(10, col, forPlayerId: p.id);
+        col += 2;
+      }
+      g.startWar();
+      expect(g.enemyClan.length, 6,
+          reason: 'sanity: sized correctly the moment war started');
+
+      // simulate the enemy clan drifting out of sync with castle count —
+      // the exact symptom reported, regardless of what caused it
+      g.players.removeWhere((p) => p.side == WarSide.enemy && p.id != 'foe_0');
+      expect(g.enemyClan.length, 1,
+          reason: 'sanity: now desynced from the 6 real castles still down');
+
+      expect(g.regenerateEnemyBase(), isNull);
+      expect(g.enemyClan.length, 6,
+          reason: 'regenerate must re-sync the enemy clan to match how many '
+              'real castles are actually down');
+    });
+
+    test(
+        'REGRESSION: regenerateEnemyBase clears a stale raid so the next '
+        'attack targets the NEW base, not the torn-down one', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r', myUserId: 'me', myUsername: 'Me', members: const []);
+      g.startWar();
+      final st = g.beginLiveAttack();
+      expect(identical(st.base, g.enemyBase), isTrue,
+          reason: 'sanity: the raid is against the CURRENT enemy base');
+      expect(g.liveAttack, isNotNull);
+
+      g.isRoomAdmin = true;
+      expect(g.regenerateEnemyBase(), isNull);
+
+      expect(g.liveAttack, isNull,
+          reason: 'a raid against the torn-down base must not silently '
+              'resume — old scouting/damage against a base that no longer '
+              'exists is exactly the reported "nothing regenerated" bug');
+    });
+
     test('the room admin CAN use every war-wide control', () {
       final g = WarGame.fresh();
       g.startPrep();
