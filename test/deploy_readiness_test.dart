@@ -404,6 +404,14 @@ void main() {
       final seasonBefore = g.seasonIndex;
       g.resetSeason();
       expect(g.seasonIndex, seasonBefore, reason: 'non-admin cannot reset the season');
+
+      final warIndexBefore = g.warIndex;
+      g.nextWar();
+      expect(g.warIndex, warIndexBefore,
+          reason: 'non-admin cannot advance the room to the next war — a '
+              'teammate still on the (deliberately frozen) battle report '
+              'screen must never be able to do this just because the '
+              'button is still visible to them there');
     });
 
     // Structure value actually BUILT into a base — leftover player ⚡ now
@@ -1090,7 +1098,7 @@ void main() {
 
     test('a real room fires onRoomSave on every mutating save', () {
       final calls = <WarGame>[];
-      WarGame.onRoomSave = calls.add;
+      WarGame.onRoomSave = (g) async => calls.add(g);
       addTearDown(() => WarGame.onRoomSave = null);
 
       final g = WarGame.fresh();
@@ -1111,6 +1119,66 @@ void main() {
       g.setDifficulty(70);
       expect(calls.length, before + 1,
           reason: 'every later mutation keeps firing it too');
+    });
+
+    test(
+        'flushPendingSave actually waits for the room push to finish, not '
+        'just fire off', () async {
+      var pushCompleted = false;
+      WarGame.onRoomSave = (game) async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        pushCompleted = true;
+      };
+      addTearDown(() => WarGame.onRoomSave = null);
+
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r', myUserId: 'me', myUsername: 'Me', members: const []);
+      expect(pushCompleted, isFalse,
+          reason: 'sanity: the push is still in flight — this is exactly '
+              'the window a reload used to be able to race');
+
+      await g.flushPendingSave();
+      expect(pushCompleted, isTrue,
+          reason: 'a deliberate transition (NEXT WAR) can await this before '
+              'the UI moves on, so a reload right after can\'t revert it');
+    });
+
+    test(
+        'REGRESSION: only the most recent raids keep full replay data — '
+        'older ones keep stats only', () {
+      // Full frame-by-frame replay data gets serialized on every save and
+      // deserialized on every load/sync — a long war's worth of it made
+      // boot/sync dramatically slower ("the app takes 30 seconds to load
+      // now") once replays started actually persisting (v21.7).
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.startWar();
+      for (var i = 0; i < 10; i++) {
+        g.feed.add(WarLogEntry(
+          minute: i,
+          attackerSide: WarSide.enemy,
+          attackerName: 'Foe$i',
+          gained: 5,
+          defenderDestruction: 5,
+          troopsLost: 0,
+          troopsSent: 1,
+          resourcesSpent: 0,
+          razed: false,
+          replay: [const RaidFrame([], [], [], [], 'x')],
+        ));
+      }
+      // a round-trip runs the same merge + _trimFeed() pass a real
+      // save/load or room sync would.
+      g.loadFromJson(g.toJson());
+
+      expect(g.feed.length, 10,
+          reason: 'older raids still show up in the log/stats');
+      expect(g.feed.where((e) => e.replay != null).length, lessThanOrEqualTo(6),
+          reason: 'but full replay data is capped to the most recent few');
+      expect(g.feed.reversed.take(6).every((e) => e.replay != null), isTrue,
+          reason: 'and it\'s always the MOST RECENT raids that keep it');
     });
 
     test('a rejected save (conflict) adopts the WINNING state, not its own',

@@ -274,6 +274,17 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
   bool get _haveRealData => _verdict != null;
 
   Future<void> _confirmNextWar(BuildContext context) async {
+    // Checked LIVE, not from the frozen snapshot — this report may have
+    // been captured back when a war just ended, but whether THIS device
+    // is the room admin doesn't change war to war, and every teammate
+    // still sitting on this same frozen screen (by design — see the class
+    // doc) must never be able to advance the room a second time just
+    // because the button is still visible to them.
+    if (!WarGame.instance.canControlWar) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Only the room admin can start the next war.')));
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (dCtx) => AlertDialog(
@@ -295,6 +306,11 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
     );
     if (ok != true) return;
     WarGame.instance.nextWar();
+    // Wait for the room push to actually land before navigating away —
+    // otherwise a reload moments later can race the in-flight save and
+    // come back showing this same OLD (still-results) report, as if the
+    // transition never happened.
+    await WarGame.instance.flushPendingSave();
     if (context.mounted) context.go('/war');
   }
 

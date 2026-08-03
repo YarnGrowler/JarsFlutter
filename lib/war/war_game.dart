@@ -1278,9 +1278,26 @@ class WarGame extends ChangeNotifier {
     return liveAttack!;
   }
 
-  /// Cap the feed — every raid KEEPS its replay until the war ends.
+  /// Full replay frame-by-frame data is kept for only the most recent
+  /// raids — every entry beyond this still shows up in the log/stats, it
+  /// just loses its watchable "▶ WATCH" replay. Every replay gets
+  /// serialized on every save and deserialized on every load/sync; a long
+  /// war's worth of them (up to 40 raids × up to ~140 frames each) made
+  /// boot and room sync dramatically slower ("the app takes 30 seconds to
+  /// load now") once replays started actually persisting at all.
+  static const int _kMaxReplaysKept = 6;
+
+  /// Cap the feed at 40 entries; strip full replay data from anything
+  /// older than the most recent [_kMaxReplaysKept] raids.
   void _trimFeed() {
     if (feed.length > 40) feed.removeRange(0, feed.length - 40);
+    var kept = 0;
+    for (var i = feed.length - 1; i >= 0; i--) {
+      final e = feed[i];
+      if (e.replay == null) continue;
+      kept++;
+      if (kept > _kMaxReplaysKept) e.replay = null;
+    }
   }
 
   /// Fold the live raid's tallies into the war (END RAID / war end).
@@ -1597,7 +1614,13 @@ class WarGame extends ChangeNotifier {
     }
   }
 
+  /// Admin-only — advances the WHOLE room to the next war's prep. Anyone
+  /// still sitting on a frozen battle report (by design, see
+  /// BattleReportScreen — it never re-reads live state once captured)
+  /// could otherwise still tap a visible NEXT WAR button and trigger this
+  /// themselves, even after the admin already advanced everyone.
   void nextWar() {
+    if (!canControlWar) return;
     final won = lastVerdict?.winner == WarSide.you;
     seasonResults = [...seasonResults, won];
     warIndex++;
@@ -2008,7 +2031,18 @@ class WarGame extends ChangeNotifier {
   /// import here); see `WarSyncService`. Local save always still happens too
   /// (below) — an offline mirror that keeps solo play, tests, and "no
   /// network right now" all working exactly as before.
-  static void Function(WarGame game)? onRoomSave;
+  static Future<void> Function(WarGame game)? onRoomSave;
+
+  /// The room push kicked off by the most recent [_save]. Awaitable via
+  /// [flushPendingSave] — a deliberate, user-initiated transition (NEXT
+  /// WAR, chiefly) can await this before letting the UI move on, so a
+  /// reload moments later can't race an in-flight push and revert the
+  /// transition back to whatever the server still had.
+  Future<void>? _pendingRoomPush;
+
+  /// Waits for the most recent room push (if any) to finish. A no-op when
+  /// there's no room, or nothing pending.
+  Future<void> flushPendingSave() => _pendingRoomPush ?? Future.value();
 
   /// Call on SIGN-OUT. Nothing else clears `WarGame.instance` between
   /// sessions — if a different real user signs in on the same device
@@ -2041,6 +2075,6 @@ class WarGame extends ChangeNotifier {
       final p = await SharedPreferences.getInstance();
       await p.setString(_prefsKey, jsonEncode(json));
     });
-    if (roomId != null) onRoomSave?.call(this);
+    if (roomId != null) _pendingRoomPush = onRoomSave?.call(this);
   }
 }

@@ -1137,6 +1137,11 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
   }
 
   Future<void> _confirmNextWar(BuildContext context, WarGame g) async {
+    if (!g.canControlWar) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Only the room admin can start the next war.')));
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (dCtx) => AlertDialog(
@@ -1156,7 +1161,13 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
         ],
       ),
     );
-    if (ok == true) g.nextWar();
+    if (ok != true) return;
+    g.nextWar();
+    // Wait for the room push to actually land before letting the admin
+    // move on — otherwise a reload moments later can race the in-flight
+    // save and come back showing the OLD (still-results) war, as if the
+    // transition never happened.
+    await g.flushPendingSave();
   }
 
   Widget _ladder(WarGame g, dynamic table) {
