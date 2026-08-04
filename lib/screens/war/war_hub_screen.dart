@@ -1168,6 +1168,15 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
     // save and come back showing the OLD (still-results) war, as if the
     // transition never happened.
     await g.flushPendingSave();
+    if (!context.mounted) return;
+    final err = g.lastSyncError;
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 6),
+        content: Text('Started locally, but didn\'t sync yet: $err — '
+            'don\'t reload until it catches up.'),
+      ));
+    }
   }
 
   Widget _ladder(WarGame g, dynamic table) {

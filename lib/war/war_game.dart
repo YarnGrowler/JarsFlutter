@@ -2044,6 +2044,14 @@ class WarGame extends ChangeNotifier {
   /// there's no room, or nothing pending.
   Future<void> flushPendingSave() => _pendingRoomPush ?? Future.value();
 
+  /// Set by [onRoomSave]'s implementation when the most recent room push
+  /// failed — cleared on the next successful one. `_pushRoomSave` used to
+  /// swallow every failure into a debug-only print, invisible on a real
+  /// deployed build; a caller that awaits [flushPendingSave] can check this
+  /// afterward and tell the user their action didn't actually sync, instead
+  /// of silently proceeding as if it had.
+  String? lastSyncError;
+
   /// Call on SIGN-OUT. Nothing else clears `WarGame.instance` between
   /// sessions — if a different real user signs in on the same device
   /// without a full app restart (two friends testing on one laptop is

@@ -311,7 +311,20 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
     // come back showing this same OLD (still-results) report, as if the
     // transition never happened.
     await WarGame.instance.flushPendingSave();
-    if (context.mounted) context.go('/war');
+    if (!context.mounted) return;
+    // The transition already happened locally (this device moves on
+    // regardless), but if the push itself never landed, the server is
+    // still on the old war — a reload right now would silently revert
+    // everyone. Say so instead of letting that look like it worked.
+    final err = WarGame.instance.lastSyncError;
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 6),
+        content: Text('Started locally, but didn\'t sync yet: $err — '
+            'don\'t reload until it catches up.'),
+      ));
+    }
+    context.go('/war');
   }
 
   void _watchRaid(BuildContext context, WarLogEntry e) {

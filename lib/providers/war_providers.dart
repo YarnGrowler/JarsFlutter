@@ -191,18 +191,34 @@ Future<void> _pushRoomSave(WarGame g) async {
         g.activePlayerId = myId;
         g.roomVersion = v2;
         g.reapplyUnsyncedEarn();
+        // Conflicted TWICE in a row — this device's own state (a NEXT WAR
+        // transition, a build, whatever) never actually landed; it kept
+        // losing to something else. Silently moving on here is exactly
+        // what made the room-desync bugs invisible until a reload.
+        g.lastSyncError =
+            'Your last change didn\'t sync (kept losing to another save) — '
+            'try again.';
       } else {
         g.roomVersion = v2;
         g.clearUnsyncedEarn();
+        g.lastSyncError = null;
       }
     } else {
       g.roomVersion = version;
       g.clearUnsyncedEarn();
+      g.lastSyncError = null;
     }
     g.notifyListeners();
   } catch (e) {
-    // offline / transient — the local SharedPreferences mirror already has
-    // this save; the next mutating action retries the push naturally
+    // Used to be swallowed into a debug-only print — invisible on a real
+    // deployed build, so a failed NEXT WAR (or any other save) looked
+    // like it worked until the next reload quietly reverted it. The local
+    // SharedPreferences mirror still has this save; the next mutating
+    // action retries the push naturally, but the CALLER (via
+    // flushPendingSave + lastSyncError) can now tell the user it hasn't
+    // actually landed yet instead of assuming success.
+    g.lastSyncError = e.toString();
+    g.notifyListeners();
     if (kDebugMode) debugPrint('WarSync: push failed (will retry later): $e');
   }
 }
