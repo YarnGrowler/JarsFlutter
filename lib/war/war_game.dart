@@ -2083,6 +2083,24 @@ class WarGame extends ChangeNotifier {
       final p = await SharedPreferences.getInstance();
       await p.setString(_prefsKey, jsonEncode(json));
     });
-    if (roomId != null) _pendingRoomPush = onRoomSave?.call(this);
+    if (roomId != null) {
+      if (onRoomSave == null) {
+        // The room-sync provider hasn't finished wiring this hook up yet
+        // (its first Supabase round-trip is still in flight — happens on
+        // every fresh app load, and can take a real few seconds). A
+        // mutating action fired in that window — NEXT WAR, chiefly, since
+        // nothing gated its button on sync being ready — used to just
+        // silently skip the push entirely: `onRoomSave?.call(this)` is a
+        // no-op on null, `_pendingRoomPush` stayed null, `flushPendingSave`
+        // resolved instantly as if nothing was wrong, and the change never
+        // reached the shared row — reproducing "reload and it's back to
+        // the old war" with zero visible error. Surface it instead.
+        lastSyncError = 'not connected to the room yet — try again in a '
+            'few seconds';
+        _pendingRoomPush = null;
+      } else {
+        _pendingRoomPush = onRoomSave?.call(this);
+      }
+    }
   }
 }

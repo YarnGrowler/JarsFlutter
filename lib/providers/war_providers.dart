@@ -85,6 +85,14 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
         WarGame.onRoomSave = _pushRoomSave;
         await _pushRoomSave(game);
       } else {
+        // How many raids the SERVER's copy still carries full replay data
+        // for, before loadFromJson's internal _trimFeed() strips anything
+        // beyond the most recent 6 — measured on the raw incoming map, not
+        // on `game`, since loadFromJson is about to mutate `game` in place.
+        final incomingReplays = (state['feed'] as List? ?? const [])
+            .whereType<Map>()
+            .where((e) => e['replay'] != null)
+            .length;
         game.loadFromJson(state);
         // `activePlayerId` is PER-DEVICE identity, never shared state — a
         // remote blob's 'active' field belongs to whoever last saved it,
@@ -94,6 +102,18 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
         game.activePlayerId = myId;
         game.roomVersion = version;
         WarGame.onRoomSave = _pushRoomSave;
+        // The trim only ever happens in memory on whoever's device pulls
+        // this row — if nobody pushes the trimmed result back, the row
+        // stays bloated with old full-replay data FOREVER, and every
+        // teammate's every future load has to download that same bloat
+        // again before their own local trim quietly throws it away. That's
+        // a big part of why loads have been taking 15-30s. Push the
+        // trimmed copy back once, right after pulling it, whenever
+        // trimming actually removed something.
+        final keptReplays = game.feed.where((e) => e.replay != null).length;
+        if (incomingReplays > keptReplays) {
+          await _pushRoomSave(game);
+        }
       }
       _warRealtimeSub?.cancel();
       _warRealtimeSub = WarSyncService.stream(room.id).listen(

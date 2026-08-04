@@ -305,6 +305,12 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
       ),
     );
     if (ok != true) return;
+    // Same race as the hub's identical button: the room-sync hook only
+    // gets wired up once the FIRST Supabase round-trip for this room
+    // resolves, and nothing gates this screen's UI on that — so on a
+    // fresh load NEXT WAR can be tapped before it's ready, silently
+    // pushing nothing. No-op once the first sync already happened.
+    await ref.read(warRoomSyncProvider.future);
     WarGame.instance.nextWar();
     // Wait for the room push to actually land before navigating away —
     // otherwise a reload moments later can race the in-flight save and

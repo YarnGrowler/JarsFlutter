@@ -1122,6 +1122,50 @@ void main() {
     });
 
     test(
+        'REGRESSION: a mutating save while the room hook isn\'t wired up '
+        'yet surfaces lastSyncError instead of silently pushing nothing',
+        () {
+      // onRoomSave is a static hook the sync provider only assigns AFTER
+      // its first Supabase round-trip for this room resolves — nothing
+      // gates the war screens' own UI on that, so on every fresh app load
+      // there's a real window where roomId is already set but the hook
+      // itself is still null. A mutating action (NEXT WAR, chiefly) fired
+      // in that window used to just skip the push with zero error — the
+      // local transition looked fine on that one device, but never
+      // reached the shared row, so the very next reload pulled the
+      // untouched old state straight back. That was the actual cause of
+      // "I press next war, reload, and it's the old battle report again"
+      // surviving two earlier fix attempts that both assumed the push
+      // itself was slow or racy, not simply never wired up yet.
+      WarGame.onRoomSave = null;
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r', myUserId: 'me', myUsername: 'Me', members: const []);
+      expect(g.roomId, 'r');
+      expect(g.lastSyncError, isNotNull,
+          reason: 'the room is set but nothing is listening for the push '
+              'yet — that must be visible, not silent');
+
+      // Clearing lastSyncError on a genuinely successful push is the real
+      // onRoomSave implementation's job (_pushRoomSave in
+      // war_providers.dart, which has no test harness in this codebase —
+      // see the note on the sibling test below) — WarGame itself only
+      // ever sets the warning, on the specific null-hook case above. Here
+      // we just confirm wiring the hook stops it from firing AGAIN.
+      var pushed = false;
+      WarGame.onRoomSave = (game) async => pushed = true;
+      addTearDown(() => WarGame.onRoomSave = null);
+      final errorBefore = g.lastSyncError;
+      g.setDifficulty(70);
+      expect(pushed, isTrue, reason: 'once wired, saves push normally');
+      expect(g.lastSyncError, errorBefore,
+          reason: 'a wired-but-not-yet-resolved push must not overwrite '
+              'the error again — it stays whatever it was until the real '
+              'push implementation resolves and clears it itself');
+    });
+
+    test(
         'flushPendingSave actually waits for the room push to finish, not '
         'just fire off', () async {
       var pushCompleted = false;

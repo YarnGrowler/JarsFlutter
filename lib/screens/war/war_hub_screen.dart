@@ -1162,6 +1162,17 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
       ),
     );
     if (ok != true) return;
+    // The room-sync hook (WarGame.onRoomSave) only gets wired up once the
+    // FIRST Supabase round-trip for this room resolves — nothing gates the
+    // hub's own UI on that, so on a fresh load this button is tappable
+    // before it's ready. Firing nextWar() during that window used to push
+    // NOTHING (onRoomSave was still null) with zero error shown — the local
+    // transition looked fine on this device but never reached the shared
+    // row, so the very next reload pulled the untouched old state back.
+    // Waiting on the sync provider's own future here is a no-op once the
+    // first sync has already happened (the common case) and only actually
+    // blocks during that narrow startup window.
+    await ref.read(warRoomSyncProvider.future);
     g.nextWar();
     // Wait for the room push to actually land before letting the admin
     // move on — otherwise a reload moments later can race the in-flight
