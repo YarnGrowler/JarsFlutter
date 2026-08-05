@@ -126,7 +126,16 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
       _syncedRoomId = room.id; // only mark done once everything succeeded
     } catch (e) {
       // offline, RLS not yet migrated, or a transient error — local play
-      // keeps working untouched; we'll simply retry next time this fires
+      // keeps working untouched; we'll simply retry next time this fires.
+      // Used to ONLY debugPrint this — invisible on a real deployed build,
+      // so the very first sync attempt could fail for a genuine reason
+      // (missing migration, RLS rejection, a bad RPC signature) and NOTHING
+      // downstream would ever know why: onRoomSave stays null forever,
+      // _save() correctly reports "not connected to the room yet" (v21.19),
+      // but that message can't say WHY — it's a generic fallback, not the
+      // actual exception. Surface the real one so the next repro shows the
+      // genuine cause instead of a guess.
+      game.lastSyncError = 'room sync failed: $e';
       if (kDebugMode) debugPrint('WarSync: initial room load failed: $e');
     }
   }
