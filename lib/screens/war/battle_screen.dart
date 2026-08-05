@@ -1393,48 +1393,33 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Fast-forward to see the enemy hit your base, then watch the replays.',
+            'The war runs on its own — check back to see the enemy hit your '
+            'base, then watch the replays.',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(fontSize: 11, color: JarsColors.textSecondary),
           ),
           const SizedBox(height: 8),
-          Row(children: [
-            Expanded(child: _ff('+1h', () => g.advanceHours(1))),
-            const SizedBox(width: 7),
-            Expanded(child: _ff('+6h', () => g.advanceHours(6))),
-            const SizedBox(width: 7),
-            Expanded(child: _ff('End Day', () => g.advanceToEndOfDay())),
-            const SizedBox(width: 7),
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _openRaidList(WarSide.enemy),
-                child: Container(
-                  height: 40,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: raids.isNotEmpty
-                        ? JarsColors.red.withValues(alpha: 0.2)
-                        : JarsColors.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: raids.isNotEmpty ? JarsColors.red : JarsColors.border),
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Text('▶ REPLAYS (${raids.length})',
-                          style: GoogleFonts.spaceGrotesk(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: JarsColors.textPrimary)),
-                    ),
-                  ),
-                ),
+          GestureDetector(
+            onTap: () => _openRaidList(WarSide.enemy),
+            child: Container(
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: raids.isNotEmpty
+                    ? JarsColors.red.withValues(alpha: 0.2)
+                    : JarsColors.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: raids.isNotEmpty ? JarsColors.red : JarsColors.border),
               ),
+              child: Text('▶ REPLAYS (${raids.length})',
+                  style: GoogleFonts.spaceGrotesk(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: JarsColors.textPrimary)),
             ),
-          ]),
+          ),
         ],
       ),
     );
@@ -1455,30 +1440,6 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                   color: JarsColors.textPrimary)),
-        ),
-      );
-
-  Widget _ff(String label, VoidCallback onTap) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          height: 40,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: JarsColors.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: JarsColors.border),
-          ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Text(label,
-                  style: GoogleFonts.spaceGrotesk(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
-                      color: JarsColors.textPrimary)),
-            ),
-          ),
         ),
       );
 }

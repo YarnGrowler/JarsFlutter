@@ -555,6 +555,20 @@ class Base {
     return ((1 - aliveWeightHp / total) * 100).clamp(0, 100);
   }
 
+  /// Total ⚡ cost of every live structure — an undiluted measure of how
+  /// much fortress the crew has actually BUILT, unlike `Σ prepEarned` which
+  /// dilutes across every roster seat regardless of who actually spent it.
+  double get builtValue {
+    var v = 0.0;
+    for (final row in grid) {
+      for (final tile in row) {
+        final s = tile.structure;
+        if (s != null) v += s.spec.cost;
+      }
+    }
+    return v;
+  }
+
   int get castleCount => castleCells.length;
   int get castlesRazed {
     var n = 0;

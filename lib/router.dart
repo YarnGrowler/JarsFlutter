@@ -25,6 +25,7 @@ import 'screens/war/base_builder_screen.dart';
 import 'screens/war/base_lab_screen.dart';
 import 'screens/war/battle_screen.dart';
 import 'screens/war/battle_report_screen.dart';
+import 'screens/war/season_report_screen.dart';
 import 'screens/war/training_screen.dart';
 import 'screens/ranks/ranks_screen.dart';
 import 'screens/profile/profile_screen.dart';
@@ -349,6 +350,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             pageBuilder: (context, state) => _fadeSlidePage(
               state,
               const BattleReportScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/war/season-report',
+            pageBuilder: (context, state) => _fadeSlidePage(
+              state,
+              const SeasonReportScreen(),
             ),
           ),
           GoRoute(

@@ -539,27 +539,22 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                 ),
               const SizedBox(height: 12),
               _warClockCard(g),
+              // Admin-only, real (not dev-gated): the enemy's war chest is
+              // sized off whoever counted as a "fighter" the moment war
+              // started — a teammate's castle placed late, or by the admin
+              // on their behalf, can leave that snapshot wrong. This
+              // rebuilds the enemy from scratch off CURRENT numbers.
               if (g.canControlWar) ...[
                 const SizedBox(height: 8),
-                Text('SKIP AHEAD · testing',
-                    style: GoogleFonts.inter(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1,
-                        color: JarsColors.textTertiary)),
-                const SizedBox(height: 6),
                 Row(children: [
                   Expanded(
-                      child: _btn('+1h', JarsColors.surface,
-                          () => g.advanceHours(1))),
+                      child: _btn('🔄 Regenerate enemy base',
+                          JarsColors.surface,
+                          () => _confirmRegenerateEnemy(context, g))),
                   const SizedBox(width: 8),
                   Expanded(
-                      child: _btn('+6h', JarsColors.surface,
-                          () => g.advanceHours(6))),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: _btn('End Day', JarsColors.surface,
-                          () => g.advanceToEndOfDay())),
+                      child: _btn('✏️ Set budget', JarsColors.surface,
+                          () => _showManualBudgetDialog(context, g))),
                 ]),
               ],
               if (g.feed.isNotEmpty) ...[
@@ -610,8 +605,17 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                         () => context.go('/war/report'))),
                 const SizedBox(width: 10),
                 Expanded(
-                    child: _btn('➡ NEXT WAR', JarsColors.gold, () => g.nextWar(),
-                        dark: true)),
+                  // The final war of the season already fired nextWar()
+                  // internally and stopped short of rolling — the crew
+                  // needs to see the full season report first.
+                  child: g.seasonJustEnded
+                      ? _btn('🏆 SEASON REPORT', JarsColors.gold,
+                          () => context.go('/war/season-report'),
+                          dark: true)
+                      : _btn(
+                          '➡ NEXT WAR', JarsColors.gold, () => g.nextWar(),
+                          dark: true),
+                ),
               ]),
             ],
           ),
@@ -631,11 +635,21 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                   letterSpacing: 1,
                   color: JarsColors.textTertiary)),
           const Spacer(),
-          Text(
-              g.roomId != null
-                  ? 'long-press a crewmate to donate ⚡'
-                  : 'tap to control · long-press to donate ⚡',
-              style: GoogleFonts.inter(fontSize: 10, color: JarsColors.textTertiary)),
+          if (g.canControlWar)
+            GestureDetector(
+              onTap: () => _showGrantDialog(context, g),
+              child: Text('⚡ reimburse',
+                  style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: JarsColors.gold)),
+            )
+          else
+            Text(
+                g.roomId != null
+                    ? 'long-press a crewmate to donate ⚡'
+                    : 'tap to control · long-press to donate ⚡',
+                style: GoogleFonts.inter(fontSize: 10, color: JarsColors.textTertiary)),
         ]),
         const SizedBox(height: 8),
         SizedBox(
@@ -693,6 +707,73 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Admin-only: manually credit ⚡ to any crewmate — a correction, a
+  /// compensation, whatever the room needs. Stays open across grants so the
+  /// admin can work down a whole list without reopening it each time.
+  Future<void> _showGrantDialog(BuildContext context, WarGame g) async {
+    if (g.youClan.isEmpty) return;
+    WarPlayer selected = g.youClan.first;
+    final amountCtrl = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (dCtx) => StatefulBuilder(
+        builder: (dCtx, setDState) => AlertDialog(
+          backgroundColor: JarsColors.surfaceRaised,
+          title: Text('Reimburse ⚡',
+              style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButton<WarPlayer>(
+                value: selected,
+                isExpanded: true,
+                dropdownColor: JarsColors.surfaceRaised,
+                items: [
+                  for (final p in g.youClan)
+                    DropdownMenuItem(
+                        value: p,
+                        child: Text('${p.emoji} ${p.name} (⚡${g.resourcesOf(p.id).round()})',
+                            style: GoogleFonts.inter(color: JarsColors.textPrimary))),
+                ],
+                onChanged: (v) {
+                  if (v != null) setDState(() => selected = v);
+                },
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: amountCtrl,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                style: GoogleFonts.spaceMono(color: JarsColors.textPrimary),
+                decoration: const InputDecoration(hintText: 'Amount'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dCtx),
+                child: const Text('Done')),
+            TextButton(
+              onPressed: () {
+                final amt = double.tryParse(amountCtrl.text);
+                if (amt == null || amt <= 0) return;
+                g.grantPoints(selected.id, amt);
+                amountCtrl.clear();
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('⚡ +${amt.round()} to ${selected.name}')));
+                setDState(() {});
+              },
+              child: Text('Grant',
+                  style: GoogleFonts.inter(
+                      color: JarsColors.gold, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -784,6 +865,83 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Sent ⚡ to ${teammate.name}')));
     } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+
+  Future<void> _confirmRegenerateEnemy(BuildContext context, WarGame g) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text('Regenerate the enemy base?',
+            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+        content: Text(
+            'Tears down their stronghold and rebuilds it fresh, with the '
+            'war chest recalculated from your crew\'s CURRENT logged prep. '
+            'Any destruction your clan already dealt to it is lost, and '
+            'scouting starts over.',
+            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text('Regenerate',
+                  style: GoogleFonts.inter(color: JarsColors.red, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final err = g.regenerateEnemyBase();
+    if (err != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+
+  /// Admin-only: skip the automatic formula entirely and set exactly how
+  /// much ⚡ EACH enemy castle gets, then rebuild them with it.
+  Future<void> _showManualBudgetDialog(BuildContext context, WarGame g) async {
+    final ctrl = TextEditingController(
+        text: g.estimatedEnemyWarChestPerFoe.round().toString());
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text('Set enemy budget per castle',
+            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                'Skips the automatic formula — every enemy castle gets '
+                'EXACTLY this much ⚡, no top-up. Rebuilds their stronghold '
+                'with it right away.',
+                style: GoogleFonts.inter(color: JarsColors.textSecondary)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              style: GoogleFonts.spaceMono(color: JarsColors.textPrimary),
+              decoration: const InputDecoration(hintText: '⚡ per castle'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text('Rebuild',
+                  style: GoogleFonts.inter(color: JarsColors.red, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final amt = double.tryParse(ctrl.text);
+    if (amt == null || amt <= 0) return;
+    final err = g.regenerateEnemyBase(perFoeBudget: amt);
+    if (err != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
     }
   }

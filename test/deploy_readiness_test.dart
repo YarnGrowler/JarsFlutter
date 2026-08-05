@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jars/core/league_config.dart';
 import 'package:jars/models/league.dart';
+import 'package:jars/war/war_ai.dart';
 import 'package:jars/war/war_base.dart';
 import 'package:jars/war/war_game.dart';
 import 'package:jars/war/war_types.dart';
@@ -69,6 +70,7 @@ void main() {
           assertValidTable(g.buildTable(), ctx: 'd$d war$war');
           g.nextWar();
         }
+        g.startNextSeason();
         // a season rolled: index advanced, division stayed in range, no crash
         expect(g.seasonIndex, greaterThanOrEqualTo(1));
         expect(g.divisionIndex, inInclusiveRange(0, cfg.divisions.length - 1));
@@ -89,6 +91,14 @@ void main() {
         expect(g.lastVerdict?.winner, WarSide.you, reason: 'war $war win');
         g.nextWar();
       }
+      // The final nextWar() of the season stops short of rolling — the crew
+      // sees the season report first (below) and confirms explicitly.
+      expect(g.seasonJustEnded, isTrue,
+          reason: 'the 7th war stops for the season report, doesn\'t auto-roll');
+      expect(g.divisionIndex, startDiv,
+          reason: 'not promoted yet — startNextSeason() hasn\'t run');
+      g.startNextSeason();
+      expect(g.seasonJustEnded, isFalse);
       expect(g.divisionIndex, startDiv + 1, reason: 'a perfect season promotes');
     });
 
@@ -103,6 +113,7 @@ void main() {
         expect(g.lastVerdict?.winner, WarSide.enemy, reason: 'war $war loss');
         g.nextWar();
       }
+      g.startNextSeason();
       expect(g.divisionIndex, 0, reason: 'relegation floors, never underflows');
     });
 
@@ -115,6 +126,7 @@ void main() {
         g.endWar();
         g.nextWar();
       }
+      g.startNextSeason();
       expect(g.divisionIndex, 1);
       // season 2: wiped out → relegate back to div 0
       for (var w = 0; w < cfg.matchweeks; w++) {
@@ -123,7 +135,71 @@ void main() {
         g.endWar();
         g.nextWar();
       }
+      g.startNextSeason();
       expect(g.divisionIndex, 0, reason: 'a losing season sends you back down');
+    });
+
+    test('REGRESSION: the season report stops the roll until confirmed, and '
+        'reflects the crew\'s actual W-L record', () {
+      final g = freshGame(50);
+      for (var war = 0; war < cfg.matchweeks; war++) {
+        g.startWar();
+        if (war.isEven) {
+          razeEnemy(g);
+        } else {
+          razeYou(g);
+        }
+        g.endWar();
+        g.nextWar();
+      }
+      expect(g.seasonJustEnded, isTrue);
+      expect(g.seasonResults.length, cfg.matchweeks,
+          reason: 'every war of the season is recorded, not just the last');
+      expect(g.seasonResults.where((r) => r == true).length, 4,
+          reason: 'wars 0,2,4,6 were wins');
+      expect(g.seasonResults.where((r) => r == false).length, 3,
+          reason: 'wars 1,3,5 were losses');
+      // seasonPromotionPreview must read the CURRENT (pre-roll) table —
+      // computable before startNextSeason() actually applies it — and
+      // startNextSeason() must apply EXACTLY what it predicted.
+      final startDiv = g.divisionIndex; // freshGame starts at division 0
+      final preview = g.seasonPromotionPreview;
+      g.startNextSeason();
+      switch (preview) {
+        case true:
+          expect(g.divisionIndex, startDiv + 1,
+              reason: 'the report predicted promotion — it must actually happen');
+        case false:
+          expect(g.divisionIndex, startDiv - 1,
+              reason: 'the report predicted relegation — it must actually happen');
+        case null:
+          expect(g.divisionIndex, startDiv,
+              reason: 'the report predicted holding steady — division unchanged');
+      }
+      expect(g.seasonResults, isEmpty, reason: 'cleared for the new season');
+      expect(g.warIndex, 0);
+    });
+
+    test('a mid-season nextWar() never sets seasonJustEnded', () {
+      final g = freshGame(50);
+      g.startWar();
+      razeEnemy(g);
+      g.endWar();
+      g.nextWar();
+      expect(g.seasonJustEnded, isFalse,
+          reason: 'only the FINAL war of the season triggers the report');
+      expect(g.phase, WarPhase.prep,
+          reason: 'a normal nextWar() goes straight to prep, no report gate');
+    });
+
+    test('startNextSeason() is a no-op before the season has actually ended',
+        () {
+      final g = freshGame(50);
+      final before = g.warIndex;
+      g.startNextSeason();
+      expect(g.warIndex, before,
+          reason: 'nothing to confirm yet — this must not silently roll '
+              'a season early');
     });
   });
 
@@ -763,6 +839,267 @@ void main() {
               'them while they\'re away');
     });
 
+    test('REGRESSION: only the admin can grant ⚡, and it lands on the '
+        'right teammate', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      final before = g.resourcesOf('f0');
+
+      g.isRoomAdmin = false;
+      g.grantPoints('f0', 500);
+      expect(g.resourcesOf('f0'), before,
+          reason: 'a non-admin cannot manually credit anyone');
+
+      g.isRoomAdmin = true;
+      g.grantPoints('f0', 500);
+      expect(g.resourcesOf('f0'), before + 500,
+          reason: 'the admin can, and it lands on the named player');
+      expect(g.resourcesOf('me'), isNot(before + 500),
+          reason: 'never lands on whoever happens to be active instead');
+    });
+
+    test(
+        'REGRESSION: only the admin can place a TEAMMATE\'s castle — '
+        'your own is always fine', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.isRoomAdmin = false;
+
+      expect(g.placeCastle(10, 10), isNull,
+          reason: 'anyone can always place their OWN castle');
+      expect(g.youBase.castles.containsKey('me'), isTrue);
+
+      final err = g.placeCastle(12, 12, forPlayerId: 'f0');
+      expect(err, isNotNull,
+          reason: 'a non-admin cannot place a teammate\'s castle');
+      expect(g.youBase.castles.containsKey('f0'), isFalse);
+
+      g.isRoomAdmin = true;
+      expect(g.placeCastle(12, 12, forPlayerId: 'f0'), isNull,
+          reason: 'the admin can, for an offline teammate who can\'t');
+      expect(g.youBase.castles['f0'], isNotNull);
+    });
+
+    test(
+        'placing a teammate\'s castle for them does NOT retroactively grant '
+        'them prep credit', () {
+      // The exact bug report: 5-6 real castles down (several placed by the
+      // ADMIN, via placeCastle's forPlayerId, for teammates who never
+      // personally opened the app), but the enemy's war chest sized as if
+      // only ONE person's worth of crew existed. This is WORKING AS
+      // DESIGNED, not a bug: a castle placement is a LAYOUT decision, never
+      // a stand-in for real logged effort — otherwise the enemy's budget
+      // (deliberately built to reflect real crew effort, not a guess or a
+      // headcount) could be inflated by an admin favor alone, with zero
+      // actual work behind it.
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      final f0Before = g.youClan.firstWhere((p) => p.id == 'f0').prepEarned;
+
+      g.isRoomAdmin = true;
+      g.placeCastle(12, 12, forPlayerId: 'f0');
+
+      final f0After = g.youClan.firstWhere((p) => p.id == 'f0').prepEarned;
+      expect(f0After, f0Before,
+          reason: 'a castle placed on someone\'s behalf funds nothing — '
+              'only their OWN logged effort (or an explicit admin grant) '
+              'ever counts toward the enemy\'s war-chest floor');
+    });
+
+    test(
+        'REGRESSION: regenerateEnemyBase is admin-only, and picks up a '
+        'manual reimbursement made mid-war', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.startWar();
+
+      g.isRoomAdmin = false;
+      expect(g.regenerateEnemyBase(), isNotNull,
+          reason: 'a non-admin cannot regenerate the enemy');
+
+      g.isRoomAdmin = true;
+      final before = structureValue(g.enemyBase);
+      // f0's prep stipend never landed before war started (simulating the
+      // bug above) — the admin manually corrects it mid-war...
+      g.grantPoints('f0', 3000);
+      // ...then rebuilds the enemy off the corrected numbers.
+      expect(g.regenerateEnemyBase(), isNull);
+      expect(structureValue(g.enemyBase), greaterThan(before),
+          reason: 'the reimbursement actually reached the enemy\'s war '
+              'chest this time, unlike a plain organic earn would mid-war');
+    });
+
+    test(
+        'REGRESSION: regenerateEnemyBase floors on what the crew actually '
+        'BUILT, not just a per-head prepEarned average', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A'],
+            ['f1', 'B'],
+            ['f2', 'C'],
+            ['f3', 'D'],
+            ['f4', 'E'],
+          ]));
+      g.isRoomAdmin = true;
+      // everyone gets a castle (headcount = 6) — but only 'me' ever earns
+      // anything.
+      var col = 10;
+      for (final p in g.youClan) {
+        g.placeCastle(10, col, forPlayerId: p.id);
+        col += 2;
+      }
+      g.startWar();
+      final lowPrepFloor = structureValue(g.enemyBase);
+
+      // the crew built a real fortress anyway.
+      for (var i = 0; i < 40; i++) {
+        g.youBase.place(20 + i ~/ 10, 5 + i % 10, DefType.wall, 'me');
+      }
+      expect(g.youBase.builtValue, greaterThan(300));
+
+      expect(g.regenerateEnemyBase(), isNull);
+      expect(structureValue(g.enemyBase), greaterThan(lowPrepFloor),
+          reason: 'a genuinely built-up shared base floors the enemy even '
+              'when per-head prepEarned reads as barely anyone showed up');
+    });
+
+    test(
+        'REGRESSION: a manual per-foe budget skips the formula entirely and '
+        'directly controls what the enemy builds', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.startWar();
+
+      g.isRoomAdmin = false;
+      expect(g.regenerateEnemyBase(perFoeBudget: 5000), isNotNull,
+          reason: 'a non-admin cannot set the budget manually either');
+
+      g.isRoomAdmin = true;
+      // `p.resources` reflects LEFTOVER after WarAi.designBase spends it,
+      // not the allocation itself — so the meaningful check is the
+      // OBSERVABLE effect: a bigger manual number builds a bigger fort.
+      expect(g.regenerateEnemyBase(perFoeBudget: 50), isNull);
+      final smallBuild = structureValue(g.enemyBase);
+      final smallRooms = WarAi.lastBuildStats?.rooms ?? 0;
+
+      // deliberately a HUGE number — room count (the generator's real
+      // measure of size) is driven by skill, not by wallet size, unless
+      // the manual budget is explicitly translated into a room target.
+      // "I set it to 50000 and got nothing insane" is exactly what this
+      // guards against.
+      expect(g.regenerateEnemyBase(perFoeBudget: 30000), isNull);
+      final bigBuild = structureValue(g.enemyBase);
+      final bigRooms = WarAi.lastBuildStats?.rooms ?? 0;
+
+      expect(bigBuild, greaterThan(smallBuild),
+          reason: 'the manual number alone controls the build — no formula, '
+              'no prepEarned, no built-value floor involved');
+      expect(bigRooms, greaterThan(smallRooms),
+          reason: 'a huge manual budget must actually grow the fortress '
+              '(room count), not just leave the extra ⚡ unspent while the '
+              'same small skill-driven layout gets rebuilt');
+    });
+
+    test(
+        'REGRESSION: regenerateEnemyBase re-syncs the enemy clan to match '
+        'how many real castles are actually down', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A'],
+            ['f1', 'B'],
+            ['f2', 'C'],
+            ['f3', 'D'],
+            ['f4', 'E'],
+          ]));
+      g.isRoomAdmin = true;
+      var col = 10;
+      for (final p in g.youClan) {
+        g.placeCastle(10, col, forPlayerId: p.id);
+        col += 2;
+      }
+      g.startWar();
+      expect(g.enemyClan.length, 6,
+          reason: 'sanity: sized correctly the moment war started');
+
+      // simulate the enemy clan drifting out of sync with castle count —
+      // the exact symptom reported, regardless of what caused it
+      g.players.removeWhere((p) => p.side == WarSide.enemy && p.id != 'foe_0');
+      expect(g.enemyClan.length, 1,
+          reason: 'sanity: now desynced from the 6 real castles still down');
+
+      expect(g.regenerateEnemyBase(), isNull);
+      expect(g.enemyClan.length, 6,
+          reason: 'regenerate must re-sync the enemy clan to match how many '
+              'real castles are actually down');
+    });
+
+    test(
+        'REGRESSION: regenerateEnemyBase clears a stale raid so the next '
+        'attack targets the NEW base, not the torn-down one', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r', myUserId: 'me', myUsername: 'Me', members: const []);
+      g.startWar();
+      final st = g.beginLiveAttack();
+      expect(identical(st.base, g.enemyBase), isTrue,
+          reason: 'sanity: the raid is against the CURRENT enemy base');
+      expect(g.liveAttack, isNotNull);
+
+      g.isRoomAdmin = true;
+      expect(g.regenerateEnemyBase(), isNull);
+
+      expect(g.liveAttack, isNull,
+          reason: 'a raid against the torn-down base must not silently '
+              'resume — old scouting/damage against a base that no longer '
+              'exists is exactly the reported "nothing regenerated" bug');
+    });
+
     test('the room admin CAN use every war-wide control', () {
       final g = WarGame.fresh();
       g.startPrep();
@@ -1019,6 +1356,7 @@ void main() {
         g.endWar();
         g.nextWar();
       }
+      g.startNextSeason();
       final savedDiv = g.divisionIndex;
       final savedSeason = g.seasonIndex;
       expect(savedDiv, 1);

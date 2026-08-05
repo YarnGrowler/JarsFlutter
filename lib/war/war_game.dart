@@ -579,11 +579,20 @@ class WarGame extends ChangeNotifier {
   }
 
   // editor actions (as the active human, on your base)
-  String? placeCastle(int r, int c) {
+  ///
+  /// [forPlayerId] lets the room ADMIN place or relocate a TEAMMATE's castle
+  /// — real players build their own base sector, but a crewmate who's never
+  /// online can leave the shared base impossible to finish laying out.
+  /// Placing your own castle needs no permission; placing someone else's does.
+  String? placeCastle(int r, int c, {String? forPlayerId}) {
     if (phase != WarPhase.prep) return null;
+    final ownerId = forPlayerId ?? active.id;
+    if (ownerId != active.id && !canControlWar) {
+      return 'Only the room admin can place a teammate\'s castle.';
+    }
     if (!youBase.canPlace(r, c)) return 'Blocked ground.';
     // moving an existing castle refunds nothing (free), just relocate
-    youBase.placeCastle(active.id, r, c);
+    youBase.placeCastle(ownerId, r, c);
     _save();
     notifyListeners();
     return null;
@@ -798,7 +807,7 @@ class WarGame extends ChangeNotifier {
     final fighters = warParticipants.isNotEmpty
         ? List<WarPlayer>.of(warParticipants)
         : youClan.where((p) => !p.isBot).toList();
-    _trimEnemyClan(math.max(1, fighters.length));
+    _resizeEnemyClan(math.max(1, fighters.length));
 
     // Idle crewmates still get a castle so the base isn't soft-locked, but
     // they already lost their vote on enemy strength above.
@@ -874,15 +883,138 @@ class WarGame extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Drop surplus enemy bots so the war mirrors [keep] fighters — not the
-  /// full room roster. Call before [WarAi.designBase] so idle seats never
-  /// buy the enemy extra castles or hourly raid rolls.
-  void _trimEnemyClan(int keep) {
+  /// Bumped each [regenerateEnemyBase] call so the reroll never repeats the
+  /// same layout twice in a row. Not persisted — worst case a reload just
+  /// means the next reroll after that lands on a seed it's used before.
+  int _enemyRegenSeed = 0;
+
+  /// Admin-only, mid-war: tear down and rebuild the enemy's stronghold —
+  /// fresh layout, war chest recomputed from CURRENT crew prep (not
+  /// whatever was locked in the moment [startWar] ran). For when the
+  /// headcount/budget came out wrong — a teammate's castle got placed
+  /// after the snapshot, more prep got logged since, or the layout itself
+  /// just rolled badly.
+  ///
+  /// Floors the chest at whichever is bigger: raw `Σ prepEarned` (workouts
+  /// + admin grants), or what the crew's shared base actually cost to
+  /// BUILD. The co-op base lets anyone spend anywhere, so a crew heavily
+  /// carried by one grinder's earnings can build a real fortress while
+  /// `Σ prepEarned` — divided across every castle-holding roster seat —
+  /// still reads as barely anyone showed up. Built value can't be diluted
+  /// that way: it's a direct measure of "how much fortress exists," not a
+  /// per-head average.
+  ///
+  /// [perFoeBudget], if given, throws out the automatic formula entirely —
+  /// every foe gets EXACTLY that many ⚡, full stop. For when the admin
+  /// just wants to set the number themselves rather than keep tuning what
+  /// counts toward an estimate.
+  String? regenerateEnemyBase({double? perFoeBudget}) {
+    if (!canControlWar) return 'Only the room admin can do that.';
+    if (phase != WarPhase.war) return 'Only mid-war.';
+    final fighters = warParticipants.isNotEmpty
+        ? warParticipants
+        : youClan.where((p) => !p.isBot).toList();
+    // The enemy clan was sized to whatever counted as a "fighter" the
+    // MOMENT startWar() ran — a castle placed (by anyone, including the
+    // admin on a teammate's behalf) since then never grew it. "6 castles
+    // down, still only fighting 1 tiny enemy" is exactly that: the clan
+    // itself never resized, no matter how the budget got tuned.
+    _resizeEnemyClan(math.max(1, fighters.length));
     final foes = enemyClan;
-    if (foes.length <= keep) return;
-    final drop = {for (final p in foes.skip(keep)) p.id};
-    players.removeWhere((p) => drop.contains(p.id));
-    enemyBase.pruneCastlesNotIn({for (final p in enemyClan) p.id});
+    if (foes.isEmpty) return null;
+    final effSkill = _effectiveEnemySkill();
+    final tier = _tierForSkill(effSkill);
+    enemyDifficulty = tier;
+    double perFoeFloor;
+    double forgeMul;
+    if (perFoeBudget != null) {
+      perFoeFloor = perFoeBudget;
+      forgeMul = 0; // manual number IS the total — no automatic top-up
+    } else {
+      final prepFloor = fighters.fold(0.0, (sum, p) => sum + p.prepEarned) *
+          WarCosts.enemyPrepMirror;
+      final investFloor = youBase.builtValue * WarCosts.enemyPrepMirror;
+      final crewTotal = math.max(prepFloor, investFloor);
+      perFoeFloor = crewTotal / foes.length;
+      forgeMul = _enemyForgeMultiplier;
+    }
+    for (final p in foes) {
+      p.ai = tier;
+      p.skillMul = effSkill / AiData.skill(tier);
+      p.resources = perFoeFloor + WarCosts.prepBudgetFor(p.skill) * forgeMul;
+    }
+    _enemyRegenSeed++;
+    enemyBase = Base(WarSide.enemy,
+        seedFromParts([warSeed, 'enemyRegen', _enemyRegenSeed]),
+        size: mapSize, config: _terrainForDivision());
+    final wards = currentDivision.wards;
+    // Room count (the generator's actual measure of "how big a fortress")
+    // is driven by SKILL, not by how much ⚡ a foe is carrying — money only
+    // gates what a room gets FURNISHED with, never how many rooms exist,
+    // and the leftover-spend pass is bounded by an iteration count tied to
+    // skill/room-target too, not by remaining funds. So a manual budget
+    // alone (no matching skill bump) would just leave the extra ⚡ unspent
+    // and the layout unchanged — "I set it to 50000 and got nothing
+    // insane." Translate the pooled manual budget into an explicit room
+    // target instead, so the size actually reflects the number chosen.
+    // ~400⚡/room roughly matches a furnished citadel room at high skill
+    // (v18 tuning: ~14.1k⚡ pooled ≈ 30-37 rooms at skill 1.49).
+    final manualRooms = perFoeBudget == null
+        ? null
+        : ((perFoeBudget * foes.length) / 400).round().clamp(2, 72);
+    WarAi.designBase(
+      enemyBase,
+      foes,
+      SeededRng(seedFromParts([warSeed, 'enemyDesign', _enemyRegenSeed])),
+      style: StrongholdStyle(
+        rooms: manualRooms,
+        minRooms: wards >= 2 ? 8 + wards * 6 : null,
+        unlockDefs: unlockedDefsNow,
+      ),
+    );
+    // a torn-down-and-rebuilt fortress isn't the one anyone scouted
+    enemyIntel = {};
+    // Any raid in progress (or one you'd merely opened and backed out of —
+    // it persists until END RAID) still points at the OLD Base object by
+    // reference. Without clearing these, the next "RAID ENEMY" tap would
+    // silently resume the stale AttackState against the fortress that no
+    // longer exists — old scouting, old damage, the same tiny base, as if
+    // nothing had regenerated at all.
+    liveAttack = null;
+    clashState = null;
+    _save();
+    notifyListeners();
+    return null;
+  }
+
+  /// Resize the enemy clan to exactly [target] foes — drops surplus bots
+  /// (the war mirrors real fighters, not the full room roster) or adds new
+  /// ones, using the SAME naming scheme [applyRoomRoster] seeds enemies
+  /// with. Call before [WarAi.designBase] so idle seats never buy the enemy
+  /// extra castles/raids, and so a regenerate after MORE castles have gone
+  /// down since [startWar] actually fields the right number of foes.
+  void _resizeEnemyClan(int target) {
+    final foes = enemyClan;
+    if (foes.length > target) {
+      final drop = {for (final p in foes.skip(target)) p.id};
+      players.removeWhere((p) => drop.contains(p.id));
+      enemyBase.pruneCastlesNotIn({for (final p in enemyClan) p.id});
+    } else if (foes.length < target) {
+      for (var i = foes.length; i < target; i++) {
+        final c = _enemyChars[i % _enemyChars.length];
+        final wave = i ~/ _enemyChars.length;
+        final name =
+            wave == 0 ? c[1] as String : '${c[1]} ${_romanNumeral(wave + 1)}';
+        players.add(WarPlayer(
+            id: 'foe_$i',
+            name: name,
+            emoji: c[2] as String,
+            colorValue: c[3] as int,
+            side: WarSide.enemy,
+            ai: enemyDifficulty,
+            isBot: true));
+      }
+    }
   }
 
   Cell? _fallbackCastle(Base base, int i) {
@@ -1465,24 +1597,64 @@ class WarGame extends ChangeNotifier {
     }
   }
 
+  /// Set once the season's final (7th, by default) war ends — instead of
+  /// rolling straight into the next season's prep, [nextWar] stops here so
+  /// the crew sees a full season report (final standings, promotion/
+  /// relegation, the whole W-L record) before anyone can start the next
+  /// season. Persisted so a reload between "war ended" and "confirmed the
+  /// report" doesn't silently skip past it.
+  bool seasonJustEnded = false;
+
   void nextWar() {
     final won = lastVerdict?.winner == WarSide.you;
     seasonResults = [...seasonResults, won];
     warIndex++;
     if (warIndex >= _lcfg.matchweeks) {
-      _rollSeason();
+      // Don't roll yet — the season report screen needs `seasonResults`,
+      // `warIndex`, and `divisionIndex` exactly as they stand right now
+      // (pre-roll) to compute the standings and the promotion/relegation
+      // outcome. startNextSeason() does the actual roll once the crew has
+      // seen the report and confirmed.
+      seasonJustEnded = true;
+      _save();
+      notifyListeners();
+      return;
     }
     startPrep();
   }
 
-  void _rollSeason() {
+  /// Called from the season report screen once the crew is ready to move
+  /// on — actually performs the roll [nextWar] deferred, then starts prep
+  /// for the new season's first war.
+  void startNextSeason() {
+    if (!seasonJustEnded) return;
+    _rollSeason();
+    seasonJustEnded = false;
+    startPrep();
+  }
+
+  /// What the season's final standing does to the division — computed from
+  /// the CURRENT (pre-roll) table, so the season report screen can preview
+  /// it before [startNextSeason] actually applies it. `true` = promoted,
+  /// `false` = relegated, `null` = stays put. [_rollSeason] applies exactly
+  /// this same read.
+  bool? get seasonPromotionPreview {
     final table = buildTable();
     final pos = table.yourRow?.position ?? _lcfg.teamsPerLeague;
-    if (pos <= _lcfg.promoteCount &&
-        divisionIndex < _lcfg.divisions.length - 1) {
+    if (pos <= _lcfg.promoteCount && divisionIndex < _lcfg.divisions.length - 1) {
+      return true;
+    }
+    if (pos > _lcfg.teamsPerLeague - _lcfg.relegateCount && divisionIndex > 0) {
+      return false;
+    }
+    return null;
+  }
+
+  void _rollSeason() {
+    final outcome = seasonPromotionPreview;
+    if (outcome == true) {
       divisionIndex++;
-    } else if (pos > _lcfg.teamsPerLeague - _lcfg.relegateCount &&
-        divisionIndex > 0) {
+    } else if (outcome == false) {
       divisionIndex--;
     }
     // Peak map size never shrinks — pad the living fortress if we grew.
@@ -1538,6 +1710,7 @@ class WarGame extends ChangeNotifier {
     warIndex = 0;
     divisionIndex = 0;
     seasonResults = [];
+    seasonJustEnded = false;
     worldGen++; // fresh terrain, fresh strongholds — never the same rerun
     // Solo/offline only: a real room's roster (seated via applyRoomRoster)
     // must survive a reset untouched — swapping it for the fake bot crew
@@ -1573,6 +1746,34 @@ class WarGame extends ChangeNotifier {
     _pendingWorkoutEarn[forRoomId] =
         (_pendingWorkoutEarn[forRoomId] ?? 0) + points;
     return false;
+  }
+
+  /// Admin-only manual credit — compensation for a bug, a correction, a
+  /// judgment call, whatever the room's admin decides. Unlike a peer
+  /// donation (which moves ⚡ OUT of the giver's own pool), this creates it,
+  /// so it isn't capped by anyone's current balance.
+  ///
+  /// Deliberately does NOT go through [_creditEarn]: a manual grant always
+  /// counts toward [WarPlayer.prepEarned] — and so toward the enemy's war
+  /// chest floor via [regenerateEnemyBase] — even mid-war, when organic
+  /// workout-earn no longer touches prepEarned. That's the whole point of
+  /// pairing this with regenerateEnemyBase: reimburse whoever the roster
+  /// timing shortchanged, then rebuild the enemy off the corrected numbers.
+  void grantPoints(String playerId, double amount) {
+    if (!canControlWar) return;
+    if (amount <= 0) return;
+    WarPlayer? p;
+    for (final pl in players) {
+      if (pl.id == playerId) {
+        p = pl;
+        break;
+      }
+    }
+    if (p == null) return;
+    p.resources += amount;
+    p.prepEarned += amount;
+    _save();
+    notifyListeners();
   }
 
   void _creditEarn(double points, String playerId) {
@@ -1714,6 +1915,7 @@ class WarGame extends ChangeNotifier {
         'yFell': youBaseFellAt,
         'players': [for (final pl in players) pl.toJson()],
         'results': seasonResults,
+        'seasonEnded': seasonJustEnded,
         'youBase': youBase.toJson(),
         'enemyBase': enemyBase.toJson(),
         'raid': liveAttack?.toJson(),
@@ -1753,6 +1955,7 @@ class WarGame extends ChangeNotifier {
     seasonResults = [
       for (final v in (j['results'] as List? ?? const [])) v as bool?
     ];
+    seasonJustEnded = j['seasonEnded'] as bool? ?? false;
     youBase = j['youBase'] != null
         ? Base.fromJson(j['youBase'] as Map<String, dynamic>)
         : Base(WarSide.you, warSeed, size: mapSize, config: _terrainForDivision());
