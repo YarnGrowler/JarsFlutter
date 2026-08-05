@@ -579,20 +579,11 @@ class WarGame extends ChangeNotifier {
   }
 
   // editor actions (as the active human, on your base)
-  ///
-  /// [forPlayerId] lets the room ADMIN place or relocate a TEAMMATE's castle
-  /// — real players build their own base sector, but a crewmate who's never
-  /// online can leave the shared base impossible to finish laying out.
-  /// Placing your own castle needs no permission; placing someone else's does.
-  String? placeCastle(int r, int c, {String? forPlayerId}) {
+  String? placeCastle(int r, int c) {
     if (phase != WarPhase.prep) return null;
-    final ownerId = forPlayerId ?? active.id;
-    if (ownerId != active.id && !canControlWar) {
-      return 'Only the room admin can place a teammate\'s castle.';
-    }
     if (!youBase.canPlace(r, c)) return 'Blocked ground.';
     // moving an existing castle refunds nothing (free), just relocate
-    youBase.placeCastle(ownerId, r, c);
+    youBase.placeCastle(active.id, r, c);
     _save();
     notifyListeners();
     return null;
@@ -807,7 +798,7 @@ class WarGame extends ChangeNotifier {
     final fighters = warParticipants.isNotEmpty
         ? List<WarPlayer>.of(warParticipants)
         : youClan.where((p) => !p.isBot).toList();
-    _resizeEnemyClan(math.max(1, fighters.length));
+    _trimEnemyClan(math.max(1, fighters.length));
 
     // Idle crewmates still get a castle so the base isn't soft-locked, but
     // they already lost their vote on enemy strength above.
@@ -883,138 +874,15 @@ class WarGame extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Bumped each [regenerateEnemyBase] call so the reroll never repeats the
-  /// same layout twice in a row. Not persisted — worst case a reload just
-  /// means the next reroll after that lands on a seed it's used before.
-  int _enemyRegenSeed = 0;
-
-  /// Admin-only, mid-war: tear down and rebuild the enemy's stronghold —
-  /// fresh layout, war chest recomputed from CURRENT crew prep (not
-  /// whatever was locked in the moment [startWar] ran). For when the
-  /// headcount/budget came out wrong — a teammate's castle got placed
-  /// after the snapshot, more prep got logged since, or the layout itself
-  /// just rolled badly.
-  ///
-  /// Floors the chest at whichever is bigger: raw `Σ prepEarned` (workouts
-  /// + admin grants), or what the crew's shared base actually cost to
-  /// BUILD. The co-op base lets anyone spend anywhere, so a crew heavily
-  /// carried by one grinder's earnings can build a real fortress while
-  /// `Σ prepEarned` — divided across every castle-holding roster seat —
-  /// still reads as barely anyone showed up. Built value can't be diluted
-  /// that way: it's a direct measure of "how much fortress exists," not a
-  /// per-head average.
-  ///
-  /// [perFoeBudget], if given, throws out the automatic formula entirely —
-  /// every foe gets EXACTLY that many ⚡, full stop. For when the admin
-  /// just wants to set the number themselves rather than keep tuning what
-  /// counts toward an estimate.
-  String? regenerateEnemyBase({double? perFoeBudget}) {
-    if (!canControlWar) return 'Only the room admin can do that.';
-    if (phase != WarPhase.war) return 'Only mid-war.';
-    final fighters = warParticipants.isNotEmpty
-        ? warParticipants
-        : youClan.where((p) => !p.isBot).toList();
-    // The enemy clan was sized to whatever counted as a "fighter" the
-    // MOMENT startWar() ran — a castle placed (by anyone, including the
-    // admin on a teammate's behalf) since then never grew it. "6 castles
-    // down, still only fighting 1 tiny enemy" is exactly that: the clan
-    // itself never resized, no matter how the budget got tuned.
-    _resizeEnemyClan(math.max(1, fighters.length));
+  /// Drop surplus enemy bots so the war mirrors [keep] fighters — not the
+  /// full room roster. Call before [WarAi.designBase] so idle seats never
+  /// buy the enemy extra castles or hourly raid rolls.
+  void _trimEnemyClan(int keep) {
     final foes = enemyClan;
-    if (foes.isEmpty) return null;
-    final effSkill = _effectiveEnemySkill();
-    final tier = _tierForSkill(effSkill);
-    enemyDifficulty = tier;
-    double perFoeFloor;
-    double forgeMul;
-    if (perFoeBudget != null) {
-      perFoeFloor = perFoeBudget;
-      forgeMul = 0; // manual number IS the total — no automatic top-up
-    } else {
-      final prepFloor = fighters.fold(0.0, (sum, p) => sum + p.prepEarned) *
-          WarCosts.enemyPrepMirror;
-      final investFloor = youBase.builtValue * WarCosts.enemyPrepMirror;
-      final crewTotal = math.max(prepFloor, investFloor);
-      perFoeFloor = crewTotal / foes.length;
-      forgeMul = _enemyForgeMultiplier;
-    }
-    for (final p in foes) {
-      p.ai = tier;
-      p.skillMul = effSkill / AiData.skill(tier);
-      p.resources = perFoeFloor + WarCosts.prepBudgetFor(p.skill) * forgeMul;
-    }
-    _enemyRegenSeed++;
-    enemyBase = Base(WarSide.enemy,
-        seedFromParts([warSeed, 'enemyRegen', _enemyRegenSeed]),
-        size: mapSize, config: _terrainForDivision());
-    final wards = currentDivision.wards;
-    // Room count (the generator's actual measure of "how big a fortress")
-    // is driven by SKILL, not by how much ⚡ a foe is carrying — money only
-    // gates what a room gets FURNISHED with, never how many rooms exist,
-    // and the leftover-spend pass is bounded by an iteration count tied to
-    // skill/room-target too, not by remaining funds. So a manual budget
-    // alone (no matching skill bump) would just leave the extra ⚡ unspent
-    // and the layout unchanged — "I set it to 50000 and got nothing
-    // insane." Translate the pooled manual budget into an explicit room
-    // target instead, so the size actually reflects the number chosen.
-    // ~400⚡/room roughly matches a furnished citadel room at high skill
-    // (v18 tuning: ~14.1k⚡ pooled ≈ 30-37 rooms at skill 1.49).
-    final manualRooms = perFoeBudget == null
-        ? null
-        : ((perFoeBudget * foes.length) / 400).round().clamp(2, 72);
-    WarAi.designBase(
-      enemyBase,
-      foes,
-      SeededRng(seedFromParts([warSeed, 'enemyDesign', _enemyRegenSeed])),
-      style: StrongholdStyle(
-        rooms: manualRooms,
-        minRooms: wards >= 2 ? 8 + wards * 6 : null,
-        unlockDefs: unlockedDefsNow,
-      ),
-    );
-    // a torn-down-and-rebuilt fortress isn't the one anyone scouted
-    enemyIntel = {};
-    // Any raid in progress (or one you'd merely opened and backed out of —
-    // it persists until END RAID) still points at the OLD Base object by
-    // reference. Without clearing these, the next "RAID ENEMY" tap would
-    // silently resume the stale AttackState against the fortress that no
-    // longer exists — old scouting, old damage, the same tiny base, as if
-    // nothing had regenerated at all.
-    liveAttack = null;
-    clashState = null;
-    _save();
-    notifyListeners();
-    return null;
-  }
-
-  /// Resize the enemy clan to exactly [target] foes — drops surplus bots
-  /// (the war mirrors real fighters, not the full room roster) or adds new
-  /// ones, using the SAME naming scheme [applyRoomRoster] seeds enemies
-  /// with. Call before [WarAi.designBase] so idle seats never buy the enemy
-  /// extra castles/raids, and so a regenerate after MORE castles have gone
-  /// down since [startWar] actually fields the right number of foes.
-  void _resizeEnemyClan(int target) {
-    final foes = enemyClan;
-    if (foes.length > target) {
-      final drop = {for (final p in foes.skip(target)) p.id};
-      players.removeWhere((p) => drop.contains(p.id));
-      enemyBase.pruneCastlesNotIn({for (final p in enemyClan) p.id});
-    } else if (foes.length < target) {
-      for (var i = foes.length; i < target; i++) {
-        final c = _enemyChars[i % _enemyChars.length];
-        final wave = i ~/ _enemyChars.length;
-        final name =
-            wave == 0 ? c[1] as String : '${c[1]} ${_romanNumeral(wave + 1)}';
-        players.add(WarPlayer(
-            id: 'foe_$i',
-            name: name,
-            emoji: c[2] as String,
-            colorValue: c[3] as int,
-            side: WarSide.enemy,
-            ai: enemyDifficulty,
-            isBot: true));
-      }
-    }
+    if (foes.length <= keep) return;
+    final drop = {for (final p in foes.skip(keep)) p.id};
+    players.removeWhere((p) => drop.contains(p.id));
+    enemyBase.pruneCastlesNotIn({for (final p in enemyClan) p.id});
   }
 
   Cell? _fallbackCastle(Base base, int i) {
@@ -1278,26 +1146,9 @@ class WarGame extends ChangeNotifier {
     return liveAttack!;
   }
 
-  /// Full replay frame-by-frame data is kept for only the most recent
-  /// raids — every entry beyond this still shows up in the log/stats, it
-  /// just loses its watchable "▶ WATCH" replay. Every replay gets
-  /// serialized on every save and deserialized on every load/sync; a long
-  /// war's worth of them (up to 40 raids × up to ~140 frames each) made
-  /// boot and room sync dramatically slower ("the app takes 30 seconds to
-  /// load now") once replays started actually persisting at all.
-  static const int _kMaxReplaysKept = 6;
-
-  /// Cap the feed at 40 entries; strip full replay data from anything
-  /// older than the most recent [_kMaxReplaysKept] raids.
+  /// Cap the feed — every raid KEEPS its replay until the war ends.
   void _trimFeed() {
     if (feed.length > 40) feed.removeRange(0, feed.length - 40);
-    var kept = 0;
-    for (var i = feed.length - 1; i >= 0; i--) {
-      final e = feed[i];
-      if (e.replay == null) continue;
-      kept++;
-      if (kept > _kMaxReplaysKept) e.replay = null;
-    }
   }
 
   /// Fold the live raid's tallies into the war (END RAID / war end).
@@ -1614,13 +1465,7 @@ class WarGame extends ChangeNotifier {
     }
   }
 
-  /// Admin-only — advances the WHOLE room to the next war's prep. Anyone
-  /// still sitting on a frozen battle report (by design, see
-  /// BattleReportScreen — it never re-reads live state once captured)
-  /// could otherwise still tap a visible NEXT WAR button and trigger this
-  /// themselves, even after the admin already advanced everyone.
   void nextWar() {
-    if (!canControlWar) return;
     final won = lastVerdict?.winner == WarSide.you;
     seasonResults = [...seasonResults, won];
     warIndex++;
@@ -1728,34 +1573,6 @@ class WarGame extends ChangeNotifier {
     _pendingWorkoutEarn[forRoomId] =
         (_pendingWorkoutEarn[forRoomId] ?? 0) + points;
     return false;
-  }
-
-  /// Admin-only manual credit — compensation for a bug, a correction, a
-  /// judgment call, whatever the room's admin decides. Unlike a peer
-  /// donation (which moves ⚡ OUT of the giver's own pool), this creates it,
-  /// so it isn't capped by anyone's current balance.
-  ///
-  /// Deliberately does NOT go through [_creditEarn]: a manual grant always
-  /// counts toward [WarPlayer.prepEarned] — and so toward the enemy's war
-  /// chest floor via [regenerateEnemyBase] — even mid-war, when organic
-  /// workout-earn no longer touches prepEarned. That's the whole point of
-  /// pairing this with regenerateEnemyBase: reimburse whoever the roster
-  /// timing shortchanged, then rebuild the enemy off the corrected numbers.
-  void grantPoints(String playerId, double amount) {
-    if (!canControlWar) return;
-    if (amount <= 0) return;
-    WarPlayer? p;
-    for (final pl in players) {
-      if (pl.id == playerId) {
-        p = pl;
-        break;
-      }
-    }
-    if (p == null) return;
-    p.resources += amount;
-    p.prepEarned += amount;
-    _save();
-    notifyListeners();
   }
 
   void _creditEarn(double points, String playerId) {
@@ -1902,8 +1719,6 @@ class WarGame extends ChangeNotifier {
         'raid': liveAttack?.toJson(),
         'youIntel': youIntel.toList(),
         'enemyIntel': enemyIntel.toList(),
-        'feed': [for (final e in feed) e.toJson()],
-        'lastEnemyRaider': lastEnemyRaider,
       };
 
   /// Rehydrate every field from a [toJson] blob — pure deserialization, no
@@ -1958,39 +1773,6 @@ class WarGame extends ChangeNotifier {
     enemyIntel = {
       for (final v in (j['enemyIntel'] as List? ?? const [])) (v as num).toInt()
     };
-    // Raid history + replays — without this, an app reload (or a mobile
-    // browser reclaiming a backgrounded tab, the everyday version of that)
-    // wiped every raid's watchable replay while leaving the DAMAGE it dealt
-    // behind (that part always lived on youBase/enemyBase, which WAS
-    // serialized) — "I can see the damage but there's no replay."
-    //
-    // MERGE, don't replace: two teammates can each bank a live raid on their
-    // own device around the same moment. Whichever one's save loses the
-    // compare-and-swap race gets its whole blob overwritten by the winner's
-    // via this exact method — a plain replace would silently drop that
-    // teammate's raid (and its replay) even though it genuinely happened.
-    // Keyed on the fields that make a raid unique in practice, not an
-    // explicit id (none existed before this and adding one is a bigger,
-    // riskier save-format change than this warrants).
-    String feedKey(WarLogEntry e) => '${e.minute}|${e.attackerSide.index}|'
-        '${e.attackerName}|${e.troopsSent}|${e.gained.toStringAsFixed(2)}|'
-        '${e.resourcesSpent.toStringAsFixed(2)}';
-    final haveKeys = {for (final e in feed) feedKey(e)};
-    for (final ej in (j['feed'] as List? ?? const [])) {
-      final e = WarLogEntry.fromJson(ej as Map<String, dynamic>);
-      if (haveKeys.add(feedKey(e))) feed.add(e);
-    }
-    feed.sort((a, b) => a.minute.compareTo(b.minute));
-    _trimFeed();
-    lastEnemyReplay = null;
-    lastEnemyRaider = j['lastEnemyRaider'] as String? ?? '';
-    for (final e in feed) {
-      if (e.attackerSide == WarSide.enemy &&
-          e.replay != null &&
-          e.replay!.isNotEmpty) {
-        lastEnemyReplay = e.replay;
-      }
-    }
     // resume an in-progress raid — nothing the player built up is lost
     if (j['raid'] != null && phase == WarPhase.war) {
       liveAttack = AttackState.restore(
@@ -2031,26 +1813,7 @@ class WarGame extends ChangeNotifier {
   /// import here); see `WarSyncService`. Local save always still happens too
   /// (below) — an offline mirror that keeps solo play, tests, and "no
   /// network right now" all working exactly as before.
-  static Future<void> Function(WarGame game)? onRoomSave;
-
-  /// The room push kicked off by the most recent [_save]. Awaitable via
-  /// [flushPendingSave] — a deliberate, user-initiated transition (NEXT
-  /// WAR, chiefly) can await this before letting the UI move on, so a
-  /// reload moments later can't race an in-flight push and revert the
-  /// transition back to whatever the server still had.
-  Future<void>? _pendingRoomPush;
-
-  /// Waits for the most recent room push (if any) to finish. A no-op when
-  /// there's no room, or nothing pending.
-  Future<void> flushPendingSave() => _pendingRoomPush ?? Future.value();
-
-  /// Set by [onRoomSave]'s implementation when the most recent room push
-  /// failed — cleared on the next successful one. `_pushRoomSave` used to
-  /// swallow every failure into a debug-only print, invisible on a real
-  /// deployed build; a caller that awaits [flushPendingSave] can check this
-  /// afterward and tell the user their action didn't actually sync, instead
-  /// of silently proceeding as if it had.
-  String? lastSyncError;
+  static void Function(WarGame game)? onRoomSave;
 
   /// Call on SIGN-OUT. Nothing else clears `WarGame.instance` between
   /// sessions — if a different real user signs in on the same device
@@ -2083,24 +1846,6 @@ class WarGame extends ChangeNotifier {
       final p = await SharedPreferences.getInstance();
       await p.setString(_prefsKey, jsonEncode(json));
     });
-    if (roomId != null) {
-      if (onRoomSave == null) {
-        // The room-sync provider hasn't finished wiring this hook up yet
-        // (its first Supabase round-trip is still in flight — happens on
-        // every fresh app load, and can take a real few seconds). A
-        // mutating action fired in that window — NEXT WAR, chiefly, since
-        // nothing gated its button on sync being ready — used to just
-        // silently skip the push entirely: `onRoomSave?.call(this)` is a
-        // no-op on null, `_pendingRoomPush` stayed null, `flushPendingSave`
-        // resolved instantly as if nothing was wrong, and the change never
-        // reached the shared row — reproducing "reload and it's back to
-        // the old war" with zero visible error. Surface it instead.
-        lastSyncError = 'not connected to the room yet — try again in a '
-            'few seconds';
-        _pendingRoomPush = null;
-      } else {
-        _pendingRoomPush = onRoomSave?.call(this);
-      }
-    }
+    if (roomId != null) onRoomSave?.call(this);
   }
 }

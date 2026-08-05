@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../core/debug_tools.dart';
 import '../../core/theme.dart';
 import '../../providers/war_providers.dart';
 import '../../war/war_game.dart';
@@ -540,14 +539,7 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                 ),
               const SizedBox(height: 12),
               _warClockCard(g),
-              // Dev-only: skipping the wall clock is a testing convenience,
-              // never a real player's call — the war runs on its own now
-              // (Tier 1 auto-advance). A real admin accidentally landing on
-              // "End Day" used to instantly resolve the ENTIRE rest of the
-              // war in one tap, no warning, no undo. Gated behind
-              // kDebugTools so it's invisible outside dev builds; kept
-              // behind a confirm dialog even there as a second guard.
-              if (g.canControlWar && kDebugTools) ...[
+              if (g.canControlWar) ...[
                 const SizedBox(height: 8),
                 Text('SKIP AHEAD · testing',
                     style: GoogleFonts.inter(
@@ -567,25 +559,7 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                       child: _btn('End Day', JarsColors.surface,
-                          () => _confirmEndDay(context, g))),
-                ]),
-              ],
-              // Admin-only, real (not dev-gated): the enemy's war chest is
-              // sized off whoever counted as a "fighter" the moment war
-              // started — a teammate's castle placed late, or by the admin
-              // on their behalf, can leave that snapshot wrong. This
-              // rebuilds the enemy from scratch off CURRENT numbers.
-              if (g.canControlWar) ...[
-                const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(
-                      child: _btn('🔄 Regenerate enemy base',
-                          JarsColors.surface,
-                          () => _confirmRegenerateEnemy(context, g))),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: _btn('✏️ Set budget', JarsColors.surface,
-                          () => _showManualBudgetDialog(context, g))),
+                          () => g.advanceToEndOfDay())),
                 ]),
               ],
               if (g.feed.isNotEmpty) ...[
@@ -636,8 +610,7 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                         () => context.go('/war/report'))),
                 const SizedBox(width: 10),
                 Expanded(
-                    child: _btn('➡ NEXT WAR', JarsColors.gold,
-                        () => _confirmNextWar(context, g),
+                    child: _btn('➡ NEXT WAR', JarsColors.gold, () => g.nextWar(),
                         dark: true)),
               ]),
             ],
@@ -658,21 +631,11 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                   letterSpacing: 1,
                   color: JarsColors.textTertiary)),
           const Spacer(),
-          if (g.canControlWar)
-            GestureDetector(
-              onTap: () => _showGrantDialog(context, g),
-              child: Text('⚡ reimburse',
-                  style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: JarsColors.gold)),
-            )
-          else
-            Text(
-                g.roomId != null
-                    ? 'long-press a crewmate to donate ⚡'
-                    : 'tap to control · long-press to donate ⚡',
-                style: GoogleFonts.inter(fontSize: 10, color: JarsColors.textTertiary)),
+          Text(
+              g.roomId != null
+                  ? 'long-press a crewmate to donate ⚡'
+                  : 'tap to control · long-press to donate ⚡',
+              style: GoogleFonts.inter(fontSize: 10, color: JarsColors.textTertiary)),
         ]),
         const SizedBox(height: 8),
         SizedBox(
@@ -730,73 +693,6 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  /// Admin-only: manually credit ⚡ to any crewmate — a correction, a
-  /// compensation, whatever the room needs. Stays open across grants so the
-  /// admin can work down a whole list without reopening it each time.
-  Future<void> _showGrantDialog(BuildContext context, WarGame g) async {
-    if (g.youClan.isEmpty) return;
-    WarPlayer selected = g.youClan.first;
-    final amountCtrl = TextEditingController();
-    await showDialog<void>(
-      context: context,
-      builder: (dCtx) => StatefulBuilder(
-        builder: (dCtx, setDState) => AlertDialog(
-          backgroundColor: JarsColors.surfaceRaised,
-          title: Text('Reimburse ⚡',
-              style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              DropdownButton<WarPlayer>(
-                value: selected,
-                isExpanded: true,
-                dropdownColor: JarsColors.surfaceRaised,
-                items: [
-                  for (final p in g.youClan)
-                    DropdownMenuItem(
-                        value: p,
-                        child: Text('${p.emoji} ${p.name} (⚡${g.resourcesOf(p.id).round()})',
-                            style: GoogleFonts.inter(color: JarsColors.textPrimary))),
-                ],
-                onChanged: (v) {
-                  if (v != null) setDState(() => selected = v);
-                },
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: amountCtrl,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                style: GoogleFonts.spaceMono(color: JarsColors.textPrimary),
-                decoration: const InputDecoration(hintText: 'Amount'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(dCtx),
-                child: const Text('Done')),
-            TextButton(
-              onPressed: () {
-                final amt = double.tryParse(amountCtrl.text);
-                if (amt == null || amt <= 0) return;
-                g.grantPoints(selected.id, amt);
-                amountCtrl.clear();
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text('⚡ +${amt.round()} to ${selected.name}')));
-                setDState(() {});
-              },
-              child: Text('Grant',
-                  style: GoogleFonts.inter(
-                      color: JarsColors.gold, fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -896,91 +792,83 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // The difficulty dial + "EST. ENEMY WAR CHEST" prediction are a
-        // PREP-time planning tool — once war starts, the enemy's actual
-        // state is whatever startWar()/regenerateEnemyBase() actually set,
-        // and this estimate was never wired to reflect either (let alone a
-        // manual budget override). Showing it mid-war just reads as "the
-        // budget didn't change" when it was never live in the first place.
-        if (g.phase == WarPhase.prep) ...[
-          Row(children: [
-            Text('ENEMY DIFFICULTY',
-                style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                    color: JarsColors.textTertiary)),
-            if (!g.canControlWar) ...[
-              const SizedBox(width: 5),
-              Icon(Icons.lock_rounded, size: 11, color: JarsColors.textTertiary),
-            ],
-            const Spacer(),
-            Text(
-                '${g.difficulty} · ${AiData.label(g.enemyDifficulty)}'
-                '${g.difficulty > 75 ? '+' : ''}',
-                style: GoogleFonts.spaceGrotesk(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: JarsColors.red)),
-          ]),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 4,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-            ),
-            child: Slider(
-              value: g.difficulty.toDouble(),
-              min: 1,
-              max: 100,
-              activeColor:
-                  g.canControlWar ? JarsColors.red : JarsColors.textTertiary,
-              inactiveColor: JarsColors.border,
-              // only the room admin sets the difficulty for everyone
-              onChanged: g.canControlWar
-                  ? (v) => g.setDifficulty(v.round())
-                  : null,
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: JarsColors.red.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(color: JarsColors.red.withValues(alpha: 0.28)),
-            ),
-            child: Row(children: [
-              const Icon(Icons.savings_outlined,
-                  size: 16, color: JarsColors.gold),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text('EST. ENEMY WAR CHEST',
-                    style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.7,
-                        color: JarsColors.textSecondary)),
-              ),
-              Text('${g.estimatedEnemyWarChest.round()}⚡ total',
-                  style: GoogleFonts.spaceGrotesk(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: JarsColors.gold)),
-              const SizedBox(width: 5),
-              Text('· ${g.estimatedEnemyWarChestPerFoe.round()} each',
-                  style: GoogleFonts.inter(
-                      fontSize: 10.5, color: JarsColors.textTertiary)),
-            ]),
-          ),
-          const SizedBox(height: 6),
-          Text(
-              'Updates with difficulty, league/map size, team size and real crew prep earnings.',
+        Row(children: [
+          Text('ENEMY DIFFICULTY',
               style: GoogleFonts.inter(
-                  fontSize: 9.5, color: JarsColors.textTertiary)),
-          if (!g.canControlWar)
-            Text('Only the room admin can change this.',
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                  color: JarsColors.textTertiary)),
+          if (!g.canControlWar) ...[
+            const SizedBox(width: 5),
+            Icon(Icons.lock_rounded, size: 11, color: JarsColors.textTertiary),
+          ],
+          const Spacer(),
+          Text(
+              '${g.difficulty} · ${AiData.label(g.enemyDifficulty)}'
+              '${g.difficulty > 75 ? '+' : ''}',
+              style: GoogleFonts.spaceGrotesk(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: JarsColors.red)),
+        ]),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 4,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+          ),
+          child: Slider(
+            value: g.difficulty.toDouble(),
+            min: 1,
+            max: 100,
+            activeColor:
+                g.canControlWar ? JarsColors.red : JarsColors.textTertiary,
+            inactiveColor: JarsColors.border,
+            // only the room admin sets the difficulty for everyone
+            onChanged: g.canControlWar
+                ? (v) => g.setDifficulty(v.round())
+                : null,
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: JarsColors.red.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: JarsColors.red.withValues(alpha: 0.28)),
+          ),
+          child: Row(children: [
+            const Icon(Icons.savings_outlined,
+                size: 16, color: JarsColors.gold),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text('EST. ENEMY WAR CHEST',
+                  style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.7,
+                      color: JarsColors.textSecondary)),
+            ),
+            Text('${g.estimatedEnemyWarChest.round()}⚡ total',
+                style: GoogleFonts.spaceGrotesk(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: JarsColors.gold)),
+            const SizedBox(width: 5),
+            Text('· ${g.estimatedEnemyWarChestPerFoe.round()} each',
                 style: GoogleFonts.inter(
                     fontSize: 10.5, color: JarsColors.textTertiary)),
-        ],
+          ]),
+        ),
+        const SizedBox(height: 6),
+        Text(
+            'Updates with difficulty, league/map size, team size and real crew prep earnings.',
+            style: GoogleFonts.inter(
+                fontSize: 9.5, color: JarsColors.textTertiary)),
+        if (!g.canControlWar)
+          Text('Only the room admin can change this.',
+              style: GoogleFonts.inter(
+                  fontSize: 10.5, color: JarsColors.textTertiary)),
         Text(
             'Season: War ${g.warIndex + 1} of ${g.warsPerSeason} · Record '
             '${g.seasonResults.where((w) => w == true).length}W–'
@@ -1033,161 +921,6 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
       ),
     );
     if (ok == true) await g.resetSeason();
-  }
-
-  Future<void> _confirmEndDay(BuildContext context, WarGame g) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dCtx) => AlertDialog(
-        backgroundColor: JarsColors.surfaceRaised,
-        title: Text('Skip straight to war\'s end?',
-            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
-        content: Text(
-            'Instantly resolves every remaining hour of this war — every AI '
-            'raid that would have happened lands right now, for everyone in '
-            'the room. There\'s no undo.',
-            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(dCtx, true),
-              child: Text('End the day',
-                  style: GoogleFonts.inter(color: JarsColors.red, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-    if (ok == true) g.advanceToEndOfDay();
-  }
-
-  Future<void> _confirmRegenerateEnemy(BuildContext context, WarGame g) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dCtx) => AlertDialog(
-        backgroundColor: JarsColors.surfaceRaised,
-        title: Text('Regenerate the enemy base?',
-            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
-        content: Text(
-            'Tears down their stronghold and rebuilds it fresh, with the '
-            'war chest recalculated from your crew\'s CURRENT logged prep. '
-            'Any destruction your clan already dealt to it is lost, and '
-            'scouting starts over.',
-            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(dCtx, true),
-              child: Text('Regenerate',
-                  style: GoogleFonts.inter(color: JarsColors.red, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final err = g.regenerateEnemyBase();
-    if (err != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
-    }
-  }
-
-  /// Admin-only: skip the automatic formula entirely and set exactly how
-  /// much ⚡ EACH enemy castle gets, then rebuild them with it.
-  Future<void> _showManualBudgetDialog(BuildContext context, WarGame g) async {
-    final ctrl = TextEditingController(
-        text: g.estimatedEnemyWarChestPerFoe.round().toString());
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dCtx) => AlertDialog(
-        backgroundColor: JarsColors.surfaceRaised,
-        title: Text('Set enemy budget per castle',
-            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-                'Skips the automatic formula — every enemy castle gets '
-                'EXACTLY this much ⚡, no top-up. Rebuilds their stronghold '
-                'with it right away.',
-                style: GoogleFonts.inter(color: JarsColors.textSecondary)),
-            const SizedBox(height: 10),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              style: GoogleFonts.spaceMono(color: JarsColors.textPrimary),
-              decoration: const InputDecoration(hintText: '⚡ per castle'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(dCtx, true),
-              child: Text('Rebuild',
-                  style: GoogleFonts.inter(color: JarsColors.red, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final amt = double.tryParse(ctrl.text);
-    if (amt == null || amt <= 0) return;
-    final err = g.regenerateEnemyBase(perFoeBudget: amt);
-    if (err != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
-    }
-  }
-
-  Future<void> _confirmNextWar(BuildContext context, WarGame g) async {
-    if (!g.canControlWar) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Only the room admin can start the next war.')));
-      return;
-    }
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dCtx) => AlertDialog(
-        backgroundColor: JarsColors.surfaceRaised,
-        title: Text('Start the next war?',
-            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
-        content: Text(
-            'Clears this war\'s base and builds a fresh one for prep — for '
-            'everyone in the room. There\'s no going back to this war after.',
-            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(dCtx, true),
-              child: Text('Next war',
-                  style: GoogleFonts.inter(color: JarsColors.gold, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    // The room-sync hook (WarGame.onRoomSave) only gets wired up once the
-    // FIRST Supabase round-trip for this room resolves — nothing gates the
-    // hub's own UI on that, so on a fresh load this button is tappable
-    // before it's ready. Firing nextWar() during that window used to push
-    // NOTHING (onRoomSave was still null) with zero error shown — the local
-    // transition looked fine on this device but never reached the shared
-    // row, so the very next reload pulled the untouched old state back.
-    // Waiting on the sync provider's own future here is a no-op once the
-    // first sync has already happened (the common case) and only actually
-    // blocks during that narrow startup window.
-    await ref.read(warRoomSyncProvider.future);
-    g.nextWar();
-    // Wait for the room push to actually land before letting the admin
-    // move on — otherwise a reload moments later can race the in-flight
-    // save and come back showing the OLD (still-results) war, as if the
-    // transition never happened.
-    await g.flushPendingSave();
-    if (!context.mounted) return;
-    final err = g.lastSyncError;
-    if (err != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        duration: const Duration(seconds: 6),
-        content: Text('Started locally, but didn\'t sync yet: $err — '
-            'don\'t reload until it catches up.'),
-      ));
-    }
   }
 
   Widget _ladder(WarGame g, dynamic table) {

@@ -53,31 +53,6 @@ class FxEvent {
       required this.bySide,
       this.defType,
       this.emoji});
-
-  Map<String, dynamic> toJson() => {
-        'kind': kind.index,
-        'from': from == null ? null : [from!.r, from!.c],
-        'to': [to.r, to.c],
-        'amount': amount,
-        'bySide': bySide.index,
-        'defType': defType?.index,
-        'emoji': emoji,
-      };
-
-  factory FxEvent.fromJson(Map<String, dynamic> j) {
-    final f = j['from'] as List?;
-    final t = j['to'] as List;
-    return FxEvent(
-      FxKind.values[(j['kind'] as num).toInt()],
-      Cell((t[0] as num).toInt(), (t[1] as num).toInt()),
-      from: f == null ? null : Cell((f[0] as num).toInt(), (f[1] as num).toInt()),
-      amount: (j['amount'] as num?)?.toInt() ?? 0,
-      bySide: WarSide.values[(j['bySide'] as num).toInt()],
-      defType:
-          j['defType'] == null ? null : DefType.values[(j['defType'] as num).toInt()],
-      emoji: j['emoji'] as String?,
-    );
-  }
 }
 
 /// Where a troop can go this activation: pathing cost + what it'll cost in ⚡.
@@ -95,18 +70,6 @@ class RaidSprite {
   final WarSide side;
   final double hpFrac;
   const RaidSprite(this.id, this.emoji, this.r, this.c, this.side, this.hpFrac);
-
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'emoji': emoji, 'r': r, 'c': c, 'side': side.index, 'hp': hpFrac};
-
-  factory RaidSprite.fromJson(Map<String, dynamic> j) => RaidSprite(
-        j['id'] as String,
-        j['emoji'] as String,
-        (j['r'] as num).toInt(),
-        (j['c'] as num).toInt(),
-        WarSide.values[(j['side'] as num).toInt()],
-        (j['hp'] as num).toDouble(),
-      );
 }
 
 /// A structure's state at frame time — so replays show walls standing, taking
@@ -116,16 +79,6 @@ class RaidStruct {
   final DefType type;
   final double hpFrac;
   const RaidStruct(this.r, this.c, this.type, this.hpFrac);
-
-  Map<String, dynamic> toJson() =>
-      {'r': r, 'c': c, 'type': type.index, 'hp': hpFrac};
-
-  factory RaidStruct.fromJson(Map<String, dynamic> j) => RaidStruct(
-        (j['r'] as num).toInt(),
-        (j['c'] as num).toInt(),
-        DefType.values[(j['type'] as num).toInt()],
-        (j['hp'] as num).toDouble(),
-      );
 }
 
 class RaidFrame {
@@ -138,44 +91,6 @@ class RaidFrame {
   final List<List<int>> scorch; // [cellKey, count] — craters AS OF this beat
   const RaidFrame(this.sprites, this.structs, this.flashes, this.fx, this.caption,
       {this.graves = const [], this.scorch = const []});
-
-  Map<String, dynamic> toJson() => {
-        'sprites': [for (final s in sprites) s.toJson()],
-        'structs': [for (final s in structs) s.toJson()],
-        'flashes': [for (final c in flashes) [c.r, c.c]],
-        'fx': [for (final e in fx) e.toJson()],
-        'caption': caption,
-        'graves': graves,
-        'scorch': scorch,
-      };
-
-  factory RaidFrame.fromJson(Map<String, dynamic> j) => RaidFrame(
-        [
-          for (final s in (j['sprites'] as List? ?? const []))
-            RaidSprite.fromJson(s as Map<String, dynamic>)
-        ],
-        [
-          for (final s in (j['structs'] as List? ?? const []))
-            RaidStruct.fromJson(s as Map<String, dynamic>)
-        ],
-        [
-          for (final c in (j['flashes'] as List? ?? const []))
-            Cell(((c as List)[0] as num).toInt(), (c[1] as num).toInt())
-        ],
-        [
-          for (final e in (j['fx'] as List? ?? const []))
-            FxEvent.fromJson(e as Map<String, dynamic>)
-        ],
-        j['caption'] as String? ?? '',
-        graves: [
-          for (final g in (j['graves'] as List? ?? const []))
-            [for (final v in (g as List)) (v as num).toInt()]
-        ],
-        scorch: [
-          for (final g in (j['scorch'] as List? ?? const []))
-            [for (final v in (g as List)) (v as num).toInt()]
-        ],
-      );
 }
 
 /// The result of a completed attack (AI sim + the report).

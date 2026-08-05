@@ -59,62 +59,16 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
 
   if (_syncedRoomId != room.id) {
     try {
-      // Captured BEFORE the fetch: WarGame.load() already applied whatever
-      // this device saved LOCALLY (SharedPreferences always gets written
-      // regardless of whether the remote push behind it ever landed). If
-      // that local save is further along than what the server hands back —
-      // a push that silently failed, conflicted against a stale version,
-      // or simply hadn't landed yet when this device reloaded — blindly
-      // applying the fetched state would REVERT real progress. Exactly the
-      // reported bug: NEXT WAR confirmed, then every reload came back
-      // showing the old battle report and the old base.
-      final localSeason = game.seasonIndex;
-      final localWar = game.warIndex;
       final (version, state) =
           await WarSyncService.ensure(room.id, game.toJson());
-      final remoteSeason = (state['season'] as num?)?.toInt() ?? 0;
-      final remoteWar = (state['war'] as num?)?.toInt() ?? 0;
-      final localIsAhead = localSeason > remoteSeason ||
-          (localSeason == remoteSeason && localWar > remoteWar);
-      if (localIsAhead) {
-        // Don't pull the stale remote state — push the local (further
-        // along) one to correct the server instead. game's fields already
-        // reflect what WarGame.load() set them to; just fix roomVersion
-        // so the push's compare-and-swap has the right expected version.
-        game.roomVersion = version;
-        WarGame.onRoomSave = _pushRoomSave;
-        await _pushRoomSave(game);
-      } else {
-        // How many raids the SERVER's copy still carries full replay data
-        // for, before loadFromJson's internal _trimFeed() strips anything
-        // beyond the most recent 6 — measured on the raw incoming map, not
-        // on `game`, since loadFromJson is about to mutate `game` in place.
-        final incomingReplays = (state['feed'] as List? ?? const [])
-            .whereType<Map>()
-            .where((e) => e['replay'] != null)
-            .length;
-        game.loadFromJson(state);
-        // `activePlayerId` is PER-DEVICE identity, never shared state — a
-        // remote blob's 'active' field belongs to whoever last saved it,
-        // not to us. Reassert immediately, before anything can rebuild and
-        // read the wrong one (see the identical guard in applyRoomRoster
-        // below).
-        game.activePlayerId = myId;
-        game.roomVersion = version;
-        WarGame.onRoomSave = _pushRoomSave;
-        // The trim only ever happens in memory on whoever's device pulls
-        // this row — if nobody pushes the trimmed result back, the row
-        // stays bloated with old full-replay data FOREVER, and every
-        // teammate's every future load has to download that same bloat
-        // again before their own local trim quietly throws it away. That's
-        // a big part of why loads have been taking 15-30s. Push the
-        // trimmed copy back once, right after pulling it, whenever
-        // trimming actually removed something.
-        final keptReplays = game.feed.where((e) => e.replay != null).length;
-        if (incomingReplays > keptReplays) {
-          await _pushRoomSave(game);
-        }
-      }
+      game.loadFromJson(state);
+      // `activePlayerId` is PER-DEVICE identity, never shared state — a
+      // remote blob's 'active' field belongs to whoever last saved it, not
+      // to us. Reassert immediately, before anything can rebuild and read
+      // the wrong one (see the identical guard in applyRoomRoster below).
+      game.activePlayerId = myId;
+      game.roomVersion = version;
+      WarGame.onRoomSave = _pushRoomSave;
       _warRealtimeSub?.cancel();
       _warRealtimeSub = WarSyncService.stream(room.id).listen(
         (rows) => _applyRemote(game, rows, myId),
@@ -126,16 +80,7 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
       _syncedRoomId = room.id; // only mark done once everything succeeded
     } catch (e) {
       // offline, RLS not yet migrated, or a transient error — local play
-      // keeps working untouched; we'll simply retry next time this fires.
-      // Used to ONLY debugPrint this — invisible on a real deployed build,
-      // so the very first sync attempt could fail for a genuine reason
-      // (missing migration, RLS rejection, a bad RPC signature) and NOTHING
-      // downstream would ever know why: onRoomSave stays null forever,
-      // _save() correctly reports "not connected to the room yet" (v21.19),
-      // but that message can't say WHY — it's a generic fallback, not the
-      // actual exception. Surface the real one so the next repro shows the
-      // genuine cause instead of a guess.
-      game.lastSyncError = 'room sync failed: $e';
+      // keeps working untouched; we'll simply retry next time this fires
       if (kDebugMode) debugPrint('WarSync: initial room load failed: $e');
     }
   }
@@ -220,34 +165,18 @@ Future<void> _pushRoomSave(WarGame g) async {
         g.activePlayerId = myId;
         g.roomVersion = v2;
         g.reapplyUnsyncedEarn();
-        // Conflicted TWICE in a row — this device's own state (a NEXT WAR
-        // transition, a build, whatever) never actually landed; it kept
-        // losing to something else. Silently moving on here is exactly
-        // what made the room-desync bugs invisible until a reload.
-        g.lastSyncError =
-            'Your last change didn\'t sync (kept losing to another save) — '
-            'try again.';
       } else {
         g.roomVersion = v2;
         g.clearUnsyncedEarn();
-        g.lastSyncError = null;
       }
     } else {
       g.roomVersion = version;
       g.clearUnsyncedEarn();
-      g.lastSyncError = null;
     }
     g.notifyListeners();
   } catch (e) {
-    // Used to be swallowed into a debug-only print — invisible on a real
-    // deployed build, so a failed NEXT WAR (or any other save) looked
-    // like it worked until the next reload quietly reverted it. The local
-    // SharedPreferences mirror still has this save; the next mutating
-    // action retries the push naturally, but the CALLER (via
-    // flushPendingSave + lastSyncError) can now tell the user it hasn't
-    // actually landed yet instead of assuming success.
-    g.lastSyncError = e.toString();
-    g.notifyListeners();
+    // offline / transient — the local SharedPreferences mirror already has
+    // this save; the next mutating action retries the push naturally
     if (kDebugMode) debugPrint('WarSync: push failed (will retry later): $e');
   }
 }

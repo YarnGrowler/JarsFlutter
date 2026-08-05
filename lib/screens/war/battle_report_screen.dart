@@ -250,7 +250,10 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
             ],
             const SizedBox(height: 20),
             GestureDetector(
-              onTap: () => _confirmNextWar(context),
+              onTap: () {
+                WarGame.instance.nextWar();
+                context.go('/war');
+              },
               child: Container(
                 height: 52,
                 alignment: Alignment.center,
@@ -272,66 +275,6 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
   }
 
   bool get _haveRealData => _verdict != null;
-
-  Future<void> _confirmNextWar(BuildContext context) async {
-    // Checked LIVE, not from the frozen snapshot — this report may have
-    // been captured back when a war just ended, but whether THIS device
-    // is the room admin doesn't change war to war, and every teammate
-    // still sitting on this same frozen screen (by design — see the class
-    // doc) must never be able to advance the room a second time just
-    // because the button is still visible to them.
-    if (!WarGame.instance.canControlWar) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Only the room admin can start the next war.')));
-      return;
-    }
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dCtx) => AlertDialog(
-        backgroundColor: JarsColors.surfaceRaised,
-        title: Text('Start the next war?',
-            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
-        content: Text(
-            'Clears this war\'s base and builds a fresh one for prep — for '
-            'everyone in the room. There\'s no going back to this war after.',
-            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(dCtx, true),
-              child: Text('Next war',
-                  style: GoogleFonts.inter(color: JarsColors.gold, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    // Same race as the hub's identical button: the room-sync hook only
-    // gets wired up once the FIRST Supabase round-trip for this room
-    // resolves, and nothing gates this screen's UI on that — so on a
-    // fresh load NEXT WAR can be tapped before it's ready, silently
-    // pushing nothing. No-op once the first sync already happened.
-    await ref.read(warRoomSyncProvider.future);
-    WarGame.instance.nextWar();
-    // Wait for the room push to actually land before navigating away —
-    // otherwise a reload moments later can race the in-flight save and
-    // come back showing this same OLD (still-results) report, as if the
-    // transition never happened.
-    await WarGame.instance.flushPendingSave();
-    if (!context.mounted) return;
-    // The transition already happened locally (this device moves on
-    // regardless), but if the push itself never landed, the server is
-    // still on the old war — a reload right now would silently revert
-    // everyone. Say so instead of letting that look like it worked.
-    final err = WarGame.instance.lastSyncError;
-    if (err != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        duration: const Duration(seconds: 6),
-        content: Text('Started locally, but didn\'t sync yet: $err — '
-            'don\'t reload until it catches up.'),
-      ));
-    }
-    context.go('/war');
-  }
 
   void _watchRaid(BuildContext context, WarLogEntry e) {
     // your clan's raids hit the ENEMY base; theirs hit yours. The war is

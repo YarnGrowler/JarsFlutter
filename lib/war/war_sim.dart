@@ -33,37 +33,6 @@ class WarLogEntry {
 
   String get line =>
       '$attackerName raided with $troopsSent — +${gained.round()}% · lost $troopsLost';
-
-  Map<String, dynamic> toJson() => {
-        'minute': minute,
-        'attackerSide': attackerSide.index,
-        'attackerName': attackerName,
-        'gained': gained,
-        'defenderDestruction': defenderDestruction,
-        'troopsLost': troopsLost,
-        'troopsSent': troopsSent,
-        'resourcesSpent': resourcesSpent,
-        'razed': razed,
-        'replay': replay == null ? null : [for (final f in replay!) f.toJson()],
-      };
-
-  factory WarLogEntry.fromJson(Map<String, dynamic> j) => WarLogEntry(
-        minute: (j['minute'] as num).toInt(),
-        attackerSide: WarSide.values[(j['attackerSide'] as num).toInt()],
-        attackerName: j['attackerName'] as String? ?? '',
-        gained: (j['gained'] as num).toDouble(),
-        defenderDestruction: (j['defenderDestruction'] as num).toDouble(),
-        troopsLost: (j['troopsLost'] as num).toInt(),
-        troopsSent: (j['troopsSent'] as num?)?.toInt() ?? 0,
-        resourcesSpent: (j['resourcesSpent'] as num).toDouble(),
-        razed: j['razed'] as bool? ?? false,
-        replay: j['replay'] == null
-            ? null
-            : [
-                for (final f in (j['replay'] as List))
-                  RaidFrame.fromJson(f as Map<String, dynamic>)
-              ],
-      );
 }
 
 /// Advances the war timeline. For each simulated hour, every AI player earns
