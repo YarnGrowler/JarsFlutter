@@ -39,6 +39,10 @@ class WarBoardView extends StatefulWidget {
   /// still ticks every frame; only painting is capped.
   final int? animationFps;
 
+  /// Profile → Low performance mode: mutes camera shake and always uses the
+  /// board's existing low-detail repaint throttle, regardless of zoom.
+  final bool lowPerformanceMode;
+
   const WarBoardView({
     super.key,
     required this.base,
@@ -50,6 +54,7 @@ class WarBoardView extends StatefulWidget {
     this.startFocus,
     this.controller,
     this.animationFps,
+    this.lowPerformanceMode = false,
   });
 
   @override
@@ -81,6 +86,7 @@ class _WarBoardViewState extends State<WarBoardView>
   double _shakeAmp = 0; // camera rattle (mortar hits)
 
   void _kick(double power) {
+    if (widget.lowPerformanceMode) return;
     _shakeAmp = math.max(_shakeAmp, power.clamp(0, 14));
   }
 
@@ -106,9 +112,11 @@ class _WarBoardViewState extends State<WarBoardView>
       }
       // Big boards + zoomed out: ambient motion is frozen in the painter, so
       // repainting 60×/sec just burns CPU. Drop to ~6–8 fps unless shaking.
+      // Low performance mode forces this path unconditionally.
       final tile = baseTile * _zoom;
       final bigBoard = widget.base.rows >= 52;
-      final lod = tile < 22 || (bigBoard && tile < 28);
+      final lod =
+          widget.lowPerformanceMode || tile < 22 || (bigBoard && tile < 28);
       if (lod && _shakeAmp <= 0) {
         _paintAccum += dt;
         if (_paintAccum < (tile < 14 ? 0.2 : 0.14)) return;

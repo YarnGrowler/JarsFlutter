@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
+import '../../providers/low_performance_mode_provider.dart';
 import '../../providers/war_providers.dart';
 import '../../war/free_move_battle.dart';
 import '../../war/live_battle.dart';
@@ -648,6 +649,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
     // deep-link/reload, so it must trigger its own sync, not rely on the hub.
     ref.watch(warRoomSyncProvider);
     final g = ref.watch(warGameProvider);
+    final lowPerf = ref.watch(lowPerformanceModeProvider);
     final base = _mode == 'defense'
         ? g.youBase
         : _mode == 'practice'
@@ -665,6 +667,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                 key: ValueKey('board-$_mode'),
                 base: base,
                 controller: _cam,
+                lowPerformanceMode: lowPerf,
                 startFitted: _mode != 'attack',
                 startFocus: _mode == 'attack'
                     ? Cell(base.rows - 1, base.cols ~/ 2)
@@ -717,9 +720,11 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                   smokeCells: _mode == 'defense' || _atk == null
                       ? const {}
                       : _atk!.smoke.keys.toSet(),
+                  lowPerformanceMode: lowPerf,
                 ),
-                overlayBuilder: (tile, gx, gy, t) =>
-                    _fx.isEmpty ? null : _fx.painter(tile, gx, gy),
+                overlayBuilder: (tile, gx, gy, t) => (lowPerf || _fx.isEmpty)
+                    ? null
+                    : _fx.painter(tile, gx, gy),
               ),
             ),
             switch (_mode) {

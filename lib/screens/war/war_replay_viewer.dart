@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
+import '../../providers/low_performance_mode_provider.dart';
 import '../../war/war_base.dart';
 import '../../war/war_biome.dart';
 import '../../war/war_engine.dart';
@@ -188,28 +190,34 @@ class _WarReplayViewerState extends State<WarReplayViewer> {
             const SizedBox(width: 12),
           ]),
           Expanded(
-            child: WarBoardView(
-              key: ValueKey(_entry), // new raid → fresh camera fit
-              base: _cur.base,
-              controller: _cam,
-              startFitted: true,
-              onTick: _onTick,
-              painterBuilder: (tile, gx, gy, t) => WarBoardPainter(
+            child: Consumer(builder: (context, ref, _) {
+              final lowPerf = ref.watch(lowPerformanceModeProvider);
+              return WarBoardView(
+                key: ValueKey(_entry), // new raid → fresh camera fit
                 base: _cur.base,
-                tile: tile,
-                gx: gx,
-                gy: gy,
-                t: t,
-                ownBase: true,
-                fog: _cur.fog,
-                replayFrame: _frames[_frame.clamp(0, _frames.length - 1)],
-                replayPrev: _frame > 0 ? _frames[_frame - 1] : null,
-                replayBlend: _blend,
-                biome: _cur.biome,
-              ),
-              overlayBuilder: (tile, gx, gy, t) =>
-                  _fx.isEmpty ? null : _fx.painter(tile, gx, gy),
-            ),
+                controller: _cam,
+                startFitted: true,
+                onTick: _onTick,
+                lowPerformanceMode: lowPerf,
+                painterBuilder: (tile, gx, gy, t) => WarBoardPainter(
+                  base: _cur.base,
+                  tile: tile,
+                  gx: gx,
+                  gy: gy,
+                  t: t,
+                  ownBase: true,
+                  fog: _cur.fog,
+                  replayFrame: _frames[_frame.clamp(0, _frames.length - 1)],
+                  replayPrev: _frame > 0 ? _frames[_frame - 1] : null,
+                  replayBlend: _blend,
+                  biome: _cur.biome,
+                  lowPerformanceMode: lowPerf,
+                ),
+                overlayBuilder: (tile, gx, gy, t) => (lowPerf || _fx.isEmpty)
+                    ? null
+                    : _fx.painter(tile, gx, gy),
+              );
+            }),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),

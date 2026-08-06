@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
+import '../../providers/low_performance_mode_provider.dart';
 import '../../providers/war_providers.dart';
 import '../../war/war_base.dart';
 import '../../war/war_engine.dart' show AttackState;
@@ -38,6 +39,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
     // wrong-identity roster.
     ref.watch(warRoomSyncProvider);
     final g = ref.watch(warGameProvider);
+    final lowPerf = ref.watch(lowPerformanceModeProvider);
     final base = g.youBase;
 
     // No blanket "buildable" outlines — they turned the map into a chip grid.
@@ -86,6 +88,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                 base: base,
                 startFitted: true,
                 onCellTap: (cell) => _onTap(cell, g),
+                lowPerformanceMode: lowPerf,
                 painterBuilder: (tile, gx, gy, t) => WarBoardPainter(
                   base: base,
                   tile: tile,
@@ -97,6 +100,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                   rangeRings: rings,
                   selected: _selectedCell,
                   biome: g.currentBiome,
+                  lowPerformanceMode: lowPerf,
                 ),
               ),
             ),

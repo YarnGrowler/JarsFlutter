@@ -60,6 +60,12 @@ class WarBoardPainter extends CustomPainter {
   /// Fogger smoke cell keys (r * cols + c) currently concealing the board.
   final Set<int> smokeCells;
 
+  /// User setting (Profile → Low performance mode): forces the same
+  /// low-detail path the board already uses when zoomed out — ambient
+  /// motion frozen, dressing/people/rubble-smoke skipped — regardless of
+  /// actual zoom level.
+  final bool lowPerformanceMode;
+
   WarBoardPainter({
     required this.base,
     required this.tile,
@@ -87,6 +93,7 @@ class WarBoardPainter extends CustomPainter {
     this.graves = const [],
     this.biome = WarBiome.meadow,
     this.smokeCells = const {},
+    this.lowPerformanceMode = false,
   });
 
   static const _you = Color(0xFF3D7BFF);
@@ -196,7 +203,7 @@ class WarBoardPainter extends CustomPainter {
     // Zoom LOD: terrain already dumps detail under ~18px; freeze ambient
     // motion and skip people/dressing so a 64² Radiant board stays playable
     // when fitted to the screen.
-    _hiDetail = tile >= 22;
+    _hiDetail = !lowPerformanceMode && tile >= 22;
     _at = _hiDetail ? t : 0;
     _cull(size);
     _bakeStaticLayer();

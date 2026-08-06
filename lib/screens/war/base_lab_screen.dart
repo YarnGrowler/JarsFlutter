@@ -10,6 +10,7 @@ import '../../core/league_config.dart';
 import '../../core/seeded_rng.dart';
 import '../../core/theme.dart';
 import '../../models/league.dart';
+import '../../providers/low_performance_mode_provider.dart';
 import '../../war/free_move_battle.dart';
 import '../../war/war_ai.dart';
 import '../../war/war_base.dart';
@@ -409,6 +410,7 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
   @override
   Widget build(BuildContext context) {
     final base = _base;
+    final lowPerf = ref.watch(lowPerformanceModeProvider);
     final divisions = LeagueConfig.instance.divisions;
     return Scaffold(
       backgroundColor: JarsColors.background,
@@ -484,6 +486,7 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
                           : null,
                       onTick: _battling ? _onBattleTick : null,
                       onCellTap: _battling ? _onBattleTap : null,
+                      lowPerformanceMode: lowPerf,
                       painterBuilder: (tile, gx, gy, t) => WarBoardPainter(
                         base: _battling ? _raid!.base : base,
                         tile: tile,
@@ -506,6 +509,7 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
                             ? (_raid?.smoke.keys.toSet() ?? const {})
                             : const {},
                         biome: _biome,
+                        lowPerformanceMode: lowPerf,
                       ),
                       overlayBuilder: (tile, gx, gy, t) =>
                           !_battling || _fx.isEmpty

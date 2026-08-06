@@ -27,6 +27,7 @@ import '../../providers/profile_provider.dart';
 import '../../widgets/debug/teammates_sheet.dart';
 import '../../widgets/sheets/create_custom_exercise_sheet.dart';
 import '../../widgets/sheets/group_goal_sheet.dart';
+import '../../providers/low_performance_mode_provider.dart';
 import '../../providers/ui_text_scale_provider.dart';
 import '../../providers/war_providers.dart';
 import '../../war/war_game.dart';
@@ -485,6 +486,36 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                   ],
                 ),
+                const Divider(height: 28),
+                Builder(builder: (context) {
+                  final lowPerf = ref.watch(lowPerformanceModeProvider);
+                  return SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    activeThumbColor: JarsColors.primary,
+                    secondary: Icon(Icons.speed_outlined,
+                        color: JarsColors.primary.withValues(alpha: 0.9)),
+                    title: Text(
+                      'Low performance mode',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w600,
+                        color: JarsColors.textPrimary,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Turns off Clan War animations and particle effects — '
+                      'better for older devices. Saved on this device only.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: JarsColors.textSecondary,
+                        height: 1.35,
+                      ),
+                    ),
+                    value: lowPerf,
+                    onChanged: (v) => ref
+                        .read(lowPerformanceModeProvider.notifier)
+                        .setEnabled(v),
+                  );
+                }),
                 const Divider(height: 32),
                 ListTile(
                   leading: const Icon(Icons.logout, color: JarsColors.red),
