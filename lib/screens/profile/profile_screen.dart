@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../core/debug_tools.dart';
-import '../../core/demo_mode.dart';
 import '../../core/onboarding_redo.dart';
 import '../../core/theme.dart';
 import '../../core/level_data.dart';
@@ -24,7 +22,6 @@ import '../../providers/exercise_provider.dart';
 import '../../providers/goal_provider.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../providers/profile_provider.dart';
-import '../../widgets/debug/teammates_sheet.dart';
 import '../../widgets/sheets/create_custom_exercise_sheet.dart';
 import '../../widgets/sheets/group_goal_sheet.dart';
 import '../../providers/low_performance_mode_provider.dart';
@@ -280,33 +277,6 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
-                if (kDemoMode || kDebugTools) ...[
-                  ListTile(
-                    leading: Icon(Icons.smart_toy_outlined,
-                        color: JarsColors.primary.withValues(alpha: 0.9)),
-                    title: Text(
-                      'Your Crew (AI teammates)',
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w600,
-                        color: JarsColors.textPrimary,
-                      ),
-                    ),
-                    subtitle: Text(
-                      'Crewmates train each dawn of the siege — their supply '
-                      'pools with yours.',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: JarsColors.textSecondary,
-                        height: 1.35,
-                      ),
-                    ),
-                    onTap: () {
-                      nav.pop();
-                      showTeammatesSheet(profileCtx);
-                    },
-                  ),
-                  const Divider(height: 24),
-                ],
                 ListTile(
                   leading: Icon(Icons.notifications_outlined,
                       color: JarsColors.primary.withValues(alpha: 0.9)),

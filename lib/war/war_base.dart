@@ -45,6 +45,18 @@ class Structure {
   /// Upgrades sharpen the guns: +25% damage per level past 1.
   int get damage => (spec.damage * (1 + 0.25 * (level - 1))).round();
 
+  /// Archer Towers and Tesla Coils see farther once upgraded past L3 — a
+  /// threshold unlock (same pattern as Mortar's L3 splash-radius jump),
+  /// not a per-level increment, so a fully-maxed one gains exactly +1
+  /// tile of reach and nothing further past L3.
+  int get effectiveRange {
+    final bonus =
+        (level >= 3 && (type == DefType.archerTower || type == DefType.tesla))
+            ? 1
+            : 0;
+    return spec.range + bonus;
+  }
+
   /// Wall L4+ and Citadel Core radiate a tougher adjacent buff.
   double get effectiveDefBuff {
     var b = spec.defBuffAdj;

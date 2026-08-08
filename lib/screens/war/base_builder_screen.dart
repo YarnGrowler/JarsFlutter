@@ -61,12 +61,15 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
     final selStruct = sel == null ? null : base.structAt(sel.r, sel.c);
     if (sel != null && selStruct != null) {
       var radius = selStruct.spec.isShooter
-          ? selStruct.spec.range.toDouble()
+          ? selStruct.effectiveRange.toDouble()
           : (selStruct.type == DefType.guardPost
               // upgraded pavilions patrol +2 per level
               ? (AttackState.garrisonLeash + (selStruct.level - 1) * 2)
                   .toDouble()
-              : 0.0);
+              : (selStruct.type == DefType.watchtower
+                  // a weak fighter, but its whole job is seeing far
+                  ? AttackState.watchtowerRadius.toDouble()
+                  : 0.0));
       // towers on HILLS see one tile farther
       if (selStruct.spec.isShooter &&
           base.grid[sel.r][sel.c].terrain == Terrain.hill) {

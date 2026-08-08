@@ -1208,6 +1208,163 @@ void main() {
       await WarGame.load();
       expect(WarGame.instance.roomId, 'persisted-room');
     });
+
+    test(
+        'REGRESSION: kill booty splits by real spend proportion, not '
+        'evenly, and only pays out at endWar()', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.startWar();
+      razeYou(g); // force a clear LOSS so win booty never muddies this test
+      final me = g.youClan.firstWhere((p) => p.id == 'me');
+      final f0 = g.youClan.firstWhere((p) => p.id == 'f0');
+      me.resourcesSpent = 300;
+      f0.resourcesSpent = 100;
+      final meBefore = me.resources;
+      final f0Before = f0.resources;
+      g.enemyClan.first.troopsLost = 10; // total is what matters, not who
+      g.endWar();
+      expect(g.lastVerdict?.winner, WarSide.enemy, reason: 'sanity: a loss');
+      final meGain = me.resources - meBefore;
+      final f0Gain = f0.resources - f0Before;
+      final pool = 10 * WarCosts.killBootyPerKill;
+      expect(meGain + f0Gain, closeTo(pool, 0.01),
+          reason: 'the whole kill pool lands, nothing lost to rounding');
+      expect(meGain, closeTo(pool * 0.75, 0.01),
+          reason: 'me spent 300 of the 400 total (75%) — gets 75% of the pool');
+      expect(f0Gain, closeTo(pool * 0.25, 0.01),
+          reason: 'f0 spent 100 of 400 (25%) — gets 25%, not half');
+    });
+
+    test(
+        'kill booty falls back to an even split when nobody logged any '
+        'spend', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['f0', 'A']
+          ]));
+      g.startWar();
+      razeYou(g);
+      final me = g.youClan.firstWhere((p) => p.id == 'me');
+      final f0 = g.youClan.firstWhere((p) => p.id == 'f0');
+      me.resourcesSpent = 0;
+      f0.resourcesSpent = 0;
+      final meBefore = me.resources;
+      final f0Before = f0.resources;
+      g.enemyClan.first.troopsLost = 8;
+      g.endWar();
+      final pool = 8 * WarCosts.killBootyPerKill;
+      expect(me.resources - meBefore, closeTo(pool / 2, 0.01));
+      expect(f0.resources - f0Before, closeTo(pool / 2, 0.01));
+    });
+
+    test(
+        'REGRESSION: war-win booty only pays on an actual win, scaled by '
+        'division and difficulty', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r', myUserId: 'me', myUsername: 'Me', members: const []);
+      g.setDifficulty(60);
+      g.startWar();
+      final me = g.youClan.firstWhere((p) => p.id == 'me');
+      final before = me.resources;
+      razeEnemy(g); // force a clear WIN; no kills simulated, isolates win booty
+      g.endWar();
+      expect(g.lastVerdict?.winner, WarSide.you, reason: 'sanity: a win');
+      final gain = me.resources - before;
+      final expected =
+          WarCosts.divisionBootyBase(g.divisionIndex) * (60 / 100.0);
+      expect(gain, closeTo(expected, 0.5),
+          reason: 'solo real crewmate gets the whole pooled win booty');
+    });
+
+    test(
+        'REGRESSION: war-win booty does NOT pay on a loss, even with kills '
+        'banked', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r', myUserId: 'me', myUsername: 'Me', members: const []);
+      g.setDifficulty(60);
+      g.startWar();
+      final me = g.youClan.firstWhere((p) => p.id == 'me');
+      me.resourcesSpent = 50;
+      final before = me.resources;
+      razeYou(g);
+      g.enemyClan.first.troopsLost = 4; // kill booty still applies
+      g.endWar();
+      expect(g.lastVerdict?.winner, WarSide.enemy);
+      final gain = me.resources - before;
+      final killOnly = 4 * WarCosts.killBootyPerKill;
+      expect(gain, closeTo(killOnly, 0.01),
+          reason: 'only the kill pool lands — no win booty on a loss');
+    });
+
+    test(
+        'REGRESSION: season promotion booty only pays on an actual '
+        'promotion, off the division just left', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r', myUserId: 'me', myUsername: 'Me', members: const []);
+      g.setDifficulty(60);
+      final startDiv = g.divisionIndex;
+      for (var war = 0; war < cfg.matchweeks; war++) {
+        g.startWar();
+        razeEnemy(g); // a perfect season → promotes
+        g.endWar();
+        g.nextWar();
+      }
+      expect(g.seasonJustEnded, isTrue);
+      expect(g.seasonPromotionPreview, isTrue, reason: 'sanity: about to promote');
+      final me = g.youClan.firstWhere((p) => p.id == 'me');
+      final before = me.resources;
+      g.startNextSeason();
+      expect(g.divisionIndex, startDiv + 1, reason: 'sanity: actually promoted');
+      final gain = me.resources - before;
+      // startNextSeason() also runs startPrep(), which adds the real-player
+      // prep stipend on top — the promotion booty isn't the ONLY thing that
+      // lands here, so account for both rather than over-isolating.
+      final expected =
+          WarCosts.promotionBooty(startDiv, 60) + WarCosts.realPlayerPrepStipend;
+      expect(gain, closeTo(expected, 0.5));
+    });
+
+    test(
+        'season promotion booty does NOT pay when the season holds steady '
+        'or drops', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'r', myUserId: 'me', myUsername: 'Me', members: const []);
+      g.setDifficulty(60);
+      for (var war = 0; war < cfg.matchweeks; war++) {
+        g.startWar();
+        razeYou(g); // a losing season at div 0 — floors, never promotes
+        g.endWar();
+        g.nextWar();
+      }
+      expect(g.seasonPromotionPreview, isNot(true));
+      final me = g.youClan.firstWhere((p) => p.id == 'me');
+      final before = me.resources;
+      g.startNextSeason();
+      final gain = me.resources - before;
+      // only the prep stipend should land — no promotion booty
+      expect(gain, closeTo(WarCosts.realPlayerPrepStipend, 0.5));
+    });
   });
 
   group('deploy: the war runs on the WALL CLOCK — no button needed', () {

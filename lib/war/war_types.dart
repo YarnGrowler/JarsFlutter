@@ -217,13 +217,14 @@ const Map<DefType, DefSpec> kDefSpecs = {
       range: 3,
       damage: 12,
       fireEveryTicks: 1,
-      blurb: 'Steady arrows every volley, range 3. The backbone of a defense.'),
+      blurb: 'Steady arrows every volley, range 3 — L3+ sees a tile farther. '
+          'The backbone of a defense.'),
   DefType.cannon: DefSpec(DefType.cannon,
       name: 'Cannon',
       emoji: '💥',
       category: DefCategory.tower,
       cost: 70,
-      hp: 150,
+      hp: 180,
       blocks: true,
       upgradeCost: 40,
       maxLevel: 5,
@@ -248,18 +249,19 @@ const Map<DefType, DefSpec> kDefSpecs = {
       blurb:
           'Hidden chain lightning. Dumps a 24⚡ pool across up to 4 raiders '
           'in range (24 solo, 12 each for two, 6 each for four) — and zaps '
-          'again the moment anyone moves nearby.'),
+          'again the moment anyone moves nearby. L3+ arcs a tile farther.'),
   DefType.guardPost: DefSpec(DefType.guardPost,
       name: 'Guard Post',
       emoji: '⛺',
       category: DefCategory.garrison,
       cost: 35,
-      hp: 60,
+      hp: 85,
       upgradeCost: 20,
       maxLevel: 5,
       blurb:
           'Stations a live defender at the start of every raid — upgrades '
-          'widen the patrol leash across big boards.'),
+          'toughen the defender AND widen the patrol leash across big '
+          'boards.'),
   DefType.gate: DefSpec(DefType.gate,
       name: 'Gate',
       emoji: '🚪',
@@ -338,8 +340,9 @@ const Map<DefType, DefSpec> kDefSpecs = {
       upgradeCost: 40,
       maxLevel: 3,
       blurb:
-          'No gun — EYES. Within 3 tiles: forests hide nothing from your '
-          'towers, and guards patrol 2 tiles farther.'),
+          'No gun, low hp — but its whole job is EYES. Within 5 tiles: '
+          'forests hide nothing from your towers, and guards patrol 2 '
+          'tiles farther.'),
   DefType.storehouse: DefSpec(DefType.storehouse,
       name: 'Storehouse',
       emoji: '💰',
@@ -351,8 +354,9 @@ const Map<DefType, DefSpec> kDefSpecs = {
       maxLevel: 3,
       blurb:
           'War treasury: L1 holds 50⚡, L2 100⚡, L3 150⚡ — smash it and the '
-          '⚡ spills to the raider. Also feeds nearby Guard Posts with veteran '
-          'stew.'),
+          '⚡ spills to the raider. Also feeds nearby Guard Posts a veteran '
+          "stew that scales with THIS structure's own level — L3 makes a "
+          'meaningfully tougher guard, not just a bigger prize if it falls.'),
   DefType.tributeChest: DefSpec(DefType.tributeChest,
       name: 'Tribute Chest',
       emoji: '🏆',
@@ -764,6 +768,29 @@ class WarCosts {
   static const double realPlayerWarStipend = 32;
   static const double clearForest = 20; // 🪓 clear a forest tile in the builder
   static const double upgradeGuardPost = 30; // ⛺ → wider patrol + fresh skin
+
+  // ── war booty — paid out once the war/season is OVER, never mid-fight ──────
+  /// ⚡ per enemy troop killed this war (either side — your raids or your
+  /// defense), pooled and split across real crewmates by how much of the
+  /// war's total spend was actually theirs (not evenly — someone who spent
+  /// nothing shouldn't cash in on someone else's kills).
+  static const double killBootyPerKill = 5;
+
+  /// Division tier's base for the win/promotion booty formulas below —
+  /// Bronze (div 0) = 1000, Silver (div 1) = 2000, and so on.
+  static double divisionBootyBase(int divisionIndex) =>
+      1000.0 * (divisionIndex + 1);
+
+  /// War-win booty (pooled, split evenly, only on an actual win): the
+  /// division's base scaled by how hard the difficulty dial was set.
+  static double warWinBooty(int divisionIndex, int difficulty) =>
+      divisionBootyBase(divisionIndex) * (difficulty / 100.0);
+
+  /// Season-promotion booty (pooled, split evenly, only if actually
+  /// promoted): 5× the win booty, off the division you're promoting FROM —
+  /// promotion is rarer (once a season) so it pays out bigger.
+  static double promotionBooty(int fromDivisionIndex, int difficulty) =>
+      5 * warWinBooty(fromDivisionIndex, difficulty);
 
   /// One-time cost to unlock doctrine [toLevel] for [t] (must already own
   /// toLevel-1). Soldier baseline: L2 250, L3 400, L4 750, L5 1000,

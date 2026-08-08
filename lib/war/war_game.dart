@@ -1574,6 +1574,7 @@ class WarGame extends ChangeNotifier {
         resourcesSpent: enemyClan.fold(0.0, (a, p) => a + p.resourcesSpent));
     lastVerdict = WarScoring.decide(you, foe);
     _payoutTributeChests();
+    _payoutWarBooty(foe.troopsLost);
     _save();
     notifyListeners();
   }
@@ -1594,6 +1595,49 @@ class WarGame extends ChangeNotifier {
     final share = total / real.length;
     for (final p in real) {
       p.resources += share;
+    }
+  }
+
+  /// War booty — paid out ONCE the war is over, never mid-fight (the crew
+  /// can't see it coming and spend around it). Two pieces:
+  ///
+  /// 1. Kill booty: [enemyTroopsLost] × [WarCosts.killBootyPerKill], pooled
+  ///    and split across real crewmates by their SHARE of the war's total
+  ///    real spend — not evenly. Killing isn't attributed to whoever
+  ///    literally landed the blow (that would mean tagging a killer at
+  ///    every one of a dozen+ damage-dealing call sites in the combat
+  ///    engine for a reward system, not worth the risk of getting subtly
+  ///    wrong); spend share is a fair, already-tracked proxy for "how much
+  ///    of the fight was actually theirs."
+  /// 2. Win booty: only if the war was actually WON — split evenly, scaled
+  ///    by the division you're in and how hard the difficulty dial was set.
+  void _payoutWarBooty(int enemyTroopsLost) {
+    final real = youClan.where((p) => !p.isBot).toList();
+    if (real.isEmpty) return;
+
+    final killPool = enemyTroopsLost * WarCosts.killBootyPerKill;
+    if (killPool > 0) {
+      final totalSpent = real.fold(0.0, (a, p) => a + p.resourcesSpent);
+      if (totalSpent > 0) {
+        for (final p in real) {
+          p.resources += killPool * (p.resourcesSpent / totalSpent);
+        }
+      } else {
+        // nobody logged any spend to weight by — fall back to an even split
+        // rather than silently dropping the pool on the floor.
+        final share = killPool / real.length;
+        for (final p in real) {
+          p.resources += share;
+        }
+      }
+    }
+
+    if (lastVerdict?.winner == WarSide.you) {
+      final winBooty = WarCosts.warWinBooty(divisionIndex, difficulty);
+      final share = winBooty / real.length;
+      for (final p in real) {
+        p.resources += share;
+      }
     }
   }
 
@@ -1628,9 +1672,26 @@ class WarGame extends ChangeNotifier {
   /// for the new season's first war.
   void startNextSeason() {
     if (!seasonJustEnded) return;
+    final promoted = seasonPromotionPreview == true;
+    final fromDivision = divisionIndex; // capture BEFORE _rollSeason() moves it
     _rollSeason();
+    if (promoted) _payoutPromotionBooty(fromDivision);
     seasonJustEnded = false;
     startPrep();
+  }
+
+  /// Season-promotion booty — only fires on an actual promotion, split
+  /// evenly across real crewmates, scaled off the division just left
+  /// (bigger reward for climbing out of a tougher league) and the
+  /// difficulty dial.
+  void _payoutPromotionBooty(int fromDivision) {
+    final real = youClan.where((p) => !p.isBot).toList();
+    if (real.isEmpty) return;
+    final booty = WarCosts.promotionBooty(fromDivision, difficulty);
+    final share = booty / real.length;
+    for (final p in real) {
+      p.resources += share;
+    }
   }
 
   /// What the season's final standing does to the division — computed from

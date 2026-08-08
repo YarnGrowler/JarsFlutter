@@ -207,15 +207,25 @@ class AttackState {
   /// How far a garrison defender will chase from its post before returning.
   static const int garrisonLeash = 4;
 
-  /// A standing STOREHOUSE within 3 of the post keeps its watch well-fed.
-  bool _provisioned(int r, int c) {
+  /// A weak fighter on its own (low hp, no gun) — its whole job is seeing
+  /// far, so it gets a genuinely wide radius to compensate.
+  static const int watchtowerRadius = 5;
+
+  /// A standing STOREHOUSE within 3 of the post keeps its watch well-fed —
+  /// returns the highest STOREHOUSE LEVEL found (0 if none), not just
+  /// whether one exists, so a fully-upgraded storehouse feeds a
+  /// meaningfully better veteran bonus than a bare L1 one.
+  int _provisionedLevel(int r, int c) {
+    var best = 0;
     for (var dr = -3; dr <= 3; dr++) {
       for (var dc = -3; dc <= 3; dc++) {
         final s = base.structAt(r + dr, c + dc);
-        if (s != null && s.alive && s.type == DefType.storehouse) return true;
+        if (s != null && s.alive && s.type == DefType.storehouse) {
+          if (s.level > best) best = s.level;
+        }
       }
     }
-    return false;
+    return best;
   }
 
   /// Command Tents field one General each (ranged elite defender).
@@ -272,11 +282,19 @@ class AttackState {
             c: c,
             homeR: r,
             homeC: c);
-        // well-fed watch: a storehouse within 3 fields VETERAN guards
-        if (_provisioned(r, c)) {
-          guard.gainXp(Xp.perLevel + 1.0);
-          guard.hp = guard.maxHp;
+        // A Guard Post's own upgrade level used to only widen its patrol
+        // leash — the soldier it actually spawns stayed exactly as weak at
+        // L5 as L1, despite the cumulative upgrade cost. Now the post's
+        // level carries over to its defender too.
+        if (s.level > 1) guard.gainXp((s.level - 1) * Xp.perLevel.toDouble());
+        // well-fed watch: a storehouse within 3 fields VETERAN guards — a
+        // higher-level storehouse feeds a proportionally better stew, not
+        // just a flat +1 level regardless of how much was invested in it.
+        final storehouseLv = _provisionedLevel(r, c);
+        if (storehouseLv > 0) {
+          guard.gainXp(storehouseLv * Xp.perLevel + 1.0);
         }
+        guard.hp = guard.maxHp;
         garrison.add(guard);
         // HOUSING nearby quarters a second defender for this post
         var housed = false;
@@ -300,10 +318,13 @@ class AttackState {
                 c: nc,
                 homeR: r,
                 homeC: c);
-            if (_provisioned(r, c)) {
-              housed2.gainXp(Xp.perLevel + 1.0);
-              housed2.hp = housed2.maxHp;
+            if (s.level > 1) {
+              housed2.gainXp((s.level - 1) * Xp.perLevel.toDouble());
             }
+            if (storehouseLv > 0) {
+              housed2.gainXp(storehouseLv * Xp.perLevel + 1.0);
+            }
+            housed2.hp = housed2.maxHp;
             garrison.add(housed2);
             break;
           }
@@ -505,14 +526,16 @@ class AttackState {
       ..addAll(next);
   }
 
-  /// Garrison discipline: defenders DON'T climb their own walls anymore —
-  /// they march through the GATE like proper soldiers. (Non-blocking pieces
-  /// — wire, mines, tents — they walk over freely; it's their yard.)
+  /// Garrison discipline: defenders DON'T climb their own WALLS — they
+  /// march through the GATE like proper soldiers. Every other friendly
+  /// structure (towers, cannons, mortars, storehouses, whatever) is just
+  /// furniture in their own yard, not an obstacle — only walls define the
+  /// maze layout that garrison has to respect; nothing else does.
   bool _garrisonPassable(int r, int c) {
     if (!base.inBounds(r, c)) return false;
     if (!TerrainData.passable(base.grid[r][c].terrain)) return false;
     final s = base.grid[r][c].structure;
-    if (s != null && s.alive && s.spec.blocks && s.type != DefType.gate) {
+    if (s != null && s.alive && s.type == DefType.wall) {
       return false;
     }
     return true;
@@ -760,7 +783,7 @@ class AttackState {
         if (s == null || !s.alive || !s.spec.zapsMovers) continue;
         if (s.cooldown > 0) continue;
         final effRange =
-            s.spec.range + (base.grid[r][c].terrain == Terrain.hill ? 1 : 0);
+            s.effectiveRange + (base.grid[r][c].terrain == Terrain.hill ? 1 : 0);
         final d = math.max((t.r - r).abs(), (t.c - c).abs());
         if (d > effRange) continue;
         if (!_pay(s.ownerId, WarCosts.defend)) continue;
@@ -950,7 +973,7 @@ class AttackState {
     final dmg = (t.atk * mult * t.spec.vsStructure).round();
     var counter = 0;
     final inTowerRange =
-        (t.r - r).abs() <= s.spec.range && (t.c - c).abs() <= s.spec.range;
+        (t.r - r).abs() <= s.effectiveRange && (t.c - c).abs() <= s.effectiveRange;
     if (s.spec.isShooter && dmg < s.hp && inTowerRange) {
       final terr = TerrainData.defBonus(base.at(t.r, t.c)!.terrain);
       counter = (s.damage * (1 - terr)).round();
@@ -1214,7 +1237,7 @@ class AttackState {
         }
         // high ground: a tower on a HILL sees one tile farther
         final effRange =
-            s.spec.range + (base.grid[r][c].terrain == Terrain.hill ? 1 : 0);
+            s.effectiveRange + (base.grid[r][c].terrain == Terrain.hill ? 1 : 0);
         // TESLA: chain arc — dump its damage pool across up to 4 raiders
         if (s.type == DefType.tesla) {
           _teslaArc(s, r, c, effRange);
@@ -1376,7 +1399,7 @@ class AttackState {
   }
 
   /// Watchtower aura: eyes within [radius] of the given cell.
-  bool _watchtowerNear(int r, int c, [int radius = 3]) {
+  bool _watchtowerNear(int r, int c, [int radius = watchtowerRadius]) {
     for (var dr = -radius; dr <= radius; dr++) {
       for (var dc = -radius; dc <= radius; dc++) {
         final s = base.structAt(r + dr, c + dc);
