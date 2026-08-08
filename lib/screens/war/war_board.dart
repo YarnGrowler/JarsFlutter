@@ -134,6 +134,13 @@ class WarBoardPainter extends CustomPainter {
 
   int _cacheKey() => Object.hash(
         base.seed,
+        base.side, // youBase/enemyBase can share a seed but NEVER a terrain
+        // grid (Base._noise() mixes side into the generation) — without
+        // this, switching which base is on screen could serve a stale
+        // baked picture from the OTHER side: real ground truth for
+        // pathing/passability stays correct, but what's rendered doesn't
+        // match it. Exactly "the place where I'm walking isn't mountain,
+        // but the plains showed mountains."
         base.rows,
         base.cols,
         base.visualEpoch,

@@ -1515,6 +1515,59 @@ void main() {
       }
     });
 
+    test(
+        'REGRESSION: every passable tile of the RAW terrain (no structures '
+        'yet) is reachable from the landing ring — mountains never seal '
+        'off a pocket of flat land', () {
+      // A mountain range can, by chance, fully enclose a patch of open
+      // ground — a castle placed inside one would be permanently
+      // unraidable. Deliberately boost mountainFrac far past the default
+      // (0.11) across many seeds to reliably provoke that scenario, since
+      // it's rare at normal density.
+      for (final seed in [3, 11, 22, 34, 47, 58, 69, 81, 93, 104]) {
+        final base = Base(WarSide.enemy, seed,
+            config: const TerrainConfig(
+                rivers: 0, lakes: 0, mountainFrac: 0.38, forestFrac: 0.1));
+        final size = base.rows;
+        final seen = <int>{};
+        final q = <List<int>>[];
+        void seedCell(int r, int c) {
+          if (base.passable(r, c) && seen.add(r * size + c)) {
+            q.add([r, c]);
+          }
+        }
+
+        for (var c = 0; c < size; c++) {
+          seedCell(0, c);
+          seedCell(size - 1, c);
+        }
+        for (var r = 0; r < size; r++) {
+          seedCell(r, 0);
+          seedCell(r, size - 1);
+        }
+        while (q.isNotEmpty) {
+          final cur = q.removeLast();
+          for (final d in const [
+            [-1, 0],
+            [1, 0],
+            [0, -1],
+            [0, 1]
+          ]) {
+            seedCell(cur[0] + d[0], cur[1] + d[1]);
+          }
+        }
+        for (var r = 0; r < size; r++) {
+          for (var c = 0; c < size; c++) {
+            if (!base.passable(r, c)) continue;
+            expect(seen.contains(r * size + c), isTrue,
+                reason: 'seed $seed: ($r,$c) is passable terrain but '
+                    'unreachable from every side of the landing ring — a '
+                    'castle placed here would be permanently unraidable');
+          }
+        }
+      }
+    });
+
     test('a dry-world fortress is SEALED — no forest holes, no open sections',
         () {
       final base = Base(WarSide.enemy, 77,

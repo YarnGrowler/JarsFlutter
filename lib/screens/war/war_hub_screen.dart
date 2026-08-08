@@ -461,7 +461,7 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                                     content: Text(
                                         'Nobody has placed a castle yet — build one first.')));
                           } else {
-                            g.startWar();
+                            _confirmStartWar(context, g);
                           }
                         },
                         dark: g.anyCastlePlaced && g.canControlWar)),
@@ -1079,6 +1079,31 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
       ),
     );
     if (ok == true) await g.resetSeason();
+  }
+
+  Future<void> _confirmStartWar(BuildContext context, WarGame g) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text('Start the war?',
+            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+        content: Text(
+            'Locks in prep for everyone in the room — no more building, and '
+            'the enemy\'s stronghold is sized and built off however much '
+            'the crew has earned so far. There\'s no going back to prep '
+            'after this.',
+            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text('Start war',
+                  style: GoogleFonts.inter(color: JarsColors.gold, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok == true) g.startWar();
   }
 
   Widget _ladder(WarGame g, dynamic table) {

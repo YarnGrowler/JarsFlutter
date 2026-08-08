@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:math' as math;
 
 import '../core/seeded_rng.dart';
 import 'war_types.dart';
@@ -391,26 +392,34 @@ class Base {
     return 2;
   }
 
-  /// Guarantee the map's heart is reachable from the landing ring.
-  void _ensureConnected() {
-    final center = Cell(rows ~/ 2, cols ~/ 2);
-    if (grid[center.r][center.c].terrain == Terrain.mountain) {
-      grid[center.r][center.c].terrain = Terrain.plains;
-    }
+  static const List<List<int>> _orthDirs = [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1]
+  ];
+
+  /// Flood every passable cell reachable from the landing ring — raids can
+  /// land on any of the four sides, not just the top, so the search has to
+  /// start from all four.
+  Set<int> _floodFromLandingRing() {
     final seen = <int>{};
     final q = Queue<Cell>();
+    void seed(int r, int c) {
+      final k = r * cols + c;
+      if (seen.add(k)) q.add(Cell(r, c));
+    }
     for (var c = 0; c < cols; c++) {
-      q.add(Cell(0, c));
-      seen.add(c);
+      seed(0, c);
+      seed(rows - 1, c);
+    }
+    for (var r = 0; r < rows; r++) {
+      seed(r, 0);
+      seed(r, cols - 1);
     }
     while (q.isNotEmpty) {
       final cur = q.removeFirst();
-      for (final d in const [
-        [-1, 0],
-        [1, 0],
-        [0, -1],
-        [0, 1]
-      ]) {
+      for (final d in _orthDirs) {
         final nr = cur.r + d[0], nc = cur.c + d[1];
         if (!inBounds(nr, nc)) continue;
         if (!TerrainData.passable(grid[nr][nc].terrain)) continue;
@@ -420,12 +429,73 @@ class Base {
         q.add(Cell(nr, nc));
       }
     }
-    if (!seen.contains(center.r * cols + center.c)) {
-      // carve a straight corridor from the top edge to the center
-      for (var r = 0; r <= center.r; r++) {
-        final t = grid[r][center.c].terrain;
-        if (t == Terrain.mountain) grid[r][center.c].terrain = Terrain.plains;
-        if (t == Terrain.river) grid[r][center.c].terrain = Terrain.bridge;
+    return seen;
+  }
+
+  /// Guarantee EVERY patch of buildable land is reachable from the landing
+  /// ring — not just the map's center. A mountain range can, by chance,
+  /// fully enclose a pocket of flat land; a castle placed inside one would
+  /// be permanently unraidable, which is a broken base state, not just a
+  /// strong one. Finds every such sealed pocket and tears a corridor out
+  /// toward the nearest edge.
+  void _ensureConnected() {
+    final center = Cell(rows ~/ 2, cols ~/ 2);
+    if (grid[center.r][center.c].terrain == Terrain.mountain) {
+      grid[center.r][center.c].terrain = Terrain.plains;
+    }
+
+    var seen = _floodFromLandingRing();
+    final visited = <int>{};
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        final start = Cell(r, c);
+        final k0 = r * cols + c;
+        if (visited.contains(k0) || seen.contains(k0)) continue;
+        if (!TerrainData.passable(grid[r][c].terrain)) continue;
+        // an unreached pocket — flood-fill JUST this pocket so we carve
+        // one corridor per sealed region, not one per sealed tile.
+        final pocket = <Cell>[];
+        final pq = Queue<Cell>()..add(start);
+        visited.add(k0);
+        while (pq.isNotEmpty) {
+          final cur = pq.removeFirst();
+          pocket.add(cur);
+          for (final d in _orthDirs) {
+            final nr = cur.r + d[0], nc = cur.c + d[1];
+            if (!inBounds(nr, nc)) continue;
+            if (!TerrainData.passable(grid[nr][nc].terrain)) continue;
+            final k = nr * cols + nc;
+            if (visited.contains(k) || seen.contains(k)) continue;
+            visited.add(k);
+            pq.add(Cell(nr, nc));
+          }
+        }
+        final cr = (pocket.fold(0, (a, p) => a + p.r) / pocket.length).round();
+        final cc = (pocket.fold(0, (a, p) => a + p.c) / pocket.length).round();
+        final vertDist = math.min(cr, rows - 1 - cr);
+        final horizDist = math.min(cc, cols - 1 - cc);
+        if (vertDist <= horizDist) {
+          final toTop = cr <= rows - 1 - cr;
+          for (var rr = toTop ? 0 : rows - 1;
+              toTop ? rr <= cr : rr >= cr;
+              rr += toTop ? 1 : -1) {
+            final t = grid[rr][cc].terrain;
+            if (t == Terrain.mountain) grid[rr][cc].terrain = Terrain.plains;
+            if (t == Terrain.river) grid[rr][cc].terrain = Terrain.bridge;
+          }
+        } else {
+          final toLeft = cc <= cols - 1 - cc;
+          for (var cx = toLeft ? 0 : cols - 1;
+              toLeft ? cx <= cc : cx >= cc;
+              cx += toLeft ? 1 : -1) {
+            final t = grid[cr][cx].terrain;
+            if (t == Terrain.mountain) grid[cr][cx].terrain = Terrain.plains;
+            if (t == Terrain.river) grid[cr][cx].terrain = Terrain.bridge;
+          }
+        }
+        // the carve may have connected other pockets too — refresh before
+        // continuing the outer scan so nothing gets a redundant corridor.
+        seen = _floodFromLandingRing();
       }
     }
   }
