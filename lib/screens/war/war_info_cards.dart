@@ -80,12 +80,15 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
       _Stat('📍 Patrol', '${patrolAt(level)} tiles, then returns home'),
     ],
     if (type == DefType.housing)
-      const _Stat('🏠 Quarters', 'tents within 2 tiles field +1 defender'),
+      _Stat('🏠 Quarters',
+          'posts within 2 tiles gain +$level to their reinforcement pool'),
     if (type == DefType.banner)
       const _Stat('🚩 Rally', 'defenses within 2 reload FASTER (no stacking)'),
     if (type == DefType.watchtower) ...[
-      const _Stat('👁 Eyes', 'forests hide nothing within 3 tiles'),
-      const _Stat('🪖 Rally', 'guards within 3 tiles patrol +2 farther'),
+      const _Stat('👁 Eyes', 'forests hide nothing within 5 tiles'),
+      const _Stat('🪖 Rally', 'guards within 5 tiles patrol +2 farther'),
+      const _Stat('🚨 Alert', 'posts whose patrol reaches this tower\'s '
+          'vision charge in at anything it spots'),
     ],
     if (type == DefType.storehouse) ...[
       const _Stat('🍖 Provisions', 'tents within 3 field VETERAN guards'),

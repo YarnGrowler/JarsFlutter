@@ -2028,6 +2028,154 @@ void main() {
           reason: 'barracks nearby → the tent fields TWO');
     });
 
+    test(
+        'a single L3 Housing alone is enough to field the full 4-guard cap '
+        '(pool scales with the house\'s own LEVEL, not just its presence)',
+        () {
+      final base = Base(WarSide.enemy, 11);
+      for (var r = 0; r < Base.defaultSize; r++) {
+        base.grid[r][3].terrain = Terrain.plains;
+        base.grid[r][4].terrain = Terrain.plains;
+        base.grid[r][5].terrain = Terrain.plains;
+      }
+      base.placeCastle('def', 2, 3);
+      base.place(10, 4, DefType.guardPost, 'def');
+      base.place(10, 5, DefType.housing, 'def');
+      base.structAt(10, 5)!.level = 3;
+      final st = AttackState(
+          base: base,
+          attacker: WarSide.you,
+          attackerName: 'Me',
+          pools: MapPools({'me': 999, 'def': 999}));
+      // pool = 1 (the post itself) + 3 (an L3 house) = 4, exactly the cap.
+      expect(st.garrison, hasLength(4));
+    });
+
+    test(
+        'multiple houses STACK, but a post never fields more than 4 live '
+        'defenders at once no matter how deep the pool runs', () {
+      final base = Base(WarSide.enemy, 11);
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 2; c <= 7; c++) {
+          base.grid[r][c].terrain = Terrain.plains;
+        }
+      }
+      base.placeCastle('def', 2, 3);
+      base.place(10, 4, DefType.guardPost, 'def');
+      base.place(9, 5, DefType.housing, 'def');
+      base.place(11, 5, DefType.housing, 'def');
+      base.place(10, 6, DefType.housing, 'def');
+      for (final cell in [
+        [9, 5],
+        [11, 5],
+        [10, 6]
+      ]) {
+        base.structAt(cell[0], cell[1])!.level = 2;
+      }
+      final st = AttackState(
+          base: base,
+          attacker: WarSide.you,
+          attackerName: 'Me',
+          pools: MapPools({'me': 999, 'def': 999}));
+      // pool = 1 (post) + 3 houses × level 2 = 7 — but only 4 can ever be
+      // OUT of one tent at the same time.
+      expect(st.garrison, hasLength(4));
+    });
+
+    test(
+        'a depleted guard slot refills from the reinforcement pool one at a '
+        'time, until the pool itself runs dry', () {
+      final base = Base(WarSide.enemy, 11);
+      for (var r = 0; r < Base.defaultSize; r++) {
+        for (var c = 2; c <= 7; c++) {
+          base.grid[r][c].terrain = Terrain.plains;
+        }
+      }
+      base.placeCastle('def', 2, 3);
+      base.place(10, 4, DefType.guardPost, 'def');
+      base.place(9, 5, DefType.housing, 'def');
+      base.place(11, 5, DefType.housing, 'def');
+      base.place(10, 6, DefType.housing, 'def');
+      for (final cell in [
+        [9, 5],
+        [11, 5],
+        [10, 6]
+      ]) {
+        base.structAt(cell[0], cell[1])!.level = 2;
+      }
+      final st = AttackState(
+          base: base,
+          attacker: WarSide.you,
+          attackerName: 'Me',
+          pools: MapPools({'me': 999, 'def': 999}));
+      expect(st.garrison, hasLength(4));
+      // pool = 7 total, 4 already out → 3 reinforcements left in the tent.
+      for (var i = 0; i < 3; i++) {
+        st.garrison.first.hp = 0;
+        st.defendersReact();
+        expect(st.garrison, hasLength(4),
+            reason: 'reinforcement #$i should refill the fallen slot');
+      }
+      // the pool is empty now — a fourth death is NOT replaced.
+      st.garrison.first.hp = 0;
+      st.defendersReact();
+      expect(st.garrison, hasLength(3),
+          reason: 'the tent has nothing left to send');
+    });
+
+    test(
+        'a Watchtower ALERTS any Guard Post whose patrol circle reaches its '
+        'own vision — those guards charge at anything it spots, even well '
+        'past their own leash', () {
+      AttackState mk({required bool withTower}) {
+        final base = Base(WarSide.enemy, 11);
+        for (var r = 0; r < Base.defaultSize; r++) {
+          base.grid[r][3].terrain = Terrain.plains;
+          base.grid[r][4].terrain = Terrain.plains;
+        }
+        for (var c = 3; c <= 13; c++) {
+          base.grid[10][c].terrain = Terrain.plains;
+        }
+        base.placeCastle('def', 2, 3);
+        base.place(10, 4, DefType.guardPost, 'def');
+        // Chebyshev 6 from the post — outside the tower's own flat "+2
+        // leash" bounding-box bonus (radius 5) — but Manhattan 6, well
+        // inside the leash(4)+watchtowerRadius(5)=9 LINK distance.
+        if (withTower) base.place(10, 10, DefType.watchtower, 'def');
+        return AttackState(
+            base: base,
+            attacker: WarSide.you,
+            attackerName: 'Me',
+            pools: MapPools({'me': 999, 'def': 999}));
+      }
+
+      // the intruder sits 9 tiles from home (way past leash 4) but only 3
+      // from the tower (well inside its 5-tile vision).
+      final without = mk(withTower: false);
+      final guardA = without.garrison.first;
+      // troops only SPAWN on the landing ring — teleport it inland after.
+      final farA =
+          without.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 4)!;
+      farA.r = 10;
+      farA.c = 13;
+      final d0A = (guardA.r - farA.r).abs() + (guardA.c - farA.c).abs();
+      without.defendersReact();
+      final d1A = (guardA.r - farA.r).abs() + (guardA.c - farA.c).abs();
+      expect(d1A, d0A, reason: 'no tower link → the guard never even looks');
+
+      final linked = mk(withTower: true);
+      final guardB = linked.garrison.first;
+      final farB =
+          linked.spawn(TroopType.soldier, 'me', Base.defaultSize - 1, 4)!;
+      farB.r = 10;
+      farB.c = 13;
+      final d0B = (guardB.r - farB.r).abs() + (guardB.c - farB.c).abs();
+      linked.defendersReact();
+      final d1B = (guardB.r - farB.r).abs() + (guardB.c - farB.c).abs();
+      expect(d1B, lessThan(d0B),
+          reason: 'tower-linked → the guard charges in from home');
+    });
+
     test('scouts peer an extra tile ahead of their march', () {
       final base = Base(WarSide.enemy, 7);
       for (var r = 0; r < Base.defaultSize; r++) {

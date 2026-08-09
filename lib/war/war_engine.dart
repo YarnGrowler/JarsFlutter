@@ -164,6 +164,12 @@ class AttackState {
   /// ⚡ looted from smashed storehouses / war generators / tribute chests.
   double plunderGained = 0;
   int _troopSeq = 0;
+  int _garrisonSeq = 0;
+  /// Guard Post cell-key → reinforcements still waiting in the tent (spawned
+  /// one at a time, only once a live slot opens up, up to [garrisonConcurrentCap]).
+  final Map<int, int> _garrisonPool = {};
+  /// Guard Post cell-key → how many defenders it can field AT ONCE.
+  final Map<int, int> _garrisonCap = {};
   late double _startDestruction;
 
   AttackState({
@@ -206,6 +212,11 @@ class AttackState {
 
   /// How far a garrison defender will chase from its post before returning.
   static const int garrisonLeash = 4;
+
+  /// A single post can only have this many live defenders out at once —
+  /// stack more Housing to reinforce faster (bigger pool), or build more
+  /// posts to raise the concurrent ceiling itself.
+  static const int garrisonConcurrentCap = 4;
 
   /// A weak fighter on its own (low hp, no gun) — its whole job is seeing
   /// far, so it gets a genuinely wide radius to compensate.
@@ -265,71 +276,109 @@ class AttackState {
     }
   }
 
+  /// Empty, passable, non-ring, unoccupied cells near (r,c) — searched ring
+  /// by ring (Chebyshev) outward, closest first. Used to seat new garrison
+  /// spawns without ever stacking two defenders on one tile.
+  List<List<int>> _openCellsNear(int r, int c, int need, {int startRing = 0}) {
+    final out = <List<int>>[];
+    for (var ring = startRing; ring <= 3 && out.length < need; ring++) {
+      for (var dr = -ring; dr <= ring; dr++) {
+        for (var dc = -ring; dc <= ring; dc++) {
+          if (math.max(dr.abs(), dc.abs()) != ring) continue;
+          final nr = r + dr, nc = c + dc;
+          if (!base.passable(nr, nc) || base.isRing(nr, nc)) continue;
+          if (troopAt(nr, nc) != null) continue;
+          if (out.any((p) => p[0] == nr && p[1] == nc)) continue;
+          out.add([nr, nc]);
+          if (out.length >= need) break;
+        }
+        if (out.length >= need) break;
+      }
+    }
+    return out;
+  }
+
+  Troop _newGuard(Structure post, int r, int c, int homeR, int homeC) {
+    final guard = Troop(
+        id: 'g${_garrisonSeq++}',
+        ownerId: post.ownerId,
+        side: base.side,
+        type: TroopType.soldier,
+        r: r,
+        c: c,
+        homeR: homeR,
+        homeC: homeC);
+    // A Guard Post's own upgrade level used to only widen its patrol leash —
+    // the soldier it actually spawns stayed exactly as weak at L5 as L1,
+    // despite the cumulative upgrade cost. Now the post's level carries
+    // over to its defender too.
+    if (post.level > 1) {
+      guard.gainXp((post.level - 1) * Xp.perLevel.toDouble());
+    }
+    // well-fed watch: a storehouse within 3 fields VETERAN guards — a
+    // higher-level storehouse feeds a proportionally better stew, not
+    // just a flat +1 level regardless of how much was invested in it.
+    final storehouseLv = _provisionedLevel(homeR, homeC);
+    if (storehouseLv > 0) guard.gainXp(storehouseLv * Xp.perLevel + 1.0);
+    guard.hp = guard.maxHp;
+    return guard;
+  }
+
   /// Guard Posts field a live defender each raid, anchored to the post.
+  /// Housing barracks it — each Housing structure within 2 tiles adds its
+  /// OWN LEVEL worth of reinforcements to the post's pool (a bare L1 house
+  /// is +1 body, a maxed L3 house is +3), stacking across multiple houses.
+  /// A post can only ever have [garrisonConcurrentCap] defenders OUT at
+  /// once though — the rest of the pool waits in the tent and trickles out
+  /// one at a time as slots die (see [_reinforceGarrison]), so a deep pool
+  /// behind a single post buys staying power, not a bigger mob on turn one;
+  /// stacking more POSTS is what raises how many can ever be out together.
   void _spawnGarrison() {
-    var i = 0;
     for (var r = 0; r < base.rows; r++) {
       for (var c = 0; c < base.cols; c++) {
         final s = base.structAt(r, c);
         if (s == null || !s.alive || s.type != DefType.guardPost) continue;
-        if (troopAt(r, c) != null) continue;
-        final guard = Troop(
-            id: 'g${i++}',
-            ownerId: s.ownerId,
-            side: base.side,
-            type: TroopType.soldier,
-            r: r,
-            c: c,
-            homeR: r,
-            homeC: c);
-        // A Guard Post's own upgrade level used to only widen its patrol
-        // leash — the soldier it actually spawns stayed exactly as weak at
-        // L5 as L1, despite the cumulative upgrade cost. Now the post's
-        // level carries over to its defender too.
-        if (s.level > 1) guard.gainXp((s.level - 1) * Xp.perLevel.toDouble());
-        // well-fed watch: a storehouse within 3 fields VETERAN guards — a
-        // higher-level storehouse feeds a proportionally better stew, not
-        // just a flat +1 level regardless of how much was invested in it.
-        final storehouseLv = _provisionedLevel(r, c);
-        if (storehouseLv > 0) {
-          guard.gainXp(storehouseLv * Xp.perLevel + 1.0);
-        }
-        guard.hp = guard.maxHp;
-        garrison.add(guard);
-        // HOUSING nearby quarters a second defender for this post
-        var housed = false;
-        for (var dr = -2; dr <= 2 && !housed; dr++) {
-          for (var dc = -2; dc <= 2 && !housed; dc++) {
+        var housingPool = 0;
+        for (var dr = -2; dr <= 2; dr++) {
+          for (var dc = -2; dc <= 2; dc++) {
             final h = base.structAt(r + dr, c + dc);
-            housed = h != null && h.alive && h.type == DefType.housing;
+            if (h != null && h.alive && h.type == DefType.housing) {
+              housingPool += h.level;
+            }
           }
         }
-        if (housed) {
-          for (final d in _orth) {
-            final nr = r + d[0], nc = c + d[1];
-            if (!base.passable(nr, nc) || troopAt(nr, nc) != null) continue;
-            if (base.isRing(nr, nc)) continue;
-            final housed2 = Troop(
-                id: 'g${i++}',
-                ownerId: s.ownerId,
-                side: base.side,
-                type: TroopType.soldier,
-                r: nr,
-                c: nc,
-                homeR: r,
-                homeC: c);
-            if (s.level > 1) {
-              housed2.gainXp((s.level - 1) * Xp.perLevel.toDouble());
-            }
-            if (storehouseLv > 0) {
-              housed2.gainXp(storehouseLv * Xp.perLevel + 1.0);
-            }
-            housed2.hp = housed2.maxHp;
-            garrison.add(housed2);
-            break;
-          }
+        final totalPool = 1 + housingPool; // the post always fields itself
+        final cap = math.min(garrisonConcurrentCap, totalPool);
+        final postKey = _key(r, c);
+        _garrisonCap[postKey] = cap;
+        final seats = _openCellsNear(r, c, cap);
+        for (final seat in seats) {
+          garrison.add(_newGuard(s, seat[0], seat[1], r, c));
         }
+        _garrisonPool[postKey] = totalPool - seats.length;
       }
+    }
+  }
+
+  /// Once a raid is underway, a post with pool left refills an empty slot
+  /// the instant one opens — never all at once, one body at a time, exactly
+  /// like the CoC-style "reinforcements" the tent is meant to model.
+  void _reinforceGarrison() {
+    for (final entry in _garrisonPool.entries.toList()) {
+      if (entry.value <= 0) continue;
+      final postKey = entry.key;
+      final r = postKey ~/ base.cols, c = postKey % base.cols;
+      final s = base.structAt(r, c);
+      // the tent itself has to still be standing to keep training reserves
+      if (s == null || !s.alive || s.type != DefType.guardPost) continue;
+      final cap = _garrisonCap[postKey] ?? garrisonConcurrentCap;
+      final aliveHere =
+          garrison.where((g) => g.homeR == r && g.homeC == c).length;
+      if (aliveHere >= cap) continue;
+      final seat = _openCellsNear(r, c, 1);
+      if (seat.isEmpty) continue; // no room this beat — try again next tick
+      garrison.add(_newGuard(s, seat[0][0], seat[0][1], r, c));
+      _garrisonPool[postKey] = entry.value - 1;
     }
   }
 
@@ -1283,6 +1332,21 @@ class AttackState {
       }
     }
     _cull();
+    _reinforceGarrison();
+    // Lookout towers ALERT any post whose own patrol circle their vision
+    // circle touches (or overlaps) — once linked, that post's guards react
+    // to anything the tower would spot, not just their own leash zone, and
+    // will charge in from wherever they are to reach it. Computed once per
+    // beat (not per guard) since towers can die mid-beat above but never move.
+    final aliveTowers = <List<int>>[];
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        final s = base.structAt(r, c);
+        if (s != null && s.alive && s.type == DefType.watchtower) {
+          aliveTowers.add([r, c]);
+        }
+      }
+    }
     // garrison: patrol a fixed radius around the post — chase intruders inside
     // it, and MARCH HOME when there's nothing to fight (no spawn camping).
     // Defenders move FREELY over their own structures (they climb their walls).
@@ -1295,6 +1359,14 @@ class AttackState {
           ((post?.type == DefType.guardPost ? post!.level : 1) - 1) * 2 +
           (defenderIq >= 0.7 ? 1 : 0) +
           (_watchtowerNear(homeR, homeC) ? 2 : 0);
+      // towers whose vision circle reaches into this post's own patrol
+      // circle — an intruder anywhere in ANY of these towers' sight is a
+      // valid alert for this post's guards, however far that is from home.
+      final linkedTowers = aliveTowers
+          .where((tw) =>
+              (tw[0] - homeR).abs() + (tw[1] - homeC).abs() <=
+              leash + watchtowerRadius)
+          .toList();
       // intruders inside the patrol zone count — and ANYONE within 2 of the
       // guard itself is engaged no matter what the leash math says
       Troop? target;
@@ -1303,13 +1375,17 @@ class AttackState {
         if (!t.alive) continue;
         final fromHome = (t.r - homeR).abs() + (t.c - homeC).abs();
         final d = (t.r - gTroop.r).abs() + (t.c - gTroop.c).abs();
-        if (fromHome > leash && d > 2) continue;
+        final towerAlert = linkedTowers.any((tw) =>
+            (t.r - tw[0]).abs() + (t.c - tw[1]).abs() <= watchtowerRadius);
+        if (fromHome > leash && d > 2 && !towerAlert) continue;
         // the POST watches its whole zone even while its guard detours: spot
         // by whichever is closer — the guard's eyes or the sentry line.
         // (Without this, a guard walking AROUND a wall lost sight, marched
         // home, saw the intruder again, and oscillated forever.)
         final spotD = math.min(d, fromHome);
-        if (spotD > _spotRange(leash, t) && d > 2) continue; // hidden in trees
+        if (spotD > _spotRange(leash, t) && d > 2 && !towerAlert) {
+          continue; // hidden in trees
+        }
         if (d < bestD) {
           bestD = d;
           target = t;
@@ -1320,9 +1396,14 @@ class AttackState {
           _strike(gTroop, target, counterCost: WarCosts.attack);
         } else {
           // chase THROUGH the compound — around walls, through the gates.
-          // Greedy stepping stalled at corners; a real path never does.
+          // Greedy stepping stalled at corners; a real path never does. A
+          // tower-alerted target can sit well past the normal leash — widen
+          // the chase bound just enough to actually let the guard reach it.
+          final targetFromHome =
+              (target.r - homeR).abs() + (target.c - homeC).abs();
+          final chaseLimit = math.max(leash + 2, targetFromHome + 1);
           final step = _garrisonPathStep(
-              gTroop, target.r, target.c, homeR, homeC, leash + 2);
+              gTroop, target.r, target.c, homeR, homeC, chaseLimit);
           if (step != null &&
               !(step[0] == target.r && step[1] == target.c)) {
             gTroop.r = step[0];
@@ -1676,6 +1757,9 @@ class AttackState {
         'gLost': garrisonLost,
         'spent': resourcesSpent,
         'seq': _troopSeq,
+        'gSeq': _garrisonSeq,
+        'gPool': [for (final e in _garrisonPool.entries) [e.key, e.value]],
+        'gCap': [for (final e in _garrisonCap.entries) [e.key, e.value]],
         'start': _startDestruction,
         'iq': defenderIq,
         'graves': [for (final g in graves) g],
@@ -1715,6 +1799,15 @@ class AttackState {
     st.garrisonLost = (j['gLost'] as num?)?.toInt() ?? 0;
     st.resourcesSpent = (j['spent'] as num?)?.toDouble() ?? 0;
     st._troopSeq = (j['seq'] as num?)?.toInt() ?? st.troops.length;
+    st._garrisonSeq = (j['gSeq'] as num?)?.toInt() ?? st.garrison.length;
+    for (final e in (j['gPool'] as List? ?? const [])) {
+      final pair = e as List;
+      st._garrisonPool[(pair[0] as num).toInt()] = (pair[1] as num).toInt();
+    }
+    for (final e in (j['gCap'] as List? ?? const [])) {
+      final pair = e as List;
+      st._garrisonCap[(pair[0] as num).toInt()] = (pair[1] as num).toInt();
+    }
     st._startDestruction =
         (j['start'] as num?)?.toDouble() ?? st._startDestruction;
     return st;

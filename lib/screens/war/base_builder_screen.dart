@@ -564,7 +564,7 @@ class _BaseBuilderScreenState extends ConsumerState<BaseBuilderScreen> {
                   '❤ ${s.hp}/${s.maxHp}'
                   '${spec.isShooter ? ' · ⚔ ${s.damage} · 🎯 ${spec.range}' : ''}'
                   '${spec.type == DefType.guardPost ? ' · 📍 patrol ${AttackState.garrisonLeash + ((s.level as int) - 1) * 2}' : ''}'
-                  '${spec.type == DefType.housing ? ' · 🏠 tents +1 defender' : ''}'
+                  '${spec.type == DefType.housing ? ' · 🏠 +${s.level} to nearby posts\' pool' : ''}'
                   '${g.youBase.grid[cell.r][cell.c].terrain == Terrain.hill && spec.isShooter ? ' · ⛰ high ground +1🎯' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

@@ -261,7 +261,9 @@ const Map<DefType, DefSpec> kDefSpecs = {
       blurb:
           'Stations a live defender at the start of every raid — upgrades '
           'toughen the defender AND widen the patrol leash across big '
-          'boards.'),
+          'boards. Only 4 can ever be out of one post at once, however deep '
+          'its reinforcement pool runs — build more Housing to refill '
+          'faster, or more posts to raise the ceiling itself.'),
   DefType.gate: DefSpec(DefType.gate,
       name: 'Gate',
       emoji: '🚪',
@@ -285,8 +287,10 @@ const Map<DefType, DefSpec> kDefSpecs = {
       upgradeCost: 35,
       maxLevel: 3,
       blurb:
-          'Barracks quarters: every Guard Post within 2 tiles fields a SECOND '
-          'defender each raid.'),
+          'Barracks quarters: every Guard Post within 2 tiles adds this '
+          'house\'s LEVEL to its reinforcement pool (L1=+1, L2=+2, L3=+3, '
+          'stacking across multiple houses). The post trickles them out one '
+          'at a time as slots die, up to 4 defenders out at once.'),
   DefType.pitchThrower: DefSpec(DefType.pitchThrower,
       name: 'Pitch Thrower',
       emoji: '🔥',
@@ -342,7 +346,9 @@ const Map<DefType, DefSpec> kDefSpecs = {
       blurb:
           'No gun, low hp — but its whole job is EYES. Within 5 tiles: '
           'forests hide nothing from your towers, and guards patrol 2 '
-          'tiles farther.'),
+          'tiles farther. Any Guard Post whose OWN patrol circle reaches '
+          'this tower\'s vision gets ALERTED to anything it spots — those '
+          'guards will charge clear across the board to answer it.'),
   DefType.storehouse: DefSpec(DefType.storehouse,
       name: 'Storehouse',
       emoji: '💰',
