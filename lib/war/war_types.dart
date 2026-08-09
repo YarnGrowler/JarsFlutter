@@ -254,16 +254,18 @@ const Map<DefType, DefSpec> kDefSpecs = {
       name: 'Guard Post',
       emoji: '⛺',
       category: DefCategory.garrison,
-      cost: 35,
+      cost: 40,
       hp: 85,
-      upgradeCost: 20,
+      upgradeCost: 25,
       maxLevel: 5,
       blurb:
-          'Stations a live defender at the start of every raid — upgrades '
-          'toughen the defender AND widen the patrol leash across big '
-          'boards. Only 4 can ever be out of one post at once, however deep '
-          'its reinforcement pool runs — build more Housing to refill '
-          'faster, or more posts to raise the ceiling itself.'),
+          'Stations live defenders — its OWN level sets how many it can '
+          'field alone (1 at L1, up to 4 at L4+), how fast a fallen slot '
+          'trains a replacement, and its patrol leash. L3+ posts have a '
+          '50/50 shot of training an ARCHER instead of a soldier. Housing '
+          'nearby adds MORE to the pool on top of all that. Only 4 can '
+          'ever be out of one post at once, however deep the pool runs — '
+          'build more posts to raise that ceiling.'),
   DefType.gate: DefSpec(DefType.gate,
       name: 'Gate',
       emoji: '🚪',

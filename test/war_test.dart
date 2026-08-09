@@ -1163,6 +1163,38 @@ void main() {
       expect(t2.hp, lessThan(hp2), reason: 'archers shoot over walls');
     });
 
+    test(
+        'a cannon\'s flat shot is stopped ONLY by an actual wall/gate — '
+        'every other structure (towers, generators, housing...) is '
+        'furniture it fires straight past', () {
+      Base b() {
+        final base = Base(WarSide.enemy, 7);
+        flatten(base, [
+          for (var r = 0; r < Base.defaultSize; r++) [r, 3]
+        ]);
+        base.placeCastle('def', 2, 3);
+        return base;
+      }
+
+      // cannon (range 4) at (10,3), an ARCHER TOWER in the way at (12,3) —
+      // furniture, not a wall — then the raider at (13,3).
+      final base = b();
+      base.place(10, 3, DefType.cannon, 'def');
+      base.place(12, 3, DefType.archerTower, 'def');
+      final st = AttackState(
+          base: base,
+          attacker: WarSide.you,
+          attackerName: 'Me',
+          pools: MapPools({'me': 999, 'def': 999}));
+      final t = st.spawn(TroopType.brute, 'me', Base.defaultSize - 1, 3)!;
+      t.r = 13;
+      final hp = t.hp;
+      st.defendersReact();
+      st.defendersReact();
+      expect(t.hp, lessThan(hp),
+          reason: 'the cannon fires straight past its own archer tower');
+    });
+
     test('difficulty scales the enemy war chest (master builds more)', () {
       double value(Base b) {
         var v = 0.0;
@@ -2109,18 +2141,167 @@ void main() {
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
       expect(st.garrison, hasLength(4));
-      // pool = 7 total, 4 already out → 3 reinforcements left in the tent.
-      for (var i = 0; i < 3; i++) {
-        st.garrison.first.hp = 0;
-        st.defendersReact();
-        expect(st.garrison, hasLength(4),
-            reason: 'reinforcement #$i should refill the fallen slot');
-      }
-      // the pool is empty now — a fourth death is NOT replaced.
+      // a fresh L1 post trains a replacement on a 6-beat cooldown — one
+      // dead slot does NOT refill on the very next beat.
       st.garrison.first.hp = 0;
       st.defendersReact();
       expect(st.garrison, hasLength(3),
+          reason: 'the cooldown has not elapsed yet — no instant refill');
+      // pool = 7 total, 4 already out → 3 reinforcements left in the tent.
+      for (var i = 0; i < 3; i++) {
+        for (var beat = 0; beat < 6; beat++) {
+          st.defendersReact();
+        }
+        expect(st.garrison, hasLength(4),
+            reason: 'reinforcement #$i should refill the fallen slot once '
+                'its cooldown elapses');
+        st.garrison.first.hp = 0;
+      }
+      // the pool is empty now — burning through the cooldown again does NOT
+      // produce a fourth reinforcement.
+      for (var beat = 0; beat < 6; beat++) {
+        st.defendersReact();
+      }
+      expect(st.garrison, hasLength(3),
           reason: 'the tent has nothing left to send');
+    });
+
+    test(
+        'the post\'s OWN level sets a baseline headcount even with ZERO '
+        'Housing nearby, clamped at the shared 4-guard cap', () {
+      AttackState mk(int level) {
+        final base = Base(WarSide.enemy, 11);
+        for (var r = 0; r < Base.defaultSize; r++) {
+          base.grid[r][3].terrain = Terrain.plains;
+          base.grid[r][4].terrain = Terrain.plains;
+        }
+        base.placeCastle('def', 2, 3);
+        base.place(10, 4, DefType.guardPost, 'def');
+        base.structAt(10, 4)!.level = level;
+        return AttackState(
+            base: base,
+            attacker: WarSide.you,
+            attackerName: 'Me',
+            pools: MapPools({'me': 999, 'def': 999}));
+      }
+
+      expect(mk(1).garrison, hasLength(1));
+      expect(mk(2).garrison, hasLength(2));
+      expect(mk(3).garrison, hasLength(3));
+      expect(mk(4).garrison, hasLength(4));
+      expect(mk(5).garrison, hasLength(4),
+          reason: 'clamped at the 4-guard cap even past it');
+    });
+
+    test('a higher-level post trains reinforcements FASTER', () {
+      AttackState mk(int level) {
+        final base = Base(WarSide.enemy, 11);
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 2; c <= 7; c++) {
+            base.grid[r][c].terrain = Terrain.plains;
+          }
+        }
+        base.placeCastle('def', 2, 3);
+        base.place(10, 4, DefType.guardPost, 'def');
+        base.structAt(10, 4)!.level = level;
+        // plenty of pool surplus regardless of level, so both configs have
+        // something left in the tent to actually test the cooldown with.
+        base.place(9, 5, DefType.housing, 'def');
+        base.place(11, 5, DefType.housing, 'def');
+        base.place(10, 6, DefType.housing, 'def');
+        for (final cell in [
+          [9, 5],
+          [11, 5],
+          [10, 6]
+        ]) {
+          base.structAt(cell[0], cell[1])!.level = 2;
+        }
+        return AttackState(
+            base: base,
+            attacker: WarSide.you,
+            attackerName: 'Me',
+            pools: MapPools({'me': 999, 'def': 999}));
+      }
+
+      final l1 = mk(1);
+      expect(l1.garrison, hasLength(4));
+      l1.garrison.first.hp = 0;
+      for (var beat = 0; beat < 3; beat++) {
+        l1.defendersReact();
+      }
+      expect(l1.garrison, hasLength(3),
+          reason: 'an L1 post\'s 6-beat cooldown has not elapsed at beat 3');
+
+      final l5 = mk(5);
+      expect(l5.garrison, hasLength(4));
+      l5.garrison.first.hp = 0;
+      for (var beat = 0; beat < 3; beat++) {
+        l5.defendersReact();
+      }
+      expect(l5.garrison, hasLength(4),
+          reason: 'an L5 post\'s 2-beat cooldown has long since refilled '
+              'the slot by beat 3');
+    });
+
+    test(
+        'below L3 every recruit is a Soldier; at L3+ some come out as '
+        'ARCHERS instead — a 50/50 roll, never a player choice', () {
+      AttackState mk(int level) {
+        final base = Base(WarSide.enemy, 11);
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 2; c <= 7; c++) {
+            base.grid[r][c].terrain = Terrain.plains;
+          }
+        }
+        base.placeCastle('def', 2, 3);
+        base.place(10, 4, DefType.guardPost, 'def');
+        base.structAt(10, 4)!.level = level;
+        // a deep pool so there are MANY recruits to sample across, keeping
+        // the "both types show up" check from ever being flaky.
+        base.place(9, 5, DefType.housing, 'def');
+        base.place(11, 5, DefType.housing, 'def');
+        base.place(10, 6, DefType.housing, 'def');
+        for (final cell in [
+          [9, 5],
+          [11, 5],
+          [10, 6]
+        ]) {
+          base.structAt(cell[0], cell[1])!.level = 3;
+        }
+        return AttackState(
+            base: base,
+            attacker: WarSide.you,
+            attackerName: 'Me',
+            pools: MapPools({'me': 999, 'def': 999}));
+      }
+
+      // L2: below the unlock — every recruit is a plain Soldier, always.
+      // (The pool runs dry well before 20 kills — stop once it's empty
+      // instead of calling .first on a bare tent.)
+      final l2 = mk(2);
+      for (var i = 0; i < 20 && l2.garrison.isNotEmpty; i++) {
+        expect(l2.garrison.every((g) => g.type == TroopType.soldier), isTrue,
+            reason: 'no archers before L3');
+        l2.garrison.first.hp = 0;
+        for (var beat = 0; beat < 6; beat++) {
+          l2.defendersReact();
+        }
+      }
+
+      // L3: over enough recruits, BOTH types should turn up.
+      final l3 = mk(3);
+      final seen = <TroopType>{};
+      seen.addAll(l3.garrison.map((g) => g.type));
+      for (var i = 0; i < 20 && l3.garrison.isNotEmpty; i++) {
+        l3.garrison.first.hp = 0;
+        for (var beat = 0; beat < 4; beat++) {
+          l3.defendersReact();
+        }
+        seen.addAll(l3.garrison.map((g) => g.type));
+      }
+      expect(seen, containsAll([TroopType.soldier, TroopType.archer]),
+          reason: 'a real 50/50 roll over this many recruits should '
+              'produce both types');
     });
 
     test(

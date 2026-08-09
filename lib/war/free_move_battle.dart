@@ -29,6 +29,13 @@ class FreeMoveBattle {
   /// Can the commander still send something? (drills always can)
   final bool Function() canDeploy;
 
+  /// Headless raids (AI-hour attacks, played back later from a replay
+  /// list) need the FULL frame log; live drills/clan raids don't — nobody
+  /// replays their own screen back at them — so they keep the light
+  /// rolling window. Off by default so every existing live/drill call
+  /// site is unaffected.
+  final bool keepHistory;
+
   /// Fixed simulation step — movement integrates here, never on frame time,
   /// so a stuttering device fights exactly like a smooth one.
   static const double simStep = 1 / 30;
@@ -63,7 +70,7 @@ class FreeMoveBattle {
   final List<_Obj> _walls = [];
   bool _objsStale = true;
 
-  FreeMoveBattle(this.st, {required this.canDeploy});
+  FreeMoveBattle(this.st, {required this.canDeploy, this.keepHistory = false});
 
   double get destruction => st.base.destructionPercent;
   int get troopsAlive => st.troops.where((t) => t.alive).length;
@@ -147,9 +154,12 @@ class FreeMoveBattle {
       _beat -= beatPeriod;
       st.defendersReact();
       st.snapshot();
-      // drills are never replayed — keep a rolling window instead of five
-      // minutes of full-grid frames
-      if (st.frames.length > 8) {
+      // live drills/clan raids are never replayed on their own screen —
+      // keep a rolling window instead of five minutes of full-grid frames.
+      // Headless raids opt OUT via keepHistory: their frames feed a real
+      // replay list later, so trimming here would gut it down to the last
+      // ~4 seconds of the fight.
+      if (!keepHistory && st.frames.length > 8) {
         st.frames.removeRange(0, st.frames.length - 8);
       }
       _objsStale = true;

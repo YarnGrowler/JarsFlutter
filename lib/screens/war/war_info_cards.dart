@@ -34,6 +34,8 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
   int hpAt(int l) => (spec.hp * (1 + 0.3 * (l - 1))).round();
   int dmgAt(int l) => (spec.damage * (1 + 0.25 * (l - 1))).round();
   int patrolAt(int l) => 4 + (l - 1) * 2;
+  int baselineAt(int l) => l.clamp(1, 4);
+  int cooldownAt(int l) => (6 - (l - 1)).clamp(2, 6);
 
   final stats = <_Stat>[
     _Stat('❤️ Health', '${hpAt(level)}'),
@@ -77,6 +79,11 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
       _Stat('🛡 Aura', '+${spec.defBuffAdj} multiplier to neighbours'),
     if (type == DefType.guardPost) ...[
       const _Stat('🪖 Garrison', 'fields a live defender every raid'),
+      _Stat('👥 Fields alone',
+          '${baselineAt(level)} of the 4-guard cap (Housing adds more)'),
+      _Stat('⏱ Reinforce', '${cooldownAt(level)} beats after a slot falls'),
+      if (level >= 3)
+        const _Stat('🏹 Recruits', '50/50 chance each is an ARCHER'),
       _Stat('📍 Patrol', '${patrolAt(level)} tiles, then returns home'),
     ],
     if (type == DefType.housing)

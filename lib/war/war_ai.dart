@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../core/seeded_rng.dart';
+import 'free_move_battle.dart';
 import 'war_base.dart';
 import 'war_engine.dart';
 import 'war_player.dart';
@@ -1849,30 +1850,46 @@ class WarAi {
     if (st.troops.isEmpty) return st.finish();
     st.snapshot('The raid begins');
 
-    var rounds = 0;
-    var stalled = 0;
+    // Headless raids fight on the SAME continuous engine a live clan raid
+    // does now (overlapping, sub-tile movement) — not the old one-per-tile
+    // grid. keepHistory:true so the full fight survives for the replay
+    // list (a live drill trims to a rolling window; a headless raid IS
+    // its own replay, there's no other record of it).
     var wavesSent = 1;
-    while (rounds++ < 140 &&
-        (st.troops.any((t) => t.alive) || wavesSent < waveCount)) {
-      // reinforcements: when the last wave is spent or dug in, the next one
-      // lands — alternating flanks so the defense splits
+    final battle = FreeMoveBattle(
+      st,
+      canDeploy: () => wavesSent < waveCount,
+      keepHistory: true,
+    );
+    const dt = FreeMoveBattle.simStep;
+    // Nobody watches a headless raid's 5-minute Clash clock tick down — cap
+    // it at the same ~90s budget FreeMoveBattle.fastResolve() already uses
+    // for "player left mid-battle" completion. Almost every raid ends well
+    // before this (troops die out or the castle falls); it's a backstop,
+    // not a target — running the full 9000-step live budget on every one
+    // of potentially hundreds of raids in a season sim is what made a
+    // single difficulty's season-survival test balloon from ~2s to 24s+.
+    final maxSteps = (90.0 / dt).ceil();
+    var lastWaveAt = 0.0;
+    for (var i = 0; i < maxSteps && !battle.over; i++) {
+      battle.tick(dt);
+      // reinforcements: when the last wave is spent or dug in (or ~9s have
+      // passed — roughly the old 16-round cadence), the next one lands —
+      // alternating flanks so the defense splits.
       if (wavesSent < waveCount &&
-          (rounds % 16 == 0 ||
-              st.troops.where((x) => x.alive).length <= perWave ~/ 3)) {
+          (battle.elapsed - lastWaveAt >= 9.0 ||
+              battle.troopsAlive <= perWave ~/ 3)) {
         spawnWave(wavesSent.isOdd ? anchor2 : anchor);
         wavesSent++;
-        stalled = 0;
+        lastWaveAt = battle.elapsed;
+        battle.notifyDeploy();
         st.snapshot('The next wave lands');
       }
-      var acted = false;
-      for (final t in st.troops.where((x) => x.alive).toList()) {
-        if (aiStep(st, t)) acted = true;
-      }
-      st.defendersReact();
-      st.snapshot();
-      if (base.allCastlesRazed) break;
-      stalled = acted ? 0 : stalled + 1;
-      if (stalled >= 4) break;
+      // battle.over already handles "everyone's dead and no more waves are
+      // coming" (a 4-beat wind-down, built into FreeMoveBattle itself) —
+      // no extra bailout needed here, and an earlier attempt at one broke
+      // raids by mistaking "still marching toward the objective" for
+      // "stalled" before troops had even arrived to deal their first hit.
     }
     st.snapshot('The raid ends');
     return st.finish();
