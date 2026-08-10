@@ -1309,6 +1309,7 @@ class WarGame extends ChangeNotifier {
       _trimFeed();
     }
     liveAttack = null;
+    unpushedRaidResult = true; // guard the result until the server has it
   }
 
   /// Living prepaid raiders march home into [owner]'s army. Dead stay dead;
@@ -1348,6 +1349,18 @@ class WarGame extends ChangeNotifier {
   /// the real war stale for no benefit.
   bool get raidInProgress =>
       clashState != null || (liveAttack?.troops.any((t) => t.alive) ?? false);
+
+  /// A finished raid's outcome (enemy walls smashed, castles razed, troops
+  /// spent) that has NOT yet made it to the server. Banking a raid nulls
+  /// `clashState`, so [raidInProgress] goes false the instant before the save
+  /// that carries the result — leaving the single most valuable write of the
+  /// whole war completely unprotected against a compare-and-swap conflict
+  /// adopting a teammate's raid-free copy over the top of it.
+  /// Cleared by the sync layer once the push actually lands.
+  bool unpushedRaidResult = false;
+
+  /// Local work a remote state must never silently roll back.
+  bool get localWorkAtRisk => raidInProgress || unpushedRaidResult;
 
   AttackState startClashBattle() {
     clashState = AttackState(
@@ -1538,6 +1551,7 @@ class WarGame extends ChangeNotifier {
       _trimFeed();
     }
     clashState = null;
+    unpushedRaidResult = true; // guard the result until the server has it
   }
 
   /// Bank a finished (or abandoned) clash battle into the war.

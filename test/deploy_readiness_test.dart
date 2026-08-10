@@ -1259,6 +1259,49 @@ void main() {
               'deployed — that is how 4 brutes became a dozen');
     });
 
+    test(
+        'REGRESSION: a lost compare-and-swap race never un-destroys what a '
+        'just-banked raid smashed', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      expect(g.unpushedRaidResult, isFalse, reason: 'nothing raided yet');
+
+      // what a teammate's concurrent save carries: the war BEFORE your raid,
+      // with every enemy wall still standing
+      final teammateBlob = g.toJson();
+
+      g.startClashBattle();
+      // smash a real piece of their base
+      int? hitR, hitC;
+      outer:
+      for (var r = 0; r < g.enemyBase.rows; r++) {
+        for (var c = 0; c < g.enemyBase.cols; c++) {
+          final s = g.enemyBase.structAt(r, c);
+          if (s != null && s.alive && !s.isCastle) {
+            s.hp = 0;
+            hitR = r;
+            hitC = c;
+            break outer;
+          }
+        }
+      }
+      expect(hitR, isNotNull, reason: 'sanity: the enemy built something');
+      g.bankClashBattle();
+      expect(g.unpushedRaidResult, isTrue,
+          reason: 'the result is banked locally but not yet on the server');
+
+      // mirrors _pushRoomSave's conflict branch in war_providers.dart: the
+      // push lost the race, and the winner's copy predates the raid.
+      if (!g.localWorkAtRisk) {
+        g.loadFromJson(teammateBlob);
+      }
+
+      expect(g.enemyBase.structAt(hitR!, hitC!)!.alive, isFalse,
+          reason: 'the piece you destroyed must STAY destroyed — adopting a '
+              'teammate\'s pre-raid copy is what silently undid a whole '
+              'battle\'s damage');
+    });
+
     test('raidInProgress reports exactly when a state load is unsafe', () {
       final g = WarGame.fresh()..startPrep();
       g.startWar();

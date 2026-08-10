@@ -31,6 +31,7 @@ void resetWarRoomSync() {
   _syncedRoomId = null;
   _warRealtimeSub?.cancel();
   _warRealtimeSub = null;
+  resetWarPushChain();
 }
 
 /// Keeps [WarGame] true to your REAL room: your teammates are whoever's
@@ -66,7 +67,7 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
       // resolves, so even the first-load path can land mid-raid. Keep the
       // hook and the realtime subscription either way — only the state
       // overwrite is unsafe here.
-      if (!game.raidInProgress) {
+      if (!game.localWorkAtRisk) {
         game.loadFromJson(state);
       }
       // `activePlayerId` is PER-DEVICE identity, never shared state — a
@@ -143,7 +144,7 @@ void _applyRemote(
   // so this exact update is re-applied the moment the next save lands — and
   // if none does, this device's own next save resolves the divergence through
   // the existing compare-and-swap conflict path.
-  if (game.raidInProgress) return;
+  if (game.localWorkAtRisk) return;
   game.loadFromJson(Map<String, dynamic>.from(state));
   // same identity guard as the initial load — a teammate's realtime save
   // carries THEIR activePlayerId; it must never leak onto this device.
@@ -155,7 +156,38 @@ void _applyRemote(
 /// Wired to [WarGame.onRoomSave]: push the latest state with a
 /// compare-and-swap. A conflict means a teammate saved first — their version
 /// wins, and we adopt it rather than silently overwriting it.
-Future<void> _pushRoomSave(WarGame g) async {
+/// Pushes are SERIALIZED. `WarGame._save()` fires one of these on every
+/// mutating action, and they used to run concurrently — so five rapid taps
+/// (TRAIN ×5) launched five compare-and-swaps that all quoted the SAME
+/// `roomVersion`. Four of them lost the race, and the old conflict branch
+/// "resolved" each loss by adopting the server's copy, rolling the local
+/// increments back: you paid for five troops and got one. Exactly the same
+/// self-inflicted race silently discarded raid damage mid-battle.
+///
+/// One in flight at a time, at most one queued behind it (the queued push
+/// serializes whatever the LATEST state is when it actually runs, so
+/// coalescing loses nothing).
+Future<void> _pushChain = Future.value();
+bool _pushQueued = false;
+
+Future<void> _pushRoomSave(WarGame g) {
+  if (g.roomId == null) return Future.value();
+  if (_pushQueued) return _pushChain; // already covered by the pending push
+  _pushQueued = true;
+  _pushChain = _pushChain.then((_) {
+    _pushQueued = false; // from here on, a new mutation earns a new push
+    return _pushRoomSaveNow(g);
+  });
+  return _pushChain;
+}
+
+/// Reset the push pipeline — sign-out, or a room switch.
+void resetWarPushChain() {
+  _pushChain = Future.value();
+  _pushQueued = false;
+}
+
+Future<void> _pushRoomSaveNow(WarGame g) async {
   final roomId = g.roomId;
   if (roomId == null) return;
   // captured BEFORE the round-trip: this device's own identity, which the
@@ -166,27 +198,40 @@ Future<void> _pushRoomSave(WarGame g) async {
     final (version, state, conflict) =
         await WarSyncService.save(roomId, g.toJson(), g.roomVersion);
     if (conflict) {
-      g.loadFromJson(state);
-      g.activePlayerId = myId;
-      g.roomVersion = version;
       g.syncConflicts++;
+      // A raid that is live, or one whose result hasn't reached the server
+      // yet, must NOT be rolled back by adopting the winner's copy — that
+      // copy predates the raid, so adopting it un-destroys every wall the
+      // player just broke. Keep our state, take the winner's version so the
+      // retry can actually land, and let this device's result win. (Same
+      // philosophy as reapplyUnsyncedEarn below, which already protects a
+      // workout credit that lost the race.)
+      if (!g.localWorkAtRisk) {
+        g.loadFromJson(state);
+        g.activePlayerId = myId;
+      }
+      g.roomVersion = version;
       // A workout credit that lost the CAS race must not vanish — put it
       // back on this device's player and retry once.
       g.reapplyUnsyncedEarn();
       final (v2, s2, c2) =
           await WarSyncService.save(roomId, g.toJson(), g.roomVersion);
       if (c2) {
-        g.loadFromJson(s2);
-        g.activePlayerId = myId;
+        if (!g.localWorkAtRisk) {
+          g.loadFromJson(s2);
+          g.activePlayerId = myId;
+        }
         g.roomVersion = v2;
         g.reapplyUnsyncedEarn();
       } else {
         g.roomVersion = v2;
         g.clearUnsyncedEarn();
+        g.unpushedRaidResult = false; // the result is on the server now
       }
     } else {
       g.roomVersion = version;
       g.clearUnsyncedEarn();
+      g.unpushedRaidResult = false; // the result is on the server now
     }
     g.notifyListeners();
   } catch (e) {

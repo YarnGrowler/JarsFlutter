@@ -353,7 +353,10 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
     final lost = st?.troopsLost ?? 0;
     final sent = st?.troopsSent ?? 0;
     final spent = st?.resourcesSpent ?? 0;
-    final dur = _battle?.elapsed ?? 0;
+    // _battle is ALWAYS null under Free Move (the two engines never coexist),
+    // so reading it directly reported every clash as lasting 0s. Go through
+    // the engine facade, which asks whichever simulator actually ran.
+    final dur = _battleElapsed;
     WarGame.instance.bankClashBattle();
     if (!mounted) return;
     setState(() {});
