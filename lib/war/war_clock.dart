@@ -1,7 +1,7 @@
 /// The war-day clock — a self-contained simulated timeline (NOT JarsClock, which
 /// is date-only). Fast-forward advances these minutes; AI acts on the schedule.
 class WarClock {
-  static const int dayMinutes = 16 * 60;
+  static const int dayMinutes = 18 * 60;
   int simMinutes;
   WarClock([this.simMinutes = 0]);
 

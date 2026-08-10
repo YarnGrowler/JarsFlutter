@@ -35,6 +35,13 @@ class BaseLabScreen extends ConsumerStatefulWidget {
 }
 
 class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
+  /// ⚡ the last generate actually handed EACH defending castle, and the
+  /// pooled total across them. Scaling difficulty/league without seeing this
+  /// number is guesswork — it's the single input that decides how much
+  /// fortress the generator can afford to build.
+  double _budgetPerCastle = 0;
+  double _budgetPooled = 0;
+
   double _difficulty = 60; // 1..100
   double _castles = 4; // 1..6
   double _rivers = 1; // 0..3
@@ -165,6 +172,8 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
             : areaMul;
     final budget = WarCosts.prepBudgetFor(s) * forgeMul;
     final castleN = _castles.round().clamp(1, 6);
+    _budgetPerCastle = budget;
+    _budgetPooled = budget * castleN;
     final crew = [
       for (var i = 0; i < castleN; i++)
         WarPlayer(
@@ -441,9 +450,18 @@ class _BaseLabScreenState extends ConsumerState<BaseLabScreen> {
                         ? '${(_raid?.base.destructionPercent ?? 0).round()}% razed'
                             ' · ${_fight?.troopsAlive ?? 0} fighting'
                             '${_fight != null && _fight!.clockRunning ? ' · ⏱ ${_fmtClock(_fight!.timeLeft)}' : ''}'
+                            '\n⚡${(_raid?.base.investedDestroyed ?? 0).round()}'
+                            ' / ⚡${(_raid?.base.investedValue ?? 0).round()} wrecked'
+                            ' · army ⚡${(_raid?.troopSpendSent ?? 0).round()}'
+                            ' (💀${(_raid?.troopSpendLost ?? 0).round()})'
+                            ' · ${_raid?.troopsLost ?? 0} lost'
                         : '${_biome.name} · ${_mapSize}x$_mapSize · seed $_seed · ${AiData.label(_ai)}'
-                            '${WarAi.lastBuildStats == null ? '' : ' · ${WarAi.lastBuildStats!.rooms} rooms · ${WarAi.lastBuildStats!.structures} pieces'}',
+                            '${WarAi.lastBuildStats == null ? '' : ' · ${WarAi.lastBuildStats!.rooms} rooms · ${WarAi.lastBuildStats!.structures} pieces'}'
+                            '\n⚡${_budgetPerCastle.round()}/castle'
+                            ' · ⚡${_budgetPooled.round()} pooled'
+                            ' → ⚡${(_base?.investedValue ?? 0).round()} actually built',
                     textAlign: TextAlign.right,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.spaceMono(
                         fontSize: 10, color: JarsColors.textSecondary)),

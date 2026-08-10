@@ -161,6 +161,15 @@ class AttackState {
   int troopsSent = 0;
   int garrisonLost = 0;
   double resourcesSpent = 0;
+
+  /// ⚡ VALUE of the attacking army, tracked separately from
+  /// [resourcesSpent] — which only counts ⚡ that left a wallet during THIS
+  /// raid, so it reads 0 for prepaid troops (a real clash raid) and for
+  /// anything a sandbox hands out free. These two always count the army,
+  /// however it was paid for, so "what did this attack cost me" is
+  /// answerable live in every mode.
+  double troopSpendSent = 0;
+  double troopSpendLost = 0;
   /// ⚡ looted from smashed storehouses / war generators / tribute chests.
   double plunderGained = 0;
   int _troopSeq = 0;
@@ -494,6 +503,7 @@ class AttackState {
         c: c);
     troops.add(t);
     troopsSent++;
+    troopSpendSent += kTroopSpecs[type]!.cost.toDouble();
     _reveal(r, c, radius: t.spec.revealRadius);
     _stepEffects(t);
     log.add(AttackEvent('${t.spec.emoji} ${t.spec.name} deployed', at: Cell(r, c)));
@@ -1577,6 +1587,10 @@ class AttackState {
     // persists across raids and saves); the raid copy feeds the replay frames
     for (final t in [...troops, ...garrison]) {
       if (t.alive) continue;
+      // each corpse passes through here exactly once (it's removed from the
+      // list just below), so this is a safe place to tally what the assault
+      // actually cost in ⚡ terms
+      if (t.side == attacker) troopSpendLost += t.spec.cost.toDouble();
       _addGrave(t.r, t.c);
     }
     troops.removeWhere((t) => !t.alive);
@@ -1812,6 +1826,8 @@ class AttackState {
         'sent': troopsSent,
         'gLost': garrisonLost,
         'spent': resourcesSpent,
+        'tvSent': troopSpendSent,
+        'tvLost': troopSpendLost,
         'seq': _troopSeq,
         'gSeq': _garrisonSeq,
         'gPool': [for (final e in _garrisonPool.entries) [e.key, e.value]],
@@ -1855,6 +1871,8 @@ class AttackState {
     st.troopsSent = (j['sent'] as num?)?.toInt() ?? 0;
     st.garrisonLost = (j['gLost'] as num?)?.toInt() ?? 0;
     st.resourcesSpent = (j['spent'] as num?)?.toDouble() ?? 0;
+    st.troopSpendSent = (j['tvSent'] as num?)?.toDouble() ?? 0;
+    st.troopSpendLost = (j['tvLost'] as num?)?.toDouble() ?? 0;
     st._troopSeq = (j['seq'] as num?)?.toInt() ?? st.troops.length;
     st._garrisonSeq = (j['gSeq'] as num?)?.toInt() ?? st.garrison.length;
     for (final e in (j['gPool'] as List? ?? const [])) {

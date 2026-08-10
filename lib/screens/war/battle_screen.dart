@@ -237,12 +237,15 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
     final canDeploy = unlimited
         ? () => true
         : () => WarGame.instance.active.armyTotal > 0;
+    // A hands-on raid does NOT stop the moment the last castle falls — the
+    // storehouses and generators are still standing and still worth taking.
+    // The commander ends it (or the 5-minute clock does).
     if (_freeMove) {
       _battle = null;
-      _free = FreeMoveBattle(st, canDeploy: canDeploy);
+      _free = FreeMoveBattle(st, canDeploy: canDeploy, stopWhenRazed: false);
     } else {
       _free = null;
-      _battle = LiveBattle(st, canDeploy: canDeploy);
+      _battle = LiveBattle(st, canDeploy: canDeploy, stopWhenRazed: false);
     }
   }
 
@@ -803,24 +806,67 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                       color: JarsColors.textPrimary)),
             ),
           ]),
-          // combat ticker: the last hits, so nothing lands invisibly
-          if (_mode != 'defense' && atk != null && atk.log.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 14, right: 4, bottom: 2),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  atk.log.reversed
-                      .take(2)
-                      .map((e) => e.text)
-                      .join('   ·   '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.spaceMono(
-                      fontSize: 9.5, color: JarsColors.textTertiary),
-                ),
-              ),
-            ),
+          // The blow-by-blow combat ticker used to live here. It was noise —
+          // you can SEE the hits land. What you couldn't see without razing
+          // the whole base was the arithmetic: what this assault is costing
+          // versus what it's actually taking apart. That's this strip.
+          if (_mode != 'defense' && atk != null) _raidLedger(atk),
+        ],
+      ),
+    );
+  }
+
+  /// The live ledger: what the assault is costing vs what it's taking apart.
+  /// Replaces the old combat commentary — same slot, actual information.
+  Widget _raidLedger(AttackState atk) {
+    final base = atk.base;
+    final total = base.investedValue;
+    final wrecked = base.investedDestroyed;
+    final pct = total <= 0 ? 0.0 : (wrecked / total * 100).clamp(0.0, 100.0);
+    final alive = atk.troops.where((t) => t.alive).length;
+
+    Widget cell(String label, String value, Color color) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: GoogleFonts.inter(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                    color: JarsColors.textTertiary)),
+            Text(value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.spaceGrotesk(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: color)),
+          ],
+        );
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 14, right: 12, bottom: 3, top: 1),
+      child: Row(
+        children: [
+          Expanded(
+              flex: 5,
+              child: cell(
+                  'WRECKED',
+                  '⚡${wrecked.round()} / ${total.round()}  ·  '
+                      '${pct.toStringAsFixed(0)}%',
+                  JarsColors.green)),
+          Expanded(
+              flex: 4,
+              child: cell(
+                  'ARMY SPENT',
+                  '⚡${atk.troopSpendSent.round()}'
+                      '${atk.troopSpendLost > 0 ? '  (💀${atk.troopSpendLost.round()})' : ''}',
+                  JarsColors.gold)),
+          Expanded(
+              flex: 3,
+              child: cell('TROOPS', '$alive live · ${atk.troopsLost} lost',
+                  JarsColors.textSecondary)),
         ],
       ),
     );

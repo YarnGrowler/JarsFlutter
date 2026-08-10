@@ -1302,6 +1302,65 @@ void main() {
               'battle\'s damage');
     });
 
+    test(
+        'razing their castles WINS the war but no longer ENDS it — the crew '
+        'can keep stripping what is still standing', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      g.startClashBattle();
+      razeEnemy(g);
+      expect(g.enemyBase.allCastlesRazed, isTrue, reason: 'sanity');
+      g.bankClashBattle();
+      expect(g.phase, WarPhase.war,
+          reason: 'the war day runs on — storehouses and generators are '
+              'still standing and still worth plundering');
+    });
+
+    test('the admin ends the war deliberately with endWarNow()', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      razeEnemy(g);
+      expect(g.phase, WarPhase.war);
+      expect(g.endWarNow(), isNull, reason: 'solo/offline always has control');
+      expect(g.phase, WarPhase.results, reason: 'called on demand');
+      // and it is not a button anyone can press twice
+      expect(g.endWarNow(), contains('no war'));
+    });
+
+    test('a non-admin cannot end the war early', () {
+      final g = WarGame.fresh()..startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'room-endwar',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['boss', 'Boss']
+          ]));
+      g.isRoomAdmin = true;
+      g.startWar();
+      g.isRoomAdmin = false;
+      expect(g.endWarNow(), contains('admin'));
+      expect(g.phase, WarPhase.war, reason: 'still running');
+    });
+
+    test(
+        'REGRESSION: regenerating the enemy base resets YOUR fog of it, not '
+        'their scouting of yours', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      // both sides have scouted something
+      g.youIntel.addAll([1, 2, 3]);
+      g.enemyIntel.addAll([4, 5, 6]);
+      expect(g.regenerateEnemyBase(), isNull);
+      expect(g.youIntel, isEmpty,
+          reason: 'a torn-down-and-rebuilt fortress is not the one you '
+              'scouted — without this the fog never reset and raiders '
+              'marched straight to the heart of a base they had never seen');
+      expect(g.enemyIntel, isNotEmpty,
+          reason: 'regenerating THEIR base tells them nothing new about '
+              'YOURS — their scouting of you is untouched');
+    });
+
     test('raidInProgress reports exactly when a state load is unsafe', () {
       final g = WarGame.fresh()..startPrep();
       g.startWar();

@@ -651,6 +651,34 @@ class Base {
     return v;
   }
 
+  /// Total ⚡ poured into this fortress — place cost PLUS every upgrade rung
+  /// ([Structure.investedCost]), standing or rubble. This is the honest
+  /// denominator for "how much of their base have we actually taken apart",
+  /// where raw destruction% weights by hit points and treats a 15⚡ wall much
+  /// like a 90⚡ tesla.
+  double get investedValue {
+    var v = 0.0;
+    for (final row in grid) {
+      for (final tile in row) {
+        final s = tile.structure;
+        if (s != null) v += s.investedCost;
+      }
+    }
+    return v;
+  }
+
+  /// ⚡ worth of this fortress currently in ruins.
+  double get investedDestroyed {
+    var v = 0.0;
+    for (final row in grid) {
+      for (final tile in row) {
+        final s = tile.structure;
+        if (s != null && !s.alive) v += s.investedCost;
+      }
+    }
+    return v;
+  }
+
   int get castleCount => castleCells.length;
   int get castlesRazed {
     var n = 0;

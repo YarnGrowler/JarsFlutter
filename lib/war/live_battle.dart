@@ -20,7 +20,11 @@ class LiveBattle {
   int _stallRounds = 0;
   bool over = false;
 
-  LiveBattle(this.st, {required this.canDeploy});
+  /// Mirrors FreeMoveBattle.stopWhenRazed — a hands-on raid keeps going after
+  /// the last castle falls so the commander can strip the storehouses.
+  final bool stopWhenRazed;
+
+  LiveBattle(this.st, {required this.canDeploy, this.stopWhenRazed = true});
 
   double get destruction => st.base.destructionPercent;
   int get troopsAlive => st.troops.where((t) => t.alive).length;
@@ -53,7 +57,7 @@ class LiveBattle {
     }
     st.defendersReact();
     st.snapshot();
-    if (st.base.allCastlesRazed) {
+    if (stopWhenRazed && st.base.allCastlesRazed) {
       over = true;
       return;
     }

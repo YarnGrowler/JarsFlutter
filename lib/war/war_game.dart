@@ -110,8 +110,8 @@ class WarGame extends ChangeNotifier {
   int warStartedAtMs = 0;
 
   /// How much real time one simulated war-hour costs. A war day is
-  /// [WarClock.dayMinutes] sim-hours (16), so at 3600 seconds (1 real hour)
-  /// per sim-hour a whole war unfolds over 16 real hours — Clash-style raid
+  /// [WarClock.dayMinutes] sim-hours (18), so at 3600 seconds (1 real hour)
+  /// per sim-hour a whole war unfolds over 18 real hours — Clash-style raid
   /// windows, not a compressed demo.
   static const int realSecondsPerSimHour = 3600;
 
@@ -972,8 +972,15 @@ class WarGame extends ChangeNotifier {
         unlockDefs: unlockedDefsNow,
       ),
     );
-    // a torn-down-and-rebuilt fortress isn't the one anyone scouted
-    enemyIntel = {};
+    // A torn-down-and-rebuilt fortress isn't the one anyone scouted — so YOUR
+    // clan's map of THEIR base (`youIntel`) is what has to go dark.
+    // This cleared `enemyIntel` for a long time, which is the opposite set:
+    // the enemy's scouting of YOUR base, which regenerating their fortress
+    // does not change at all. The visible symptom was that the fog over a
+    // freshly-regenerated enemy base never reset — every raid launched with
+    // the whole new layout already revealed, so troops walked straight to the
+    // heart of it instead of having to find it.
+    youIntel = {};
     // Any raid in progress (or one you'd merely opened and backed out of —
     // it persists until END RAID) still points at the OLD Base object by
     // reference. Without clearing these, the next "RAID ENEMY" tap would
@@ -1559,35 +1566,46 @@ class WarGame extends ChangeNotifier {
     if (clashState == null) return;
     _absorbClash();
     _noteFalls();
-    if (phase == WarPhase.war && enemyBase.allCastlesRazed) {
-      endWar();
-    } else {
-      _save();
-      notifyListeners();
-    }
+    // Razing their castles no longer ENDS the war on its own. The crew has
+    // usually only cracked the keep at that point — the storehouses, war
+    // generators and tribute chests are still standing, and there is real
+    // plunder in them. The war now runs until the day clock expires or the
+    // room admin calls it (see WarGame.endWarNow / the hub END WAR button).
+    _save();
+    notifyListeners();
   }
 
   void commitLiveAttack() {
     _absorbLiveAttack();
     _noteFalls();
-    if (phase == WarPhase.war && enemyBase.allCastlesRazed) {
-      endWar();
-    } else {
-      _save();
-      notifyListeners();
-    }
+    // Razing their castles no longer ENDS the war on its own. The crew has
+    // usually only cracked the keep at that point — the storehouses, war
+    // generators and tribute chests are still standing, and there is real
+    // plunder in them. The war now runs until the day clock expires or the
+    // room admin calls it (see WarGame.endWarNow / the hub END WAR button).
+    _save();
+    notifyListeners();
   }
 
   /// Persist mid-raid progress (called by the battle screen after actions).
   void raidChanged() {
     liveAttack?.snapshot(); // record a replay frame per action
     _noteFalls();
-    if (phase == WarPhase.war && enemyBase.allCastlesRazed) {
-      commitLiveAttack();
-    } else {
-      _save();
-      notifyListeners();
-    }
+    // Razing the last castle used to auto-commit the raid (and end the war
+    // with it). It doesn't any more — a commander who has just cracked the
+    // keep is usually there to strip the storehouses next.
+    _save();
+    notifyListeners();
+  }
+
+  /// The room admin calls the war early — the deliberate version of what
+  /// razing their castles used to do automatically. Admin-gated exactly like
+  /// every other war-wide control; solo/offline always has the run of it.
+  String? endWarNow() {
+    if (!canControlWar) return 'Only the room admin can end the war.';
+    if (phase != WarPhase.war) return 'There is no war running.';
+    endWar();
+    return null;
   }
 
   // ── results ─────────────────────────────────────────────────────────────────

@@ -36,6 +36,19 @@ class FreeMoveBattle {
   /// site is unaffected.
   final bool keepHistory;
 
+  /// Does razing the last castle END the fight?
+  ///
+  /// For a HANDS-ON raid: no. Cracking the keep is usually the halfway point
+  /// — the storehouses, war generators and tribute chests are still standing
+  /// and still worth plundering, and stopping the battle there took that
+  /// choice away from the commander. They fight on until the clock runs out
+  /// or the army is spent.
+  ///
+  /// For a HEADLESS AI raid: yes, unchanged — nobody is watching, there is
+  /// nothing to decide, and letting it grind the rest of the 90s budget on
+  /// every raid of a season sim is pure cost.
+  final bool stopWhenRazed;
+
   /// Fixed simulation step — movement integrates here, never on frame time,
   /// so a stuttering device fights exactly like a smooth one.
   static const double simStep = 1 / 30;
@@ -70,7 +83,10 @@ class FreeMoveBattle {
   final List<_Obj> _walls = [];
   bool _objsStale = true;
 
-  FreeMoveBattle(this.st, {required this.canDeploy, this.keepHistory = false});
+  FreeMoveBattle(this.st,
+      {required this.canDeploy,
+      this.keepHistory = false,
+      this.stopWhenRazed = true});
 
   double get destruction => st.base.destructionPercent;
   int get troopsAlive => st.troops.where((t) => t.alive).length;
@@ -169,7 +185,7 @@ class FreeMoveBattle {
   }
 
   void _beatEnd() {
-    if (st.base.allCastlesRazed) {
+    if (stopWhenRazed && st.base.allCastlesRazed) {
       over = true;
       return;
     }

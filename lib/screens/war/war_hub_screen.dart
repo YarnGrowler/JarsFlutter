@@ -557,6 +557,43 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                           () => _showManualBudgetDialog(context, g))),
                 ]),
               ],
+              // Their keep has fallen — but the war keeps running so the crew
+              // can strip what's left standing. Calling it is the admin's
+              // decision now, not something that fires the instant the last
+              // castle drops.
+              if (g.canControlWar && g.enemyBase.allCastlesRazed) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: JarsColors.green.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: JarsColors.green.withValues(alpha: 0.45)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('🏰 Their castles have FALLEN',
+                          style: GoogleFonts.spaceGrotesk(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: JarsColors.green)),
+                      const SizedBox(height: 3),
+                      Text(
+                          'The win is banked. Keep raiding to strip their '
+                          'storehouses and generators, or call it now.',
+                          style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: JarsColors.textSecondary)),
+                      const SizedBox(height: 9),
+                      _btn('🏁 END WAR NOW', JarsColors.green,
+                          () => _confirmEndWar(context, g),
+                          dark: true),
+                    ],
+                  ),
+                ),
+              ],
               if (g.feed.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text('WAR FEED',
@@ -1104,6 +1141,39 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
       ),
     );
     if (ok == true) g.startWar();
+  }
+
+  Future<void> _confirmEndWar(BuildContext context, WarGame g) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: JarsColors.surfaceRaised,
+        title: Text('End the war now?',
+            style: GoogleFonts.spaceGrotesk(color: JarsColors.textPrimary)),
+        content: Text(
+            'Closes the war day early and goes straight to the report. You '
+            'keep the win — but any storehouses, war generators and chests '
+            'still standing in their base go unplundered, and nobody in the '
+            'room can raid again this war.',
+            style: GoogleFonts.inter(color: JarsColors.textSecondary)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, false),
+              child: const Text('Keep raiding')),
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text('End war',
+                  style: GoogleFonts.inter(
+                      color: JarsColors.green, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final err = g.endWarNow();
+    if (err != null && context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(err)));
+    }
   }
 
   Widget _ladder(WarGame g, dynamic table) {
