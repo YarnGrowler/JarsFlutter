@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jars/core/league_config.dart';
 import 'package:jars/core/seeded_rng.dart';
+import 'package:jars/war/free_move_battle.dart';
 import 'package:jars/war/live_battle.dart';
 import 'package:jars/war/war_ai.dart';
 import 'package:jars/war/war_base.dart';
@@ -2948,6 +2949,53 @@ void main() {
       st.defendersReact();
       expect(t.hp, after - 3);
       expect(t.burnRounds, 2);
+    });
+
+    test(
+        'REGRESSION: barbed wire slows Free Move troops too, not just '
+        'Classic ones — the continuous engine never consulted moveCost at '
+        'all before, only forest/hill directly', () {
+      AttackState mkState() {
+        final base = Base(WarSide.enemy, 11);
+        for (var r = 0; r < Base.defaultSize; r++) {
+          for (var c = 0; c < Base.defaultSize; c++) {
+            base.grid[r][c].terrain = Terrain.plains;
+          }
+        }
+        base.placeCastle('def', 2, 3);
+        return AttackState(
+            base: base,
+            attacker: WarSide.you,
+            attackerName: 'Me',
+            pools: MapPools({'me': 999, 'def': 999}));
+      }
+
+      // how far the troop gets in one real second, starting ON the tile in
+      // question — measures the friction of LEAVING it, wired vs open.
+      // NOT (rows~/2, cols~/2) — that is _wander()'s own idle fallback
+      // goal, and starting a troop exactly there is a degenerate test (no
+      // consistent direction to measure speed along).
+      double distanceAfterOneSecond({required bool onWire}) {
+        final st = mkState();
+        if (onWire) st.base.place(10, 10, DefType.barbedWire, 'def');
+        final t = st.spawn(TroopType.soldier, 'me', 0, 3)!;
+        t.r = 10;
+        t.c = 10;
+        final battle = FreeMoveBattle(st, canDeploy: () => false);
+        battle.placeAt(t, 10.0, 10.0);
+        for (var i = 0; i < 30; i++) {
+          battle.tick(FreeMoveBattle.simStep);
+        }
+        final pos = battle.positions[t.id]!;
+        return math.sqrt(
+            math.pow(pos.row - 10.0, 2) + math.pow(pos.col - 10.0, 2));
+      }
+
+      final open = distanceAfterOneSecond(onWire: false);
+      final wired = distanceAfterOneSecond(onWire: true);
+      expect(wired, lessThan(open * 0.7),
+          reason: 'wire must meaningfully slow a Free Move troop the same '
+              'way it already slows a Classic one');
     });
 
     test('troops CUT wire instead of stalling at the fence', () {

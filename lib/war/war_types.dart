@@ -372,9 +372,13 @@ const Map<DefType, DefSpec> kDefSpecs = {
       cost: 100,
       hp: 160,
       blocks: true,
+      upgradeCost: 60,
+      maxLevel: 5,
       blurb:
-          'Stash 100⚡. Smash it mid-raid to loot it now; if it survives the '
-          'war, the crew splits 200⚡. Raid magnet — hide it well.'),
+          'Stashes ⚡ that scales with its OWN level — 100 at L1, up to 500 '
+          'at L5. Smash it mid-raid to loot it now; if it survives the war, '
+          'the crew splits DOUBLE that. Raid magnet — hide it well, or '
+          'upgrade it and gamble bigger.'),
   DefType.commandTent: DefSpec(DefType.commandTent,
       name: 'Command Tent',
       emoji: '🎖️',
@@ -764,7 +768,7 @@ class WarCosts {
         // ~2 hours of pump sitting in the tank
         return warGeneratorRatePerHour(level) * 2;
       case DefType.tributeChest:
-        return 100.0;
+        return 100.0 * level.clamp(1, 5); // L1 100 · L2 200 · ... L5 500
       default:
         return 0;
     }

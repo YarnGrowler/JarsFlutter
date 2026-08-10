@@ -1641,19 +1641,23 @@ class WarGame extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Surviving Tribute Chests pay 2× cost, split evenly across real crewmates.
+  /// Surviving Tribute Chests pay DOUBLE their own [WarCosts.plunderAmount]
+  /// (which is itself level-scaled — L1 100⚡ up to L5 500⚡), split evenly
+  /// across real crewmates. A flat `chests × 200` used to ignore level
+  /// entirely — upgrading a chest bought nothing on the survive-to-end side.
   void _payoutTributeChests() {
-    var chests = 0;
+    var total = 0.0;
     for (var r = 0; r < youBase.rows; r++) {
       for (var c = 0; c < youBase.cols; c++) {
         final s = youBase.structAt(r, c);
-        if (s != null && s.alive && s.type == DefType.tributeChest) chests++;
+        if (s != null && s.alive && s.type == DefType.tributeChest) {
+          total += 2 * WarCosts.plunderAmount(s.type, s.level);
+        }
       }
     }
-    if (chests <= 0) return;
+    if (total <= 0) return;
     final real = youClan.where((p) => !p.isBot).toList();
     if (real.isEmpty) return;
-    final total = chests * 200.0;
     final share = total / real.length;
     for (final p in real) {
       p.resources += share;

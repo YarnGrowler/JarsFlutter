@@ -101,8 +101,12 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
       const _Stat('🍖 Provisions', 'tents within 3 field VETERAN guards'),
       _Stat('💰 Loot', '${WarCosts.plunderAmount(type, level).round()}⚡ if smashed'),
     ],
-    if (type == DefType.tributeChest)
-      const _Stat('💰 Loot', '100⚡ if smashed mid-raid'),
+    if (type == DefType.tributeChest) ...[
+      _Stat('💰 Loot',
+          '${WarCosts.plunderAmount(type, level).round()}⚡ if smashed mid-raid'),
+      _Stat('🏆 Survives to war\'s end',
+          '${(2 * WarCosts.plunderAmount(type, level)).round()}⚡ split with the crew'),
+    ],
     if (type == DefType.gate)
       const _Stat('🚪 Doorway', 'YOUR garrison passes; attackers cannot'),
     if (type == DefType.warGenerator) ...[

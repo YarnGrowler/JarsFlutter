@@ -534,9 +534,16 @@ class FreeMoveBattle {
     ux /= m;
     uy /= m;
 
+    // Speed comes from base.moveCost — the SAME terrain+structure cost the
+    // classic engine has always used (plains=1, forest/hill=2, barbed wire
+    // +2 on top of whatever it's laid on...). Previously this only checked
+    // forest/hill directly and never consulted moveCost at all, so wire's
+    // "slows anyone crossing it" was true under Classic and silently FALSE
+    // under Free Move — no slowdown, only the chip damage (that part comes
+    // through stepInto below, which was always shared).
     var spd = t.moveBudget / paceDivisor;
-    final terr = st.base.grid[t.r][t.c].terrain;
-    if (terr == Terrain.forest || terr == Terrain.hill) spd *= 0.55;
+    final cost = st.base.moveCost(t.r, t.c, mover: t.type);
+    if (cost > 1) spd /= cost;
     final dist = spd * h;
 
     // one axis at a time: a unit can never clip a wall's (or river's) corner

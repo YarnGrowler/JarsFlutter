@@ -1187,7 +1187,7 @@ class WarBoardPainter extends CustomPainter {
         _storehouseArt(canvas, rect);
         break;
       case DefType.tributeChest:
-        _tributeChestArt(canvas, rect);
+        _tributeChestArt(canvas, rect, s.level);
         break;
       case DefType.commandTent:
         _commandTentArt(canvas, rect);
@@ -2362,7 +2362,7 @@ class WarBoardPainter extends CustomPainter {
         _storehouseArt(canvas, rect);
         break;
       case DefType.tributeChest:
-        _tributeChestArt(canvas, rect);
+        _tributeChestArt(canvas, rect, 1);
         break;
       case DefType.commandTent:
         _commandTentArt(canvas, rect);
@@ -2806,18 +2806,20 @@ class WarBoardPainter extends CustomPainter {
   }
 
   /// Tribute Chest: a banded oak coffer, lid cracked open, coin spilling.
-  void _tributeChestArt(Canvas canvas, Rect rect) {
+  void _tributeChestArt(Canvas canvas, Rect rect, [int level = 1]) {
     _shadow(canvas, rect, w: 0.6, y: 0.82);
     final w = rect.width, h = rect.height;
     final cx = rect.center.dx;
     final body = Rect.fromLTWH(cx - w * 0.27, rect.top + h * 0.46, w * 0.54, h * 0.3);
-    // coin glow spilling from the seam
+    // coin glow spilling from the seam — richer and wider the deeper it's
+    // stocked, so a maxed chest reads as visibly worth raiding for
     final glow = 0.5 + 0.5 * math.sin(_at * 1.8 + cx * 0.02);
     canvas.drawCircle(
         Offset(cx, body.top),
-        w * 0.3,
+        w * (0.3 + 0.05 * (level - 1)),
         Paint()
-          ..color = const Color(0xFFFFD34D).withValues(alpha: 0.16 * glow)
+          ..color = const Color(0xFFFFD34D)
+              .withValues(alpha: (0.16 + 0.05 * (level - 1)) * glow)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
     // coffer body
     canvas.drawRRect(
@@ -2870,6 +2872,52 @@ class WarBoardPainter extends CustomPainter {
             width: w * 0.12,
             height: h * 0.045),
         coin);
+    // L2+: brass corner caps — the coffer starts looking reinforced
+    if (level >= 2) {
+      final cap = Paint()..color = const Color(0xFFD8A63C);
+      for (final dx in [body.left, body.right]) {
+        canvas.drawCircle(Offset(dx, body.top), w * 0.035, cap);
+        canvas.drawCircle(Offset(dx, body.bottom), w * 0.035, cap);
+      }
+    }
+    // L3+: a second coin pile on the OTHER side — visibly fuller
+    if (level >= 3) {
+      canvas.drawOval(
+          Rect.fromCenter(
+              center: Offset(cx - w * 0.33, body.bottom - h * 0.02),
+              width: w * 0.14,
+              height: h * 0.05),
+          coin);
+      canvas.drawOval(
+          Rect.fromCenter(
+              center: Offset(cx - w * 0.33, body.bottom - h * 0.06),
+              width: w * 0.12,
+              height: h * 0.045),
+          coin);
+    }
+    // L4+: a gem set into the lock — the crew's stake in this chest shows
+    if (level >= 4) {
+      canvas.drawCircle(
+          Offset(cx, body.top + body.height * 0.28),
+          w * 0.045,
+          Paint()..color = const Color(0xFFE0407A));
+    }
+    // L5+: gilded rim around the lid — fully decked out, the biggest target
+    // on the board and it looks it
+    if (level >= 5) {
+      canvas.drawArc(
+          Rect.fromCenter(
+              center: Offset(cx, lid.bottom),
+              width: lid.width + w * 0.03,
+              height: lid.height * 2 + w * 0.03),
+          math.pi,
+          math.pi,
+          false,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = w * 0.025
+            ..color = const Color(0xFFFFD34D));
+    }
   }
 
   /// Command Tent: a war pavilion — peaked canvas, guy ropes, map table

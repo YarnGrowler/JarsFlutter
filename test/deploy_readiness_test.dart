@@ -1381,6 +1381,48 @@ void main() {
     });
 
     test(
+        'REGRESSION: a surviving Tribute Chest pays out by its OWN level, '
+        'not a flat amount — upgrading it is not decorative', () {
+      final g = WarGame.fresh()..startPrep();
+      g.applyRoomRoster(
+          realRoomId: 'room-chest',
+          myUserId: 'me',
+          myUsername: 'Me',
+          members: friends([
+            ['pal', 'Pal']
+          ]));
+      g.startWar();
+      // an INTERIOR cell — dropCells are the landing ring, where place()
+      // silently no-ops (structures never go on the ring)
+      g.youBase.place(10, 10, DefType.tributeChest, 'me');
+      final chest = g.youBase.structAt(10, 10)!;
+      chest.level = 4; // 4x the base 100⚡ stash
+      final before = g.youClan.fold(0.0, (a, p) => a + p.resources);
+      g.endWar();
+      final after = g.youClan.fold(0.0, (a, p) => a + p.resources);
+      // survives ⇒ pays 2 × plunderAmount(level 4) = 2 × 400 = 800⚡, split
+      // across the crew — flat 200 (the pre-upgrade payout) would be wrong.
+      expect(after - before, closeTo(800, 0.5),
+          reason: 'the old flat chests×200 formula ignored level entirely');
+    });
+
+    test('a Tribute Chest upgrades to L5 and its loot value scales with it',
+        () {
+      final g = WarGame.fresh()..startPrep(); // upgrades are prep-only
+      g.youBase.place(10, 10, DefType.tributeChest, 'you');
+      final active = g.youClan.first;
+      active.resources = 9999;
+      for (var i = 0; i < 4; i++) {
+        expect(g.upgradeStructure(10, 10), isNull);
+      }
+      final chest = g.youBase.structAt(10, 10)!;
+      expect(chest.level, 5, reason: 'upgrades to the new L5 ceiling');
+      expect(WarCosts.plunderAmount(DefType.tributeChest, chest.level), 500,
+          reason: 'holds the full 500⚡ at max level');
+      expect(g.upgradeStructure(10, 10), contains('Fully upgraded'));
+    });
+
+    test(
         'REGRESSION: kill booty splits by real spend proportion, not '
         'evenly, and only pays out at endWar()', () {
       final g = WarGame.fresh();
