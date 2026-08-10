@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
 import '../../providers/war_providers.dart';
+import '../../war/war_clock.dart';
 import '../../war/war_game.dart';
 import '../../war/war_player.dart';
 import '../../war/war_types.dart';
@@ -561,7 +562,7 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
               // can strip what's left standing. Calling it is the admin's
               // decision now, not something that fires the instant the last
               // castle drops.
-              if (g.canControlWar && g.enemyBase.allCastlesRazed) ...[
+              if (g.enemyBase.allCastlesRazed) ...[
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(11),
@@ -581,15 +582,24 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                               color: JarsColors.green)),
                       const SizedBox(height: 3),
                       Text(
-                          'The win is banked. Keep raiding to strip their '
-                          'storehouses and generators, or call it now.',
+                          'The win is banked, and every enemy fighter is out '
+                          'of the war — no more counterattacks are coming. '
+                          'Keep raiding to strip their storehouses and '
+                          'generators, or call it now.',
                           style: GoogleFonts.inter(
                               fontSize: 11,
                               color: JarsColors.textSecondary)),
                       const SizedBox(height: 9),
-                      _btn('🏁 END WAR NOW', JarsColors.green,
-                          () => _confirmEndWar(context, g),
-                          dark: true),
+                      if (g.canControlWar)
+                        _btn('🏁 END WAR NOW', JarsColors.green,
+                            () => _confirmEndWar(context, g),
+                            dark: true)
+                      else
+                        Text('Only the room admin can end the war early.',
+                            style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontStyle: FontStyle.italic,
+                                color: JarsColors.textTertiary)),
                     ],
                   ),
                 ),
@@ -1366,7 +1376,8 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
                     letterSpacing: 1,
                     color: JarsColors.textSecondary)),
             const Spacer(),
-            Text('hour ${g.clock.hour.toString().padLeft(2, '0')} / 24',
+            Text('hour ${g.clock.hour.toString().padLeft(2, '0')}'
+                ' / ${WarClock.dayMinutes ~/ 60}',
                 style: GoogleFonts.spaceMono(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1384,11 +1395,19 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
             ),
           ),
           const SizedBox(height: 8),
+          // Once every enemy castle is down, every enemy fighter is a
+          // spectator for the rest of the war (WarSim.runHour skips anyone
+          // whose own castle has fallen) — so promising a "next raid check"
+          // was a countdown to guaranteed silence. Say what's actually true.
           Text(
             over
                 ? 'The war day is done — tap RESULTS to see the verdict.'
-                : 'Next raid check in ${_fmtDur(g.untilNextWarHour)}'
-                    '  ·  war resolves in ${_fmtDur(g.untilWarEnds)}',
+                : g.enemyBase.allCastlesRazed
+                    ? 'Enemy eliminated — their fighters are out of the war '
+                        'and no more counterattacks are coming. Free run of '
+                        'their base for ${_fmtDur(g.untilWarEnds)}.'
+                    : 'Next raid check in ${_fmtDur(g.untilNextWarHour)}'
+                        '  ·  war resolves in ${_fmtDur(g.untilWarEnds)}',
             style: GoogleFonts.inter(
                 fontSize: 11, color: JarsColors.textSecondary),
           ),

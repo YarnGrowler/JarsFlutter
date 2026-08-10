@@ -58,6 +58,9 @@ class WarSim {
     required Set<int> youIntel, // your clan's scouting of the ENEMY base
     required Set<int> enemyIntel, // their clan's scouting of YOURS
     Set<TroopType> unlockTroops = const {},
+    /// Level of the troops the ENEMY fields — a function of the league you
+    /// have climbed to, never of the difficulty dial.
+    int troopLevel = 1,
     double raidChance = 0.5,
   }) {
     final out = <WarLogEntry>[];
@@ -82,9 +85,14 @@ class WarSim {
         if (cs == null || cs.hp <= 0) continue;
       }
 
-      // decide whether to raid — must be banked up, then pass the dial roll
+      // Decide whether to raid — must be banked up, then pass the dial roll.
+      // The bar scales with skill because the army it has to pay for does
+      // too (see WarAi.runAttack's cap): a sharper clan saves for a bigger
+      // punch rather than trickling the same ten bodies in forever.
       final skill = p.skill;
-      if (pools.of(p.id) < 110 + skill * 120 || rng.unit() > chance) continue;
+      if (pools.of(p.id) < WarAi.raidBudget(skill) || rng.unit() > chance) {
+        continue;
+      }
 
       final target = p.side == WarSide.you ? enemyBase : youBase;
       final intel = p.side == WarSide.you ? youIntel : enemyIntel;
@@ -103,7 +111,8 @@ class WarSim {
           rng: rng,
           intel: intel,
           defenderIq: defenderIq,
-          unlockTroops: unlockTroops);
+          unlockTroops: unlockTroops,
+          troopLevel: troopLevel);
       intel.addAll(res.revealed); // the clan shares everything it scouts
       if (res.frames.isEmpty) continue; // nothing to raid — no still-frame junk
       final gained = (target.destructionPercent - before).clamp(0.0, 100.0);

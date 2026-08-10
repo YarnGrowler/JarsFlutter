@@ -1779,6 +1779,7 @@ class WarAi {
     Set<int>? intel,
     double defenderIq = 0.5,
     Set<TroopType> unlockTroops = const {},
+    int troopLevel = 1,
   }) {
     // AI raids fight under the SAME rules as the player's: troops are paid for
     // at spawn ("training"), then act free.
@@ -1812,10 +1813,10 @@ class WarAi {
       final db = (b.r - anchor.r).abs() + (b.c - anchor.c).abs();
       return da.compareTo(db);
     });
-    final cap = 3 + (skill * 7).round();
+    final cap = raidWaveCap(skill);
     // humans don't dump the whole army in one pile — sharp clans land in
     // WAVES, and the follow-up wave hits the FAR flank to split the defense
-    final waveCount = skill >= 1.2 ? 3 : (skill >= 0.7 ? 2 : 1);
+    final waveCount = skill >= 0.9 ? 3 : (skill >= 0.7 ? 2 : 1);
     final perWave = (cap / waveCount).ceil();
     final anchor2 = drops.last; // farthest ring cell = the opposite flank
     void spawnWave(Cell around) {
@@ -1837,9 +1838,13 @@ class WarAi {
           dropIdx++;
           continue;
         }
-        // VETERANS: at brutal difficulty the enemy fields leveled troops
-        if (skill >= 0.9) {
-          spawned.gainXp(Xp.perLevel * (skill >= 1.3 ? 2.0 : 1.0) + 1);
+        // VETERANS: troop LEVEL is a function of the LEAGUE, not the
+        // difficulty dial. Climbing divisions is what puts better-trained
+        // soldiers in front of you; the dial only controls how MANY come
+        // and how often. (Was `skill >= 0.9 → +1/+2 levels`, which meant
+        // the dial silently did both jobs at once.)
+        if (troopLevel > 1) {
+          spawned.gainXp(Xp.perLevel * (troopLevel - 1) + 1.0);
         }
         dropIdx++;
         n++;
@@ -2013,8 +2018,29 @@ class WarAi {
   }
 
   // ── income ──────────────────────────────────────────────────────────────────
+  /// How many troops a full-strength assault fields, by skill.
+  ///
+  /// QUADRATIC on purpose. The old `3 + skill*7` was flat AND tiny — 7
+  /// troops at difficulty 25, 13 at difficulty 100 — so the dial barely
+  /// moved the threat and the top end was a rounding error against a base
+  /// with manned guard posts. A flat replacement overcorrected the other
+  /// way, handing difficulty 1 as many attackers as the old maximum. The
+  /// square keeps the bottom of the dial gentle and lets the top get ugly:
+  /// d1≈6, d25≈13, d53≈25, d80≈42, d99≈57.
+  static int raidWaveCap(double skill) => 4 + (skill * skill * 24).round();
+
+  /// ⚡ a full-strength assault costs (wave doctrine averages ~20⚡/troop).
+  /// Doubles as the "have they saved up enough to attack yet" bar, so the
+  /// two can never drift apart — a cap they can't afford is just decoration.
+  static double raidBudget(double skill) => raidWaveCap(skill) * 20.0;
+
   static double hourlyIncome(WarPlayer p, SeededRng rng) {
-    final base = 26.0 * p.incomeMul;
+    // Paced so a full assault is affordable roughly every 3 sim-hours at
+    // ANY difficulty: the dial decides how big the punch is, not how often
+    // it lands. (The old flat 26⚡/hr bought ~10 troops every ~6 hours no
+    // matter what the dial said — an entire 18h war came to ~35 troops and
+    // scratched 2-6% off a base.)
+    final base = raidBudget(p.skill) / 3.0;
     return base * (0.6 + rng.unit() * 0.9);
   }
 }

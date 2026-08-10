@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jars/core/league_config.dart';
 import 'package:jars/core/seeded_rng.dart';
 import 'package:jars/war/live_battle.dart';
 import 'package:jars/war/war_ai.dart';
@@ -2859,25 +2860,49 @@ void main() {
           isTrue, reason: 'the frame remembers the crater under the impact');
     });
 
-    test('veterans: brutal-skill raiders field leveled troops', () {
-      final p = WarPlayer(
-          id: 'foe1',
-          name: 'Vex',
-          emoji: '😈',
-          colorValue: 0xFFEF4444,
-          side: WarSide.enemy,
-          ai: AiLevel.master);
-      p.skillMul = 3;
-      expect(p.skill, 1.5, reason: 'the dial clamps at nightmare');
-      final t = Troop(
-          id: 'v',
-          ownerId: 'foe1',
-          side: WarSide.enemy,
-          type: TroopType.brute,
-          r: 0,
-          c: 0);
-      t.gainXp(Xp.perLevel * 2.0 + 1); // the ≥1.3-skill veteran grant
-      expect(t.level, greaterThanOrEqualTo(3));
+    // NOTE: this replaces a test that hand-called `t.gainXp(...)` and then
+    // asserted the level went up — it never touched runAttack's veteran
+    // logic at all, so it kept passing green while that logic was rewritten
+    // underneath it. These two cover the actual contracts instead.
+    test('enemy troop LEVEL tracks the league, never the difficulty dial', () {
+      final g = WarGame.fresh()..startPrep();
+      for (final d in [1, 50, 100]) {
+        g.setDifficulty(d);
+        g.divisionIndex = 0;
+        expect(g.enemyTroopLevel, 1,
+            reason: 'Bronze fields raw conscripts even at difficulty $d');
+      }
+      final seen = <int>[];
+      for (var div = 0; div < LeagueConfig.instance.divisions.length; div++) {
+        g.divisionIndex = div;
+        seen.add(g.enemyTroopLevel);
+      }
+      expect(seen.first, 1, reason: 'bottom division starts at L1');
+      expect(seen.last, Xp.maxLevel, reason: 'top division fields veterans');
+      for (var i = 1; i < seen.length; i++) {
+        expect(seen[i], greaterThanOrEqualTo(seen[i - 1]),
+            reason: 'climbing never makes their troops WORSE');
+      }
+    });
+
+    test('assault size ramps with the dial instead of sitting flat', () {
+      int capAt(int difficulty) =>
+          WarAi.raidWaveCap(WarGame.skillFor(difficulty));
+      // the old curve was 3 + skill*7: seven troops at d25, THIRTEEN at d100
+      expect(capAt(100), greaterThan(40),
+          reason: 'the top of the dial has to actually threaten a base');
+      expect(capAt(1), lessThan(10),
+          reason: 'and the bottom has to stay gentle');
+      expect(capAt(53), greaterThan(capAt(25) + 5),
+          reason: 'the middle of the dial moves the needle meaningfully');
+      for (var d = 2; d <= 100; d++) {
+        expect(capAt(d), greaterThanOrEqualTo(capAt(d - 1)),
+            reason: 'monotonic: raising difficulty never sends FEWER');
+      }
+      // the bar to attack must track what the army costs, or a bigger cap
+      // is decoration they can never afford to field
+      expect(WarAi.raidBudget(WarGame.skillFor(99)),
+          greaterThan(WarAi.raidBudget(WarGame.skillFor(25))));
     });
 
     test('the landing band is three tiles deep', () {

@@ -97,6 +97,12 @@ class WarGame extends ChangeNotifier {
   /// slider → effective enemy skill (0.3 .. 1.5)
   static double skillFor(int difficulty) =>
       (0.3 + (difficulty.clamp(1, 100) / 100) * 1.2);
+
+  /// What LEVEL the enemy's raiding troops come in at. Deliberately keyed to
+  /// the LEAGUE you have climbed to and nothing else — the difficulty dial
+  /// governs how many attackers arrive and how often, never how well trained
+  /// they are. Bronze meets raw conscripts; the top division meets veterans.
+  int get enemyTroopLevel => (1 + divisionIndex).clamp(1, Xp.maxLevel);
   final WarClock clock = WarClock();
   final List<WarPlayer> players = [];
   String activePlayerId = 'you';
@@ -1213,6 +1219,7 @@ class WarGame extends ChangeNotifier {
         youIntel: youIntel,
         enemyIntel: enemyIntel,
         unlockTroops: unlockedTroopsNow,
+        troopLevel: enemyTroopLevel,
         // dial 29 → 29% per bot per hour (never a free guaranteed smash)
         raidChance: difficulty / 100.0,
       );
