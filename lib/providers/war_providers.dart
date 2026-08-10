@@ -61,7 +61,14 @@ final warRoomSyncProvider = FutureProvider<void>((ref) async {
     try {
       final (version, state) =
           await WarSyncService.ensure(room.id, game.toJson());
-      game.loadFromJson(state);
+      // Same rug-pull guard as _applyRemote: a cold deep-link straight to
+      // /war/battle starts a clash in initState BEFORE this async load
+      // resolves, so even the first-load path can land mid-raid. Keep the
+      // hook and the realtime subscription either way — only the state
+      // overwrite is unsafe here.
+      if (!game.raidInProgress) {
+        game.loadFromJson(state);
+      }
       // `activePlayerId` is PER-DEVICE identity, never shared state — a
       // remote blob's 'active' field belongs to whoever last saved it, not
       // to us. Reassert immediately, before anything can rebuild and read
@@ -129,6 +136,14 @@ void _applyRemote(
   if (remoteVersion <= game.roomVersion) return; // our own echo, or stale
   final state = row['state'];
   if (state is! Map) return;
+  // NEVER yank the board out from under a live raid. loadFromJson rebuilds
+  // the bases and the roster wholesale, which strands the in-flight raid on
+  // an orphaned Base and refunds the army it already spent (see
+  // WarGame.raidInProgress). We deliberately do NOT advance roomVersion here,
+  // so this exact update is re-applied the moment the next save lands — and
+  // if none does, this device's own next save resolves the divergence through
+  // the existing compare-and-swap conflict path.
+  if (game.raidInProgress) return;
   game.loadFromJson(Map<String, dynamic>.from(state));
   // same identity guard as the initial load — a teammate's realtime save
   // carries THEIR activePlayerId; it must never leak onto this device.

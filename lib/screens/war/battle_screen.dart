@@ -650,11 +650,18 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
     ref.watch(warRoomSyncProvider);
     final g = ref.watch(warGameProvider);
     final lowPerf = ref.watch(lowPerformanceModeProvider);
+    // Every RAIDING mode paints the board its own simulation is running on
+    // ([_atk!.base]) — never WarGame's live `enemyBase` field. Those are
+    // different objects the moment anything calls loadFromJson (a teammate's
+    // realtime save does exactly that mid-raid): the field gets a brand-new
+    // Base while the in-flight AttackState keeps the old one. Reading the
+    // field here drew one map while troops fought on the orphaned other —
+    // brutes "walking over water", strolling through drawn walls, and
+    // swinging at invisible structures. Board and simulation now agree by
+    // construction, whatever else swaps underneath.
     final base = _mode == 'defense'
         ? g.youBase
-        : _mode == 'practice'
-            ? (g.practiceState?.base ?? g.youBase)
-            : g.enemyBase;
+        : (_atk?.base ?? (_mode == 'practice' ? g.youBase : g.enemyBase));
 
     return Scaffold(
       backgroundColor: const Color(0xFF090B12),

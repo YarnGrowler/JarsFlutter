@@ -1209,6 +1209,75 @@ void main() {
       expect(WarGame.instance.roomId, 'persisted-room');
     });
 
+    // ── a teammate's save must never yank the board out from under a raid ──
+    //
+    // loadFromJson rebuilds youBase/enemyBase/players wholesale. An in-flight
+    // AttackState holds a DIRECT reference to the Base it fights on and is not
+    // re-created, so applying a remote blob mid-raid stranded the raid on an
+    // orphaned map (troops crossing water that isn't there, swinging at
+    // invisible walls) AND refunded the army the raid had already spent.
+    // Both sync entry points now consult [WarGame.raidInProgress] first.
+
+    /// Mirrors the guard in war_providers.dart's `_applyRemote` — the provider
+    /// itself needs a live Supabase stream, so the POLICY is pinned here.
+    void applyRemoteState(WarGame g, Map<String, dynamic> blob) {
+      if (g.raidInProgress) return;
+      g.loadFromJson(blob);
+    }
+
+    test(
+        'REGRESSION: a remote state load is refused while a raid is live — '
+        'the raid keeps its own map and its spent army stays spent', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      final you = g.players.firstWhere((p) => p.id == 'you');
+      you.resources = 200;
+      expect(g.trainTroop(TroopType.brute), isNull, reason: 'sanity: trained');
+
+      // the blob a teammate pushes mid-raid still shows your army UNSPENT,
+      // because it was captured before you dropped anything
+      final teammateBlob = g.toJson();
+
+      final st = g.startClashBattle();
+      final battleBase = st.base;
+      final drop = g.enemyBase.dropCells.first;
+      g.deployTrained(st, TroopType.brute, drop.r, drop.c, allowStack: true);
+      expect(you.armyCount(TroopType.brute), 0, reason: 'the brute is out');
+      expect(g.raidInProgress, isTrue);
+
+      applyRemoteState(g, teammateBlob);
+
+      expect(identical(g.clashState!.base, g.enemyBase), isTrue,
+          reason: 'the raid must still be fighting the map on screen — not '
+              'a freshly-parsed orphan nobody can see');
+      expect(identical(g.clashState!.base, battleBase), isTrue,
+          reason: 'and it is the same Base the battle started on');
+      expect(g.players.firstWhere((p) => p.id == 'you').armyCount(
+              TroopType.brute),
+          0,
+          reason: 'a remote blob must never hand back troops already '
+              'deployed — that is how 4 brutes became a dozen');
+    });
+
+    test('raidInProgress reports exactly when a state load is unsafe', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      expect(g.raidInProgress, isFalse, reason: 'war day, nobody raiding yet');
+
+      g.startClashBattle();
+      expect(g.raidInProgress, isTrue, reason: 'clash board is live');
+
+      g.bankClashBattle();
+      expect(g.raidInProgress, isFalse, reason: 'banked — safe to sync again');
+
+      // drills are deliberately EXCLUDED: they run on a deep-copied base with
+      // their own pools and never spend army, so a reload cannot corrupt one.
+      g.startPracticeBattle();
+      expect(g.raidInProgress, isFalse,
+          reason: 'a sandbox drill must not block the real war from syncing');
+      g.endPractice();
+    });
+
     test(
         'REGRESSION: kill booty splits by real spend proportion, not '
         'evenly, and only pays out at endWar()', () {

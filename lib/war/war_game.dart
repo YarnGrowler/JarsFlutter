@@ -1326,6 +1326,29 @@ class WarGame extends ChangeNotifier {
   // ── Clash-style auto-battle (session-scoped, freeActions economy) ───────────
   AttackState? clashState;
 
+  /// Is a hands-on raid actually live on the board right now?
+  ///
+  /// [loadFromJson] REPLACES `youBase`, `enemyBase` and every [WarPlayer] with
+  /// freshly-parsed objects. That is correct at boot, but catastrophic while a
+  /// raid is on screen, because an in-flight [AttackState] holds a DIRECT
+  /// reference to the Base it is fighting on and is not itself re-created:
+  ///   * the raid keeps simulating on the old, now-orphaned Base while every
+  ///     other reader sees the new one — troops walk over water that isn't
+  ///     there, ignore walls that are, and hit structures nobody can see;
+  ///   * `players` is rebuilt from the blob, so the army counts the raid
+  ///     already SPENT come back, and the same four brutes can be deployed
+  ///     again and again.
+  /// A teammate's realtime save triggers exactly this, mid-raid, with no
+  /// input from the player it happens to. Same rug-pull family as the
+  /// battle-report corruption fixed by snapshotting that screen.
+  ///
+  /// Practice drills are deliberately NOT counted: they run on a deep-copied
+  /// base with their own pools and never spend army, so a state reload cannot
+  /// corrupt one — and blocking sync for a long sandbox session would leave
+  /// the real war stale for no benefit.
+  bool get raidInProgress =>
+      clashState != null || (liveAttack?.troops.any((t) => t.alive) ?? false);
+
   AttackState startClashBattle() {
     clashState = AttackState(
       base: enemyBase,
