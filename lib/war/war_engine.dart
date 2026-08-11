@@ -174,11 +174,6 @@ class AttackState {
   double plunderGained = 0;
   int _troopSeq = 0;
   int _garrisonSeq = 0;
-  /// Guard Post cell-key → reinforcements still waiting in the tent (spawned
-  /// one at a time, only once a live slot opens up, up to [garrisonConcurrentCap]).
-  final Map<int, int> _garrisonPool = {};
-  /// Guard Post cell-key → how many defenders it can field AT ONCE.
-  final Map<int, int> _garrisonCap = {};
   /// Guard Post cell-key → beats left before its next reinforcement can
   /// step out (0 = ready now).
   final Map<int, int> _garrisonCooldown = {};
@@ -226,25 +221,51 @@ class AttackState {
   static const int garrisonLeash = 4;
 
   /// A single post can only have this many live defenders out at once —
-  /// stack more Housing to reinforce faster (bigger pool), or build more
-  /// posts to raise the concurrent ceiling itself.
+  /// stack more Housing to raise its own target (see [_garrisonTarget]), or
+  /// build more posts to raise the concurrent ceiling itself.
   static const int garrisonConcurrentCap = 4;
 
-  /// The post's OWN level baseline — how many it can field with zero
-  /// Housing help. A fresh L1 post fields just its one innate guard; a
-  /// maxed L5 post reaches the full concurrent cap alone. Housing pool
-  /// still stacks ON TOP of this to push a lower-level post further, or to
-  /// let a maxed post outlast a longer fight.
+  /// The post's OWN level baseline — how many it fields with zero Housing
+  /// help. A fresh L1 post fields just its one innate guard; a maxed L5
+  /// post reaches the full concurrent cap alone. Housing stacks ON TOP of
+  /// this to push a lower-level post further.
   int _garrisonBaseline(int level) => math.min(garrisonConcurrentCap, level);
 
   /// A high-enough post has a shot at training an ARCHER instead of a
   /// soldier — a genuine 50/50 roll per recruit, not a player choice.
   static const int garrisonArcherUnlockLevel = 3;
 
-  /// Beats between one fallen slot and its replacement stepping out — the
-  /// post trains faster the more it's upgraded. Only ticks while a slot is
-  /// actually open and the pool has someone left to send.
-  int _reinforceCooldownTicks(int level) => (6 - (level - 1)).clamp(2, 6);
+  /// Reinforcement cooldown, by the post's own level, in REAL SECONDS:
+  /// 15s at L1, ramping down to 5s at L5. Converted to beats via
+  /// FreeMoveBattle's fixed 0.55s cadence — the engine every raid (live or
+  /// headless) runs on now, so this is the real-world pace the player
+  /// actually experiences, not an abstract tick count.
+  static const List<double> _reinforceCooldownSeconds = [15, 12, 10, 8, 5];
+  static const double _freeMoveBeatSeconds = 0.55; // == FreeMoveBattle.beatPeriod
+  int _reinforceCooldownTicks(int level) {
+    final idx = (level - 1).clamp(0, _reinforceCooldownSeconds.length - 1);
+    return (_reinforceCooldownSeconds[idx] / _freeMoveBeatSeconds).round();
+  }
+
+  /// How many defenders this post can have OUT AT ONCE right now — its own
+  /// level plus whatever Housing is CURRENTLY standing within 2 tiles,
+  /// capped at [garrisonConcurrentCap]. Recomputed fresh every beat, not
+  /// snapshotted at raid start: an infinite spawner that tries to MAINTAIN
+  /// this many, forever, as long as the post survives — if a nearby Housing
+  /// falls mid-raid the target drops with it (existing guards aren't culled
+  /// to match, they just aren't replaced once they die).
+  int _garrisonTarget(int r, int c, int postLevel) {
+    var housingPool = 0;
+    for (var dr = -2; dr <= 2; dr++) {
+      for (var dc = -2; dc <= 2; dc++) {
+        final h = base.structAt(r + dr, c + dc);
+        if (h != null && h.alive && h.type == DefType.housing) {
+          housingPool += h.level;
+        }
+      }
+    }
+    return math.min(garrisonConcurrentCap, _garrisonBaseline(postLevel) + housingPool);
+  }
 
   /// A weak fighter on its own (low hp, no gun) — its whole job is seeing
   /// far, so it gets a genuinely wide radius to compensate.
@@ -359,76 +380,53 @@ class AttackState {
     return guard;
   }
 
-  /// Guard Posts field a live defender each raid, anchored to the post.
-  /// The post's OWN level sets a BASELINE headcount it can field alone
-  /// ([_garrisonBaseline]); Housing barracks it further — each Housing
-  /// structure within 2 tiles adds its OWN LEVEL worth of reinforcements
-  /// to the post's pool on top of that baseline (a bare L1 house is +1
-  /// body, a maxed L3 house is +3), stacking across multiple houses. A
-  /// post can only ever have [garrisonConcurrentCap] defenders OUT at once
-  /// though — the rest of the pool waits in the tent and trickles out one
-  /// at a time, on a level-scaled cooldown, as slots die (see
-  /// [_reinforceGarrison]) — so a deep pool behind a single post buys
-  /// staying power, not a bigger mob on turn one; stacking more POSTS is
-  /// what raises how many can ever be out together.
+  /// Guard Posts field live defenders each raid, anchored to the post —
+  /// an INFINITE spawner that tries to MAINTAIN its target headcount
+  /// ([_garrisonTarget]) for as long as it stands, not a one-shot pool that
+  /// runs dry. The initial wave deploys immediately at raid start; every
+  /// later replacement goes through [_reinforceGarrison]'s cooldown.
   void _spawnGarrison() {
     for (var r = 0; r < base.rows; r++) {
       for (var c = 0; c < base.cols; c++) {
         final s = base.structAt(r, c);
         if (s == null || !s.alive || s.type != DefType.guardPost) continue;
-        var housingPool = 0;
-        for (var dr = -2; dr <= 2; dr++) {
-          for (var dc = -2; dc <= 2; dc++) {
-            final h = base.structAt(r + dr, c + dc);
-            if (h != null && h.alive && h.type == DefType.housing) {
-              housingPool += h.level;
-            }
-          }
-        }
-        final totalPool = _garrisonBaseline(s.level) + housingPool;
-        final cap = math.min(garrisonConcurrentCap, totalPool);
-        final postKey = _key(r, c);
-        _garrisonCap[postKey] = cap;
+        final target = _garrisonTarget(r, c, s.level);
         // the first reinforcement (after the FIRST casualty) trains on the
         // same cooldown as every later one — no free instant replacement.
-        _garrisonCooldown[postKey] = _reinforceCooldownTicks(s.level);
-        final seats = _openCellsNear(r, c, cap);
-        for (final seat in seats) {
+        _garrisonCooldown[_key(r, c)] = _reinforceCooldownTicks(s.level);
+        for (final seat in _openCellsNear(r, c, target)) {
           garrison.add(_newGuard(s, seat[0], seat[1], r, c));
         }
-        _garrisonPool[postKey] = totalPool - seats.length;
       }
     }
   }
 
-  /// Once a raid is underway, a post with pool left refills an empty slot
-  /// — never all at once, one body at a time on a level-scaled cooldown
-  /// (faster the more the post is upgraded), exactly like the CoC-style
-  /// "reinforcements" the tent is meant to model. The cooldown only ever
-  /// ticks while a slot is ACTUALLY open and there's someone left to send
-  /// — it never quietly counts down during a lull with nothing to refill.
+  /// Every beat: any Guard Post below its CURRENT target (post level +
+  /// whatever Housing is still standing nearby) refills one slot, once its
+  /// cooldown elapses — never all at once, one body at a time, forever, as
+  /// long as the post survives. The cooldown only ticks while a slot is
+  /// ACTUALLY open — it never quietly counts down during a lull with
+  /// nothing to refill.
   void _reinforceGarrison() {
-    for (final entry in _garrisonPool.entries.toList()) {
-      if (entry.value <= 0) continue;
-      final postKey = entry.key;
-      final r = postKey ~/ base.cols, c = postKey % base.cols;
-      final s = base.structAt(r, c);
-      // the tent itself has to still be standing to keep training reserves
-      if (s == null || !s.alive || s.type != DefType.guardPost) continue;
-      final cap = _garrisonCap[postKey] ?? garrisonConcurrentCap;
-      final aliveHere =
-          garrison.where((g) => g.homeR == r && g.homeC == c).length;
-      if (aliveHere >= cap) continue;
-      final cd = (_garrisonCooldown[postKey] ?? 0) - 1;
-      if (cd > 0) {
-        _garrisonCooldown[postKey] = cd;
-        continue; // still training the next recruit
+    for (var r = 0; r < base.rows; r++) {
+      for (var c = 0; c < base.cols; c++) {
+        final s = base.structAt(r, c);
+        if (s == null || !s.alive || s.type != DefType.guardPost) continue;
+        final target = _garrisonTarget(r, c, s.level);
+        final aliveHere =
+            garrison.where((g) => g.homeR == r && g.homeC == c).length;
+        if (aliveHere >= target) continue;
+        final postKey = _key(r, c);
+        final cd = (_garrisonCooldown[postKey] ?? 0) - 1;
+        if (cd > 0) {
+          _garrisonCooldown[postKey] = cd;
+          continue; // still training the next recruit
+        }
+        final seat = _openCellsNear(r, c, 1);
+        if (seat.isEmpty) continue; // no room this beat — try again next tick
+        garrison.add(_newGuard(s, seat[0][0], seat[0][1], r, c));
+        _garrisonCooldown[postKey] = _reinforceCooldownTicks(s.level);
       }
-      final seat = _openCellsNear(r, c, 1);
-      if (seat.isEmpty) continue; // no room this beat — try again next tick
-      garrison.add(_newGuard(s, seat[0][0], seat[0][1], r, c));
-      _garrisonPool[postKey] = entry.value - 1;
-      _garrisonCooldown[postKey] = _reinforceCooldownTicks(s.level);
     }
   }
 
@@ -1830,8 +1828,6 @@ class AttackState {
         'tvLost': troopSpendLost,
         'seq': _troopSeq,
         'gSeq': _garrisonSeq,
-        'gPool': [for (final e in _garrisonPool.entries) [e.key, e.value]],
-        'gCap': [for (final e in _garrisonCap.entries) [e.key, e.value]],
         'gCd': [for (final e in _garrisonCooldown.entries) [e.key, e.value]],
         'start': _startDestruction,
         'iq': defenderIq,
@@ -1875,14 +1871,6 @@ class AttackState {
     st.troopSpendLost = (j['tvLost'] as num?)?.toDouble() ?? 0;
     st._troopSeq = (j['seq'] as num?)?.toInt() ?? st.troops.length;
     st._garrisonSeq = (j['gSeq'] as num?)?.toInt() ?? st.garrison.length;
-    for (final e in (j['gPool'] as List? ?? const [])) {
-      final pair = e as List;
-      st._garrisonPool[(pair[0] as num).toInt()] = (pair[1] as num).toInt();
-    }
-    for (final e in (j['gCap'] as List? ?? const [])) {
-      final pair = e as List;
-      st._garrisonCap[(pair[0] as num).toInt()] = (pair[1] as num).toInt();
-    }
     for (final e in (j['gCd'] as List? ?? const [])) {
       final pair = e as List;
       st._garrisonCooldown[(pair[0] as num).toInt()] = (pair[1] as num).toInt();

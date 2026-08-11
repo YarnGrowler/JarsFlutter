@@ -917,6 +917,31 @@ void main() {
           reason: 'loot lands in the raider pool');
     });
 
+    test(
+        'War Generator upgrades to L4 (45⚡/hr), and smashing one loots a '
+        'DEEPER tank the more it\'s upgraded — not just a bigger rate '
+        'times the same flat 2 hours', () {
+      expect(warGeneratorRatePerHour(4), 45,
+          reason: 'the new top tier: 6 → 15 → 28 → 45⚡/hr');
+      // L1 unchanged: 6⚡/hr × 2h = 12⚡ — same number as before this round.
+      expect(WarCosts.plunderAmount(DefType.warGenerator, 1), 12);
+      // L4: 45⚡/hr × 5h = 225⚡ — a real heist, not 45×2=90.
+      expect(WarCosts.plunderAmount(DefType.warGenerator, 4), 225);
+      // strictly increasing at every level — upgrading always pays more
+      // both running AND if it gets smashed.
+      for (var l = 2; l <= 4; l++) {
+        expect(WarCosts.plunderAmount(DefType.warGenerator, l),
+            greaterThan(WarCosts.plunderAmount(DefType.warGenerator, l - 1)));
+      }
+
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      g.enemyBase.place(12, 12, DefType.warGenerator, 'foe');
+      final gen = g.enemyBase.structAt(12, 12)!;
+      gen.level = 4;
+      expect(gen.spec.maxLevel, 4, reason: 'upgrades all the way to L4 now');
+    });
+
     test('scouting is shared clan intel across raids', () {
       final g = WarGame.fresh()..startPrep();
       g.startWar();
@@ -2117,8 +2142,9 @@ void main() {
     });
 
     test(
-        'a depleted guard slot refills from the reinforcement pool one at a '
-        'time, until the pool itself runs dry', () {
+        'an INFINITE spawner maintains its target forever — killing guards '
+        'again and again never runs it dry, as long as the post and its '
+        'Housing survive', () {
       final base = Base(WarSide.enemy, 11);
       for (var r = 0; r < Base.defaultSize; r++) {
         for (var c = 2; c <= 7; c++) {
@@ -2143,29 +2169,24 @@ void main() {
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
       expect(st.garrison, hasLength(4));
-      // a fresh L1 post trains a replacement on a 6-beat cooldown — one
-      // dead slot does NOT refill on the very next beat.
-      st.garrison.first.hp = 0;
-      st.defendersReact();
-      expect(st.garrison, hasLength(3),
-          reason: 'the cooldown has not elapsed yet — no instant refill');
-      // pool = 7 total, 4 already out → 3 reinforcements left in the tent.
-      for (var i = 0; i < 3; i++) {
-        for (var beat = 0; beat < 6; beat++) {
+      // kill-and-refill EIGHT full cycles from a FULL post each time — well
+      // past the old finite pool's 7-body ceiling — to prove there is no
+      // depletion at all any more. A fresh L1 post's cooldown is 15s
+      // (~27 beats): kill 1, confirm it's not instant, then confirm the
+      // FULL wait brings it back before killing the next one.
+      for (var i = 0; i < 8; i++) {
+        st.garrison.first.hp = 0;
+        st.defendersReact(); // cull + start the cooldown ticking
+        if (i == 0) {
+          expect(st.garrison, hasLength(3),
+              reason: 'the cooldown has not elapsed yet — no instant refill');
+        }
+        for (var beat = 1; beat < 27; beat++) {
           st.defendersReact();
         }
         expect(st.garrison, hasLength(4),
-            reason: 'reinforcement #$i should refill the fallen slot once '
-                'its cooldown elapses');
-        st.garrison.first.hp = 0;
+            reason: 'refill #$i — an infinite spawner never runs dry');
       }
-      // the pool is empty now — burning through the cooldown again does NOT
-      // produce a fourth reinforcement.
-      for (var beat = 0; beat < 6; beat++) {
-        st.defendersReact();
-      }
-      expect(st.garrison, hasLength(3),
-          reason: 'the tent has nothing left to send');
     });
 
     test(
@@ -2228,21 +2249,22 @@ void main() {
       final l1 = mk(1);
       expect(l1.garrison, hasLength(4));
       l1.garrison.first.hp = 0;
-      for (var beat = 0; beat < 3; beat++) {
+      for (var beat = 0; beat < 9; beat++) {
         l1.defendersReact();
       }
       expect(l1.garrison, hasLength(3),
-          reason: 'an L1 post\'s 6-beat cooldown has not elapsed at beat 3');
+          reason: 'an L1 post\'s 15s (~27-beat) cooldown has not elapsed '
+              'by beat 9');
 
       final l5 = mk(5);
       expect(l5.garrison, hasLength(4));
       l5.garrison.first.hp = 0;
-      for (var beat = 0; beat < 3; beat++) {
+      for (var beat = 0; beat < 9; beat++) {
         l5.defendersReact();
       }
       expect(l5.garrison, hasLength(4),
-          reason: 'an L5 post\'s 2-beat cooldown has long since refilled '
-              'the slot by beat 3');
+          reason: 'an L5 post\'s 5s (~9-beat) cooldown has just elapsed '
+              'by beat 9');
     });
 
     test(
@@ -2281,11 +2303,14 @@ void main() {
       // (The pool runs dry well before 20 kills — stop once it's empty
       // instead of calling .first on a bare tent.)
       final l2 = mk(2);
+      // an infinite spawner never truly empties, but keep the guard anyway
+      // — it's cheap and removes any doubt if that ever stops being true.
       for (var i = 0; i < 20 && l2.garrison.isNotEmpty; i++) {
         expect(l2.garrison.every((g) => g.type == TroopType.soldier), isTrue,
             reason: 'no archers before L3');
         l2.garrison.first.hp = 0;
-        for (var beat = 0; beat < 6; beat++) {
+        for (var beat = 0; beat < 22; beat++) {
+          // L2's cooldown is 12s (~22 beats)
           l2.defendersReact();
         }
       }
@@ -2296,7 +2321,8 @@ void main() {
       seen.addAll(l3.garrison.map((g) => g.type));
       for (var i = 0; i < 20 && l3.garrison.isNotEmpty; i++) {
         l3.garrison.first.hp = 0;
-        for (var beat = 0; beat < 4; beat++) {
+        for (var beat = 0; beat < 18; beat++) {
+          // L3's cooldown is 10s (~18 beats)
           l3.defendersReact();
         }
         seen.addAll(l3.garrison.map((g) => g.type));

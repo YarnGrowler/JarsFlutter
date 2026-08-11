@@ -35,7 +35,12 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
   int dmgAt(int l) => (spec.damage * (1 + 0.25 * (l - 1))).round();
   int patrolAt(int l) => 4 + (l - 1) * 2;
   int baselineAt(int l) => l.clamp(1, 4);
-  int cooldownAt(int l) => (6 - (l - 1)).clamp(2, 6);
+  // Mirrors AttackState._reinforceCooldownSeconds (war_engine.dart) — kept
+  // as a literal here since this is presentational, not simulated, but the
+  // two MUST be changed together.
+  const cooldownSecondsByLevel = [15, 12, 10, 8, 5];
+  int cooldownAt(int l) => cooldownSecondsByLevel[
+      (l - 1).clamp(0, cooldownSecondsByLevel.length - 1)];
 
   final stats = <_Stat>[
     _Stat('❤️ Health', '${hpAt(level)}'),
@@ -81,7 +86,7 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
       const _Stat('🪖 Garrison', 'fields a live defender every raid'),
       _Stat('👥 Fields alone',
           '${baselineAt(level)} of the 4-guard cap (Housing adds more)'),
-      _Stat('⏱ Reinforce', '${cooldownAt(level)} beats after a slot falls'),
+      _Stat('⏱ Reinforce', '${cooldownAt(level)}s after a slot falls'),
       if (level >= 3)
         const _Stat('🏹 Recruits', '50/50 chance each is an ARCHER'),
       _Stat('📍 Patrol', '${patrolAt(level)} tiles, then returns home'),
@@ -113,7 +118,8 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
       _Stat('⚗️ Pump rate',
           '${warGeneratorRatePerHour(level).round()}⚡/hr on war day'),
       _Stat('💰 Loot',
-          '${WarCosts.plunderAmount(type, level).round()}⚡ if smashed (~2h tank)'),
+          '${WarCosts.plunderAmount(type, level).round()}⚡ if smashed '
+          '(~${level + 1}h tank — deeper the more it\'s upgraded)'),
     ],
   ];
 

@@ -259,13 +259,13 @@ const Map<DefType, DefSpec> kDefSpecs = {
       upgradeCost: 25,
       maxLevel: 5,
       blurb:
-          'Stations live defenders — its OWN level sets how many it can '
-          'field alone (1 at L1, up to 4 at L4+), how fast a fallen slot '
-          'trains a replacement, and its patrol leash. L3+ posts have a '
-          '50/50 shot of training an ARCHER instead of a soldier. Housing '
-          'nearby adds MORE to the pool on top of all that. Only 4 can '
-          'ever be out of one post at once, however deep the pool runs — '
-          'build more posts to raise that ceiling.'),
+          'An INFINITE spawner — trains replacements forever, for as long '
+          'as it stands. Its OWN level sets how many it fields alone (1 at '
+          'L1, up to 4 at L4+), how fast a fallen slot retrains (15s at L1, '
+          'down to 5s at L5), and its patrol leash. L3+ posts have a 50/50 '
+          'shot of training an ARCHER instead of a soldier. Housing STILL '
+          'STANDING nearby raises the target further. Only 4 can ever be '
+          'out at once — build more posts to raise that ceiling.'),
   DefType.gate: DefSpec(DefType.gate,
       name: 'Gate',
       emoji: '🚪',
@@ -289,10 +289,11 @@ const Map<DefType, DefSpec> kDefSpecs = {
       upgradeCost: 35,
       maxLevel: 3,
       blurb:
-          'Barracks quarters: every Guard Post within 2 tiles adds this '
-          'house\'s LEVEL to its reinforcement pool (L1=+1, L2=+2, L3=+3, '
-          'stacking across multiple houses). The post trickles them out one '
-          'at a time as slots die, up to 4 defenders out at once.'),
+          'Barracks quarters: every Guard Post within 2 tiles raises its '
+          'MAINTAINED headcount by this house\'s LEVEL (L1=+1, L2=+2, '
+          'L3=+3, stacking across multiple houses) — for as long as the '
+          'house stands. Fall it and the post\'s target drops with it. Up '
+          'to 4 defenders out at once, however many houses feed it.'),
   DefType.pitchThrower: DefSpec(DefType.pitchThrower,
       name: 'Pitch Thrower',
       emoji: '🔥',
@@ -420,11 +421,12 @@ const Map<DefType, DefSpec> kDefSpecs = {
       hp: 90,
       blocks: true,
       upgradeCost: 30,
-      maxLevel: 3,
+      maxLevel: 4,
       blurb:
           'War-day elixir pump. L1 drips 6⚡/hr; L2 pumps 15⚡/hr; L3 floods '
-          '28⚡/hr. Accrues to the owner on war day — smash an enemy tank and '
-          'loot ~2 hours of its drip.'),
+          '28⚡/hr; L4 gushes 45⚡/hr. Accrues to the owner on war day — '
+          'smash an enemy tank and loot a level-scaled chunk of its drip, '
+          'the deeper the upgrade the bigger the heist.'),
 };
 
 /// The palette a player can place (castle is placed separately, one per player).
@@ -459,8 +461,9 @@ const Set<DefType> kLeagueGatedDefs = {
   DefType.citadelCore,
 };
 
-/// War-day ⚡/hour by generator level (L1 = 6, L2 = 15, L3 = 28).
+/// War-day ⚡/hour by generator level (L1 = 6, L2 = 15, L3 = 28, L4 = 45).
 double warGeneratorRatePerHour(int level) {
+  if (level >= 4) return 45.0;
   if (level >= 3) return 28.0;
   if (level >= 2) return 15.0;
   return 6.0;
@@ -765,8 +768,11 @@ class WarCosts {
       case DefType.storehouse:
         return 50.0 * level.clamp(1, 5); // L1 50 · L2 100 · L3 150
       case DefType.warGenerator:
-        // ~2 hours of pump sitting in the tank
-        return warGeneratorRatePerHour(level) * 2;
+        // The TANK gets deeper as it's upgraded, not just the pump rate —
+        // (1+level) hours' worth sitting in reserve, so a smashed L1 pays
+        // the same 12⚡ as before (unchanged), but a maxed L4 pays a real
+        // heist: 45×5 = 225⚡, not just a bigger rate times the same old 2h.
+        return warGeneratorRatePerHour(level) * (1 + level);
       case DefType.tributeChest:
         return 100.0 * level.clamp(1, 5); // L1 100 · L2 200 · ... L5 500
       default:
