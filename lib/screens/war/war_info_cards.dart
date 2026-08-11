@@ -85,7 +85,8 @@ void showDefenseCard(BuildContext context, DefType type, {int level = 1}) {
     if (type == DefType.guardPost) ...[
       const _Stat('🪖 Garrison', 'fields a live defender every raid'),
       _Stat('👥 Fields alone',
-          '${baselineAt(level)} of the 4-guard cap (Housing adds more)'),
+          '${baselineAt(level)} of a 4-guard solo cap (Housing pushes past '
+          'it, up to 8 total)'),
       _Stat('⏱ Reinforce', '${cooldownAt(level)}s after a slot falls'),
       if (level >= 3)
         const _Stat('🏹 Recruits', '50/50 chance each is an ARCHER'),

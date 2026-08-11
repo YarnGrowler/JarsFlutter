@@ -2111,8 +2111,8 @@ void main() {
     });
 
     test(
-        'multiple houses STACK, but a post never fields more than 4 live '
-        'defenders at once no matter how deep the pool runs', () {
+        'multiple houses STACK past the post\'s own solo cap, but never '
+        'past the shared 8-guard absolute ceiling', () {
       final base = Base(WarSide.enemy, 11);
       for (var r = 0; r < Base.defaultSize; r++) {
         for (var c = 2; c <= 7; c++) {
@@ -2136,9 +2136,10 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      // pool = 1 (post) + 3 houses × level 2 = 7 — but only 4 can ever be
-      // OUT of one tent at the same time.
-      expect(st.garrison, hasLength(4));
+      // pool = 1 (post, solo cap 1 at L1) + 3 houses × level 2 = 7 — under
+      // the shared 8-guard absolute ceiling, so Housing genuinely pushes the
+      // post PAST what it fields alone.
+      expect(st.garrison, hasLength(7));
     });
 
     test(
@@ -2168,7 +2169,9 @@ void main() {
           attacker: WarSide.you,
           attackerName: 'Me',
           pools: MapPools({'me': 999, 'def': 999}));
-      expect(st.garrison, hasLength(4));
+      // target = 1 (post, solo cap 1 at L1) + 3 houses × level 2 = 7, under
+      // the shared 8-guard absolute ceiling.
+      expect(st.garrison, hasLength(7));
       // kill-and-refill EIGHT full cycles from a FULL post each time — well
       // past the old finite pool's 7-body ceiling — to prove there is no
       // depletion at all any more. A fresh L1 post's cooldown is 15s
@@ -2178,20 +2181,20 @@ void main() {
         st.garrison.first.hp = 0;
         st.defendersReact(); // cull + start the cooldown ticking
         if (i == 0) {
-          expect(st.garrison, hasLength(3),
+          expect(st.garrison, hasLength(6),
               reason: 'the cooldown has not elapsed yet — no instant refill');
         }
         for (var beat = 1; beat < 27; beat++) {
           st.defendersReact();
         }
-        expect(st.garrison, hasLength(4),
+        expect(st.garrison, hasLength(7),
             reason: 'refill #$i — an infinite spawner never runs dry');
       }
     });
 
     test(
         'the post\'s OWN level sets a baseline headcount even with ZERO '
-        'Housing nearby, clamped at the shared 4-guard cap', () {
+        'Housing nearby, clamped at its own 4-guard solo cap', () {
       AttackState mk(int level) {
         final base = Base(WarSide.enemy, 11);
         for (var r = 0; r < Base.defaultSize; r++) {
@@ -2213,7 +2216,8 @@ void main() {
       expect(mk(3).garrison, hasLength(3));
       expect(mk(4).garrison, hasLength(4));
       expect(mk(5).garrison, hasLength(4),
-          reason: 'clamped at the 4-guard cap even past it');
+          reason: 'clamped at the solo cap even past it — Housing is what '
+              'pushes a post beyond this, up to the 8-guard absolute cap');
     });
 
     test('a higher-level post trains reinforcements FASTER', () {
@@ -2246,23 +2250,26 @@ void main() {
             pools: MapPools({'me': 999, 'def': 999}));
       }
 
+      // L1: baseline 1 + housing pool 6 = 7, under the 8-guard absolute cap.
       final l1 = mk(1);
-      expect(l1.garrison, hasLength(4));
+      expect(l1.garrison, hasLength(7));
       l1.garrison.first.hp = 0;
       for (var beat = 0; beat < 9; beat++) {
         l1.defendersReact();
       }
-      expect(l1.garrison, hasLength(3),
+      expect(l1.garrison, hasLength(6),
           reason: 'an L1 post\'s 15s (~27-beat) cooldown has not elapsed '
               'by beat 9');
 
+      // L5: baseline 4 + housing pool 6 = 10, clamped to the 8-guard
+      // absolute cap.
       final l5 = mk(5);
-      expect(l5.garrison, hasLength(4));
+      expect(l5.garrison, hasLength(8));
       l5.garrison.first.hp = 0;
       for (var beat = 0; beat < 9; beat++) {
         l5.defendersReact();
       }
-      expect(l5.garrison, hasLength(4),
+      expect(l5.garrison, hasLength(8),
           reason: 'an L5 post\'s 5s (~9-beat) cooldown has just elapsed '
               'by beat 9');
     });

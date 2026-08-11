@@ -222,16 +222,22 @@ class AttackState {
   /// How far a garrison defender will chase from its post before returning.
   static const int garrisonLeash = 4;
 
-  /// A single post can only have this many live defenders out at once —
-  /// stack more Housing to raise its own target (see [_garrisonTarget]), or
-  /// build more posts to raise the concurrent ceiling itself.
-  static const int garrisonConcurrentCap = 4;
+  /// What the post's OWN level can field with ZERO Housing help — a fresh
+  /// L1 post fields just its one innate guard, a maxed L4+ post reaches 4
+  /// alone. Distinct from [garrisonAbsoluteCap] on purpose: Housing has to
+  /// be able to push a post PAST what its own level tops out at, or a
+  /// maxed-level tent makes every house around it dead weight — a real bug
+  /// a player found, where both caps were the SAME number (4), so a level
+  /// 4-5 post's solo output already saturated the ceiling before Housing
+  /// was ever added — 2 houses next to a maxed tent contributed literally
+  /// nothing.
+  static const int garrisonSoloCap = 4;
+  int _garrisonBaseline(int level) => math.min(garrisonSoloCap, level);
 
-  /// The post's OWN level baseline — how many it fields with zero Housing
-  /// help. A fresh L1 post fields just its one innate guard; a maxed L5
-  /// post reaches the full concurrent cap alone. Housing stacks ON TOP of
-  /// this to push a lower-level post further.
-  int _garrisonBaseline(int level) => math.min(garrisonConcurrentCap, level);
+  /// The TRUE ceiling — solo baseline PLUS Housing, combined. Deliberately
+  /// higher than [garrisonSoloCap] so a well-housed post can genuinely
+  /// exceed what it manages alone. Build more posts to go past even this.
+  static const int garrisonAbsoluteCap = 8;
 
   /// A high-enough post has a shot at training an ARCHER instead of a
   /// soldier — a genuine 50/50 roll per recruit, not a player choice.
@@ -251,11 +257,12 @@ class AttackState {
 
   /// How many defenders this post can have OUT AT ONCE right now — its own
   /// level plus whatever Housing is CURRENTLY standing within 2 tiles,
-  /// capped at [garrisonConcurrentCap]. Recomputed fresh every beat, not
-  /// snapshotted at raid start: an infinite spawner that tries to MAINTAIN
-  /// this many, forever, as long as the post survives — if a nearby Housing
-  /// falls mid-raid the target drops with it (existing guards aren't culled
-  /// to match, they just aren't replaced once they die).
+  /// capped at [garrisonAbsoluteCap] (NOT [garrisonSoloCap] — see that
+  /// constant's doc for why the two must stay separate). Recomputed fresh
+  /// every beat, not snapshotted at raid start: an infinite spawner that
+  /// tries to MAINTAIN this many, forever, as long as the post survives —
+  /// if a nearby Housing falls mid-raid the target drops with it (existing
+  /// guards aren't culled to match, they just aren't replaced once they die).
   int _garrisonTarget(int r, int c, int postLevel) {
     var housingPool = 0;
     for (var dr = -2; dr <= 2; dr++) {
@@ -266,7 +273,7 @@ class AttackState {
         }
       }
     }
-    return math.min(garrisonConcurrentCap, _garrisonBaseline(postLevel) + housingPool);
+    return math.min(garrisonAbsoluteCap, _garrisonBaseline(postLevel) + housingPool);
   }
 
   /// A weak fighter on its own (low hp, no gun) — its whole job is seeing

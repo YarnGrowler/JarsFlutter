@@ -260,12 +260,12 @@ const Map<DefType, DefSpec> kDefSpecs = {
       maxLevel: 5,
       blurb:
           'An INFINITE spawner — trains replacements forever, for as long '
-          'as it stands. Its OWN level sets how many it fields alone (1 at '
+          'as it stands. Its OWN level sets how many it fields ALONE (1 at '
           'L1, up to 4 at L4+), how fast a fallen slot retrains (15s at L1, '
           'down to 5s at L5), and its patrol leash. L3+ posts have a 50/50 '
           'shot of training an ARCHER instead of a soldier. Housing STILL '
-          'STANDING nearby raises the target further. Only 4 can ever be '
-          'out at once — build more posts to raise that ceiling.'),
+          'STANDING nearby pushes it PAST that solo cap, up to 8 total — '
+          'build more posts to go further still.'),
   DefType.gate: DefSpec(DefType.gate,
       name: 'Gate',
       emoji: '🚪',
@@ -292,8 +292,8 @@ const Map<DefType, DefSpec> kDefSpecs = {
           'Barracks quarters: every Guard Post within 2 tiles raises its '
           'MAINTAINED headcount by this house\'s LEVEL (L1=+1, L2=+2, '
           'L3=+3, stacking across multiple houses) — for as long as the '
-          'house stands. Fall it and the post\'s target drops with it. Up '
-          'to 4 defenders out at once, however many houses feed it.'),
+          'house stands. Fall it and the post\'s target drops with it. Pushes '
+          'the post PAST its own solo cap, up to 8 defenders out at once.'),
   DefType.pitchThrower: DefSpec(DefType.pitchThrower,
       name: 'Pitch Thrower',
       emoji: '🔥',
