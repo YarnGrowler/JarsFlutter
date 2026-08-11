@@ -69,6 +69,11 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
   String _enemyClanName = '';
   List<_ReportPlayer> _youClan = const [];
   List<_ReportPlayer> _enemyClan = const [];
+  // Garrison (defender) deaths — the honest OTHER half of "who died this
+  // war". Raider losses alone (`troopsLost`, above) undercounted casualties
+  // by ignoring every defender that fell holding a wall.
+  int _enemyGarrisonLost = 0; // their defenders, killed by YOUR raids
+  int _youGarrisonLost = 0; // your defenders, killed by THEIR raids
 
   _ReportPlayer _snap(WarPlayer p) => _ReportPlayer(
         name: p.name,
@@ -94,6 +99,8 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
     _enemyClanName = g.enemyClanName;
     _youClan = [for (final p in g.youClan) _snap(p)];
     _enemyClan = [for (final p in g.enemyClan) _snap(p)];
+    _enemyGarrisonLost = g.enemyGarrisonLostThisWar;
+    _youGarrisonLost = g.youGarrisonLostThisWar;
   }
 
   @override
@@ -453,6 +460,9 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
     final razed = you ? _enemyBaseRazed : _youBaseRazed;
     final lost = clan.fold<int>(0, (a, p) => a + p.troopsLost);
     final spent = clan.fold<double>(0, (a, p) => a + p.resourcesSpent);
+    // this clan's OWN defenders that fell — a raider death (above) is only
+    // half the casualty picture.
+    final defLost = you ? _youGarrisonLost : _enemyGarrisonLost;
     final c = you ? const Color(0xFF2E6BE6) : const Color(0xFFE6483F);
     return Container(
       padding: const EdgeInsets.all(14),
@@ -477,8 +487,14 @@ class _BattleReportScreenState extends ConsumerState<BattleReportScreen> {
           const SizedBox(height: 10),
           Row(children: [
             _stat('Destruction dealt', '${dealt.round()}%'),
-            _stat('Troops lost', '$lost'),
+            _stat('Raiders lost', '$lost'),
             _stat('Points spent', spent.round().toString()),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            _stat('Defenders lost', '$defLost'),
+            _stat('Total casualties', '${lost + defLost}'),
+            const Expanded(child: SizedBox.shrink()),
           ]),
         ],
       ),

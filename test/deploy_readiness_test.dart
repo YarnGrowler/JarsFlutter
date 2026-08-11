@@ -1484,6 +1484,49 @@ void main() {
     });
 
     test(
+        'REGRESSION: enemy DEFENDERS your crew killed raiding them now feed '
+        'kill booty too, alongside enemy RAIDERS killed defending you — '
+        'previously only the defensive half counted, offense earned '
+        'nothing', () {
+      final g = WarGame.fresh();
+      g.startPrep();
+      g.startWar();
+      razeYou(g); // force a clear LOSS so win booty never muddies this test
+      final you = g.youClan.firstWhere((p) => p.id == 'you');
+      you.resourcesSpent = 100;
+      final before = you.resources;
+      // 6 enemy RAIDERS died attacking you (defensive kills)...
+      g.enemyClan.first.troopsLost = 6;
+      // ...AND your crew's own raids killed 4 enemy DEFENDERS (offensive
+      // kills) — this second number used to be tracked and then discarded.
+      g.enemyGarrisonLostThisWar = 4;
+      g.endWar();
+      final pool = (6 + 4) * WarCosts.killBootyPerKill;
+      expect(you.resources - before, closeTo(pool, 0.01),
+          reason: 'both directions of a kill count toward the pool');
+    });
+
+    test(
+        'the report has both sides\' GARRISON losses to show, separate from '
+        'kill booty (losing your own defenders is not a reward)', () {
+      final g = WarGame.fresh()..startPrep();
+      g.startWar();
+      expect(g.enemyGarrisonLostThisWar, 0, reason: 'fresh war, nothing yet');
+      expect(g.youGarrisonLostThisWar, 0);
+      g.enemyGarrisonLostThisWar = 3;
+      g.youGarrisonLostThisWar = 5;
+      // a save/load round-trip must not lose either number
+      final j = g.toJson();
+      final g2 = WarGame.fresh()..loadFromJson(j);
+      expect(g2.enemyGarrisonLostThisWar, 3);
+      expect(g2.youGarrisonLostThisWar, 5);
+      // and a fresh war zeroes both out again
+      g2.startPrep();
+      expect(g2.enemyGarrisonLostThisWar, 0);
+      expect(g2.youGarrisonLostThisWar, 0);
+    });
+
+    test(
         'REGRESSION: war-win booty only pays on an actual win, scaled by '
         'division and difficulty', () {
       final g = WarGame.fresh();

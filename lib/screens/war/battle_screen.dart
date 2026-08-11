@@ -850,7 +850,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
       child: Row(
         children: [
           Expanded(
-              flex: 5,
+              flex: 4,
               child: cell(
                   'WRECKED',
                   '⚡${wrecked.round()} / ${total.round()}  ·  '
@@ -864,9 +864,13 @@ class _BattleScreenState extends ConsumerState<BattleScreen> {
                       '${atk.troopSpendLost > 0 ? '  (💀${atk.troopSpendLost.round()})' : ''}',
                   JarsColors.gold)),
           Expanded(
-              flex: 3,
+              flex: 2,
               child: cell('TROOPS', '$alive live · ${atk.troopsLost} lost',
                   JarsColors.textSecondary)),
+          Expanded(
+              flex: 3,
+              child: cell('DEFENDERS', '💀${atk.garrisonLost} down',
+                  JarsColors.red)),
         ],
       ),
     );

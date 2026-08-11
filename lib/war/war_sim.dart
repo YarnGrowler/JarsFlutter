@@ -14,6 +14,7 @@ class WarLogEntry {
   final double defenderDestruction; // defender base destruction after
   final int troopsLost;
   final int troopsSent;
+  final int garrisonLost; // DEFENDERS this raid killed on the base it hit
   final double resourcesSpent;
   final bool razed; // defender base fully razed after this raid
   List<RaidFrame>? replay; // watchable playback (stripped on old entries)
@@ -26,6 +27,7 @@ class WarLogEntry {
     required this.defenderDestruction,
     required this.troopsLost,
     this.troopsSent = 0,
+    this.garrisonLost = 0,
     required this.resourcesSpent,
     required this.razed,
     this.replay,
@@ -129,6 +131,7 @@ class WarSim {
         defenderDestruction: target.destructionPercent,
         troopsLost: res.troopsLost,
         troopsSent: res.troopsSent,
+        garrisonLost: res.garrisonLost,
         resourcesSpent: res.resourcesSpent,
         razed: target.allCastlesRazed,
         // every raid is watchable (report ▶ + defense board)

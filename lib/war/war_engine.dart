@@ -101,6 +101,7 @@ class AttackResult {
   final double gained;
   final int troopsLost;
   final int troopsSent;
+  final int garrisonLost; // defenders this raid killed on the base it hit
   final double resourcesSpent;
   final bool castleRazed;
   final List<AttackEvent> log;
@@ -113,6 +114,7 @@ class AttackResult {
     required this.gained,
     required this.troopsLost,
     this.troopsSent = 0,
+    this.garrisonLost = 0,
     required this.resourcesSpent,
     required this.castleRazed,
     required this.log,
@@ -1807,6 +1809,7 @@ class AttackState {
         gained: gained,
         troopsLost: troopsLost,
         troopsSent: troopsSent,
+        garrisonLost: garrisonLost,
         resourcesSpent: resourcesSpent,
         castleRazed: base.allCastlesRazed,
         log: log,

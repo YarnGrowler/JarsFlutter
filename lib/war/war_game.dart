@@ -127,6 +127,14 @@ class WarGame extends ChangeNotifier {
   static int Function() nowMs = () => DateTime.now().millisecondsSinceEpoch;
 
   int enemyBaseFellAt = -1, youBaseFellAt = -1;
+  /// Enemy DEFENDERS (garrison) your crew has killed raiding them this war —
+  /// across every raid, hands-on or headless bot-crew. Feeds kill booty
+  /// alongside enemy raiders lost attacking you; reset each war.
+  int enemyGarrisonLostThisWar = 0;
+  /// YOUR OWN garrison killed by enemy raids this war — the symmetric
+  /// number, tracked for an honest combined casualty count in the report.
+  /// Does NOT feed booty (losing your own defenders isn't a reward).
+  int youGarrisonLostThisWar = 0;
   final List<WarLogEntry> feed = [];
   List<bool?> seasonResults = [];
   WarVerdict? lastVerdict;
@@ -548,6 +556,8 @@ class WarGame extends ChangeNotifier {
     clock.simMinutes = 0;
     enemyBaseFellAt = -1;
     youBaseFellAt = -1;
+    enemyGarrisonLostThisWar = 0;
+    youGarrisonLostThisWar = 0;
     feed.clear();
     lastVerdict = null;
     liveAttack = null;
@@ -885,6 +895,8 @@ class WarGame extends ChangeNotifier {
     enemyIntel = {};
     enemyBaseFellAt = -1;
     youBaseFellAt = -1;
+    enemyGarrisonLostThisWar = 0;
+    youGarrisonLostThisWar = 0;
     _save();
     notifyListeners();
   }
@@ -1231,6 +1243,13 @@ class WarGame extends ChangeNotifier {
           lastEnemyReplay = e.replay;
           lastEnemyRaider = e.attackerName;
         }
+        // solo/offline only: your OWN bot crew raiding the enemy headlessly
+        // (real teammates never auto-raid — see runHour's own isBot gate).
+        if (e.attackerSide == WarSide.you) {
+          enemyGarrisonLostThisWar += e.garrisonLost;
+        } else {
+          youGarrisonLostThisWar += e.garrisonLost;
+        }
       }
       _trimFeed();
       _noteFalls();
@@ -1307,6 +1326,7 @@ class WarGame extends ChangeNotifier {
         (active.destructionDealt + la.gained).clamp(0.0, 100.0);
     active.troopsLost += la.troopsLost;
     active.resourcesSpent += la.resourcesSpent;
+    enemyGarrisonLostThisWar += la.garrisonLost;
     _recallSurvivors(la, active);
     if (la.gained >= 0.5) {
       feed.add(WarLogEntry(
@@ -1316,6 +1336,7 @@ class WarGame extends ChangeNotifier {
         gained: la.gained,
         defenderDestruction: enemyBase.destructionPercent,
         troopsLost: la.troopsLost,
+        garrisonLost: la.garrisonLost,
         resourcesSpent: la.resourcesSpent,
         razed: enemyBase.allCastlesRazed,
         replay: List.of(la.frames),
@@ -1549,6 +1570,7 @@ class WarGame extends ChangeNotifier {
         (active.destructionDealt + st.gained).clamp(0.0, 100.0);
     active.troopsLost += st.troopsLost;
     active.resourcesSpent += st.resourcesSpent;
+    enemyGarrisonLostThisWar += st.garrisonLost;
     _recallSurvivors(st, active);
     if (st.gained >= 0.5 || st.troopsLost > 0) {
       feed.add(WarLogEntry(
@@ -1558,6 +1580,7 @@ class WarGame extends ChangeNotifier {
         gained: st.gained,
         defenderDestruction: enemyBase.destructionPercent,
         troopsLost: st.troopsLost,
+        garrisonLost: st.garrisonLost,
         resourcesSpent: st.resourcesSpent,
         razed: enemyBase.allCastlesRazed,
         replay: List.of(st.frames),
@@ -1681,7 +1704,12 @@ class WarGame extends ChangeNotifier {
     final real = youClan.where((p) => !p.isBot).toList();
     if (real.isEmpty) return;
 
-    final killPool = enemyTroopsLost * WarCosts.killBootyPerKill;
+    // Rewards BOTH directions of a kill now: enemy raiders your DEFENSE
+    // killed attacking you (enemyTroopsLost), and enemy DEFENDERS your
+    // crew's own raids killed attacking them (enemyGarrisonLostThisWar) —
+    // previously only the defensive half counted; offense earned nothing.
+    final killPool = (enemyTroopsLost + enemyGarrisonLostThisWar) *
+        WarCosts.killBootyPerKill;
     if (killPool > 0) {
       final totalSpent = real.fold(0.0, (a, p) => a + p.resourcesSpent);
       if (totalSpent > 0) {
@@ -2040,6 +2068,8 @@ class WarGame extends ChangeNotifier {
         'active': activePlayerId,
         'eFell': enemyBaseFellAt,
         'yFell': youBaseFellAt,
+        'eGarLost': enemyGarrisonLostThisWar,
+        'yGarLost': youGarrisonLostThisWar,
         'players': [for (final pl in players) pl.toJson()],
         'results': seasonResults,
         'seasonEnded': seasonJustEnded,
@@ -2072,6 +2102,8 @@ class WarGame extends ChangeNotifier {
     activePlayerId = j['active'] as String? ?? 'you';
     enemyBaseFellAt = (j['eFell'] as num?)?.toInt() ?? -1;
     youBaseFellAt = (j['yFell'] as num?)?.toInt() ?? -1;
+    enemyGarrisonLostThisWar = (j['eGarLost'] as num?)?.toInt() ?? 0;
+    youGarrisonLostThisWar = (j['yGarLost'] as num?)?.toInt() ?? 0;
     players
       ..clear()
       ..addAll([
