@@ -4,7 +4,7 @@ import '../services/room_analytics_service.dart';
 import '../services/supabase_service.dart';
 import 'active_room_provider.dart';
 
-/// 7 / 30 / 90-day window for [roomAnalyticsProvider].
+/// 7 / 30 / 90-day window, or `0` for all-time ([roomAnalyticsProvider]).
 final analyticsRangeDaysProvider = StateProvider<int>((ref) => 30);
 
 final roomAnalyticsProvider =

@@ -91,17 +91,21 @@ class _AnalyticsBody extends StatelessWidget {
           const SizedBox(height: 20),
 
           if (!snapshot.hasData) ...[
-            _EmptyHint(rangeDays: rangeDays),
+            _EmptyHint(
+              rangeDays: rangeDays,
+              isAllTime: snapshot.isAllTime,
+            ),
           ] else ...[
             _SectionHeader(
               title: 'Leaderboard race',
-              subtitle:
-                  'Total score over time · workout pts + achievement unlocks on unlock day',
+              subtitle: snapshot.isAllTime
+                  ? 'Points earned since the room’s first log · everyone starts at 0'
+                  : 'Points earned in the last $rangeDays days only · everyone starts at 0',
             ),
             const SizedBox(height: 12),
             _MultiLineChart(
               memberSeries: snapshot.memberSeries,
-              rangeDays: rangeDays,
+              rangeDays: snapshot.rangeDays,
               startDay: snapshot.startDay,
             ),
             const SizedBox(height: 8),
@@ -123,8 +127,13 @@ class _RangePills extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const options = [7, 30, 90];
-    const labels = {7: '7 days', 30: '30 days', 90: '90 days'};
+    const options = [7, 30, 90, 0];
+    const labels = {
+      7: '7 days',
+      30: '30 days',
+      90: '90 days',
+      0: 'All time',
+    };
     return Container(
       height: 38,
       decoration: BoxDecoration(
@@ -148,8 +157,10 @@ class _RangePills extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   labels[d]!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.spaceGrotesk(
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
                     color: sel ? Colors.white : JarsColors.textSecondary,
                   ),
@@ -422,10 +433,14 @@ class _LineLegend extends StatelessWidget {
 // ─── Empty state ──────────────────────────────────────────────────────────────
 class _EmptyHint extends StatelessWidget {
   final int rangeDays;
-  const _EmptyHint({required this.rangeDays});
+  final bool isAllTime;
+  const _EmptyHint({required this.rangeDays, this.isAllTime = false});
 
   @override
   Widget build(BuildContext context) {
+    final title = isAllTime
+        ? 'No room activity yet'
+        : 'No data in the last $rangeDays days';
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(28),
@@ -439,7 +454,7 @@ class _EmptyHint extends StatelessWidget {
           const Text('📊', style: TextStyle(fontSize: 40)),
           const SizedBox(height: 14),
           Text(
-            'No data in the last $rangeDays days',
+            title,
             textAlign: TextAlign.center,
             style: GoogleFonts.spaceGrotesk(
                 fontSize: 15,

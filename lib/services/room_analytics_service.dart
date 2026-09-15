@@ -7,13 +7,14 @@ import '../models/exercise_log.dart';
 import 'score_service.dart';
 import 'supabase_service.dart';
 
-/// Cumulative total-score series for one room member over [rangeDays] Chicago days.
-/// [cumulativePoints[i]] = total score at end of day i (workouts + achievement bonuses
-/// on that day; baseline is score before the first day in the window).
+/// Cumulative score series for one room member over [rangeDays] Chicago days.
+///
+/// Window modes (7/30/90): [cumulativePoints] starts at 0 and only counts points
+/// earned inside the range. All-time: same, from the room's earliest log day.
 class MemberDailySeries {
   final String userId;
   final String username;
-  /// Parallel to the range — cumulative total score at end of each day.
+  /// Parallel to the range — cumulative points from the start of the window.
   final List<double> cumulativePoints;
 
   const MemberDailySeries({
@@ -27,6 +28,8 @@ class MemberDailySeries {
 class RoomAnalyticsSnapshot {
   final int rangeDays;
   final DateTime startDay;
+  /// True when the series spans all-time (not a fixed 7/30/90 window).
+  final bool isAllTime;
   /// Per-member cumulative series (max 6 members, current user first).
   final List<MemberDailySeries> memberSeries;
 
@@ -34,6 +37,7 @@ class RoomAnalyticsSnapshot {
     required this.rangeDays,
     required this.startDay,
     required this.memberSeries,
+    this.isAllTime = false,
   });
 
   bool get hasData => memberSeries.isNotEmpty;
@@ -43,6 +47,8 @@ class RoomAnalyticsService {
   static final _db = SupabaseService.client;
 
   static const _pageSize = 1000;
+  /// Cap all-time charts so we don't pull unbounded history.
+  static const _maxAllTimeDays = 730;
 
   static DateTime _chicagoDateOnly(DateTime utc) {
     JarsTimezone.ensureInitialized();
@@ -79,20 +85,51 @@ class RoomAnalyticsService {
     return all;
   }
 
-  /// Per-day points: workouts from [points_earned], achievements from [__ACH__] JSON
-  /// ([unlocks].[points] per user on the feed row's [created_at] day).
+  static Future<DateTime?> _earliestLogDay(String roomId) async {
+    final row = await _db
+        .from('exercise_logs')
+        .select('created_at')
+        .eq('room_id', roomId)
+        .order('created_at', ascending: true)
+        .limit(1)
+        .maybeSingle();
+    if (row == null) return null;
+    final raw = row['created_at'] as String?;
+    if (raw == null) return null;
+    final created = DateTime.tryParse(raw);
+    if (created == null) return null;
+    return _chicagoDateOnly(created);
+  }
+
+  /// Per-day points: workouts from [points_earned], achievements from [__ACH__] JSON.
   ///
-  /// Baseline = live [scores.total_score] − sum(per-day points in window), so the last
-  /// day matches the leaderboard and achievements bump the line on the day they unlocked.
+  /// [rangeDays] 7/30/90 = fixed window ending today. Pass `0` for all-time
+  /// (from earliest room log, capped at [_maxAllTimeDays]).
+  /// Series always start at **zero** — only points earned in the window.
   static Future<RoomAnalyticsSnapshot> load({
     required String roomId,
     required String userId,
     int rangeDays = 30,
   }) async {
     final today = JarsTimezone.todayChicago();
-    final startDay = today.subtract(Duration(days: rangeDays - 1));
+    final isAllTime = rangeDays <= 0;
+
+    late final DateTime startDay;
+    late final int days;
+    if (isAllTime) {
+      final earliest = await _earliestLogDay(roomId);
+      final rawStart = earliest ?? today;
+      final span = today.difference(rawStart).inDays + 1;
+      days = span.clamp(1, _maxAllTimeDays);
+      startDay = today.subtract(Duration(days: days - 1));
+    } else {
+      days = rangeDays;
+      startDay = today.subtract(Duration(days: days - 1));
+    }
+
     final startUtc = JarsTimezone.startOfChicagoDayUtc(startDay);
-    final endUtc = JarsTimezone.startOfChicagoDayUtc(today.add(const Duration(days: 1)));
+    final endUtc =
+        JarsTimezone.startOfChicagoDayUtc(today.add(const Duration(days: 1)));
 
     final scores = await ScoreService.getRoomScores(roomId);
     final scoreMap = <String, double>{};
@@ -120,14 +157,15 @@ class RoomAnalyticsService {
       }
     }
 
-    // memberDayPts[uid][dayIndex] = workout + achievement points that day (in window).
+    // memberDayPts[uid][dayIndex] = workout + achievement points that day.
     final memberDayPts = <String, List<double>>{};
 
     void addPts(String uid, int dayIndex, double pts) {
       if (pts <= 0) return;
       if (!scoreMap.containsKey(uid)) return;
-      if (dayIndex < 0 || dayIndex >= rangeDays) return;
-      final bucket = memberDayPts.putIfAbsent(uid, () => List.filled(rangeDays, 0.0));
+      if (dayIndex < 0 || dayIndex >= days) return;
+      final bucket =
+          memberDayPts.putIfAbsent(uid, () => List.filled(days, 0.0));
       bucket[dayIndex] += pts;
     }
 
@@ -141,7 +179,7 @@ class RoomAnalyticsService {
       if (created == null) continue;
       final day = _chicagoDateOnly(created);
       final dayIndex = day.difference(startDay).inDays;
-      if (dayIndex < 0 || dayIndex >= rangeDays) continue;
+      if (dayIndex < 0 || dayIndex >= days) continue;
 
       if (exerciseName.startsWith(ExerciseLog.kAchPrefix)) {
         final jsonStr = exerciseName.substring(ExerciseLog.kAchPrefix.length);
@@ -176,24 +214,34 @@ class RoomAnalyticsService {
       addPts(uid, dayIndex, pts);
     }
 
+    // Rank by points earned IN this window so the race highlights who's
+    // grinding now — all-time still uses career total for the top 6.
+    final windowTotals = <String, double>{
+      for (final uid in scoreMap.keys)
+        uid: (memberDayPts[uid] ?? const <double>[])
+            .fold(0.0, (s, v) => s + v),
+    };
+
     final allUids = scoreMap.keys.toList()
       ..sort((a, b) {
         if (a == userId) return -1;
         if (b == userId) return 1;
+        if (isAllTime) {
+          return (scoreMap[b] ?? 0).compareTo(scoreMap[a] ?? 0);
+        }
+        final cmp = (windowTotals[b] ?? 0).compareTo(windowTotals[a] ?? 0);
+        if (cmp != 0) return cmp;
         return (scoreMap[b] ?? 0).compareTo(scoreMap[a] ?? 0);
       });
     final topUids = allUids.take(6).toList();
 
     final memberSeries = <MemberDailySeries>[];
     for (final uid in topUids) {
-      final currentTotal = scoreMap[uid] ?? 0;
-      final dayPts = memberDayPts[uid] ?? List.filled(rangeDays, 0.0);
-      final inWindow = dayPts.fold(0.0, (s, v) => s + v);
-      final baseline = (currentTotal - inWindow).clamp(0.0, double.infinity);
-
-      final cumulative = List<double>.filled(rangeDays, 0.0);
-      var running = baseline;
-      for (var i = 0; i < rangeDays; i++) {
+      final dayPts = memberDayPts[uid] ?? List.filled(days, 0.0);
+      // Always from zero — only what was earned in this window.
+      final cumulative = List<double>.filled(days, 0.0);
+      var running = 0.0;
+      for (var i = 0; i < days; i++) {
         running += dayPts[i];
         cumulative[i] = running;
       }
@@ -206,9 +254,10 @@ class RoomAnalyticsService {
     }
 
     return RoomAnalyticsSnapshot(
-      rangeDays: rangeDays,
+      rangeDays: days,
       startDay: startDay,
       memberSeries: memberSeries,
+      isAllTime: isAllTime,
     );
   }
 }

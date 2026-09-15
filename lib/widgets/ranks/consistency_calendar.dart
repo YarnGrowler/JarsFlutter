@@ -5,15 +5,14 @@ import '../../core/theme.dart';
 /// GitHub-style contribution graph.
 ///
 /// Layout: weeks as *columns* (oldest left → newest right), days as rows
-/// (Mon top → Sun bottom), so time flows left-to-right, top-to-bottom.
-///
-/// Color intensity is relative — the max-points day gets full opacity so
-/// even a light user sees colour. Zero days remain dark.
-class ConsistencyCalendar extends StatelessWidget {
+/// (Mon top → Sun bottom). Horizontally scrollable from earliest logged day
+/// through today — opens scrolled to the recent end so you swipe left for history.
+class ConsistencyCalendar extends StatefulWidget {
   final Map<DateTime, double> dailyPoints;
 
-  /// How many weeks to show (columns). Default 16 ≈ 4 months.
-  final int weeks;
+  /// How many weeks to show. Null = stretch from the earliest active day
+  /// (at least 16 weeks) through the current week.
+  final int? weeks;
 
   /// When false, the built-in "Consistency" title row is omitted (parent supplies it).
   final bool showHeader;
@@ -21,13 +20,54 @@ class ConsistencyCalendar extends StatelessWidget {
   const ConsistencyCalendar({
     super.key,
     required this.dailyPoints,
-    this.weeks = 16,
+    this.weeks,
     this.showHeader = true,
   });
 
   @override
+  State<ConsistencyCalendar> createState() => _ConsistencyCalendarState();
+}
+
+class _ConsistencyCalendarState extends State<ConsistencyCalendar> {
+  final _scroll = ScrollController();
+  bool _didJump = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  int _weeksToShow() {
+    if (widget.weeks != null) return widget.weeks!.clamp(1, 520);
+    if (widget.dailyPoints.isEmpty) return 16;
+    DateTime? earliest;
+    for (final d in widget.dailyPoints.keys) {
+      if (earliest == null || d.isBefore(earliest)) earliest = d;
+    }
+    earliest ??= DateTime.now();
+    final today = DateTime.now();
+    final todayWeekday = today.weekday;
+    final startOfThisWeek = DateTime(today.year, today.month, today.day)
+        .subtract(Duration(days: todayWeekday - 1));
+    final earliestMonday = DateTime(earliest.year, earliest.month, earliest.day)
+        .subtract(Duration(days: earliest.weekday - 1));
+    final spanDays =
+        startOfThisWeek.difference(earliestMonday).inDays.clamp(0, 3650);
+    final needed = (spanDays / 7).floor() + 1;
+    return needed.clamp(16, 520);
+  }
+
+  void _jumpToRecent() {
+    if (_didJump || !_scroll.hasClients) return;
+    _didJump = true;
+    _scroll.jumpTo(_scroll.position.maxScrollExtent);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final today = DateTime.now();
+    final weeks = _weeksToShow();
 
     // Start on the Monday of the week [weeks] ago
     final todayWeekday = today.weekday; // 1=Mon … 7=Sun
@@ -50,13 +90,12 @@ class ConsistencyCalendar extends StatelessWidget {
     double maxPts = 0;
     for (final d in days) {
       final key = DateTime(d.year, d.month, d.day);
-      final v = dailyPoints[key] ?? 0;
+      final v = widget.dailyPoints[key] ?? 0;
       if (v > maxPts) maxPts = v;
     }
     if (maxPts == 0) maxPts = 1; // avoid division by zero
 
     // Month labels (one per unique month that starts inside our range)
-    // We'll overlay them as a header row aligned to columns.
     final monthLabels = <int, String>{}; // column index → label
     for (var col = 0; col < weeks; col++) {
       final d = startDate.add(Duration(days: col * 7));
@@ -67,11 +106,14 @@ class ConsistencyCalendar extends StatelessWidget {
 
     const cellSize = 13.0;
     const gap = 3.0;
+    final gridWidth = weeks * (cellSize + gap) - gap;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToRecent());
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (showHeader) ...[
+        if (widget.showHeader) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -84,7 +126,8 @@ class ConsistencyCalendar extends StatelessWidget {
                 ),
               ),
               Text(
-                '${dailyPoints.length} active days',
+                '${widget.dailyPoints.length} active days'
+                '${weeks > 16 ? ' · scroll ← for history' : ''}',
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   color: JarsColors.textTertiary,
@@ -95,79 +138,90 @@ class ConsistencyCalendar extends StatelessWidget {
           const SizedBox(height: 10),
         ],
 
-        // Month header
-        SizedBox(
-          height: 14,
-          child: Row(
-            children: List.generate(weeks, (col) {
-              final label = monthLabels[col];
-              return SizedBox(
-                width: cellSize + gap,
-                child: label != null
-                    ? Text(
-                        label,
-                        style: GoogleFonts.inter(
-                          fontSize: 9,
-                          color: JarsColors.textTertiary,
-                        ),
-                      )
-                    : null,
-              );
-            }),
-          ),
-        ),
-        const SizedBox(height: 4),
-
-        // Grid — [weeks] columns × 7 rows
-        SizedBox(
-          height: 7 * (cellSize + gap) - gap,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: List.generate(weeks, (col) {
-              return Padding(
-                padding: EdgeInsets.only(right: col < weeks - 1 ? gap : 0),
-                child: Column(
-                  children: List.generate(7, (row) {
-                    final d = days[col * 7 + row];
-                    final key = DateTime(d.year, d.month, d.day);
-                    final pts = dailyPoints[key] ?? 0;
-                    final fraction = pts / maxPts;
-
-                    // Future days — dim placeholder
-                    final isFuture = d.isAfter(today);
-
-                    Color cellColor;
-                    if (isFuture || pts == 0) {
-                      cellColor = JarsColors.surface;
-                    } else {
-                      // Scale from 0.15 → 1.0 opacity so even light days show
-                      final opacity = 0.15 + fraction * 0.85;
-                      cellColor =
-                          JarsColors.primary.withValues(alpha: opacity);
-                    }
-
-                    return Padding(
-                      padding: EdgeInsets.only(
-                          bottom: row < 6 ? gap : 0),
-                      child: Tooltip(
-                        message: pts > 0
-                            ? '${_dateLabel(d)}: ${pts.toStringAsFixed(0)} pts'
-                            : _dateLabel(d),
-                        preferBelow: true,
-                        child: Container(
-                          width: cellSize,
-                          height: cellSize,
-                          decoration: BoxDecoration(
-                            color: cellColor,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
+        SingleChildScrollView(
+          controller: _scroll,
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: gridWidth,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Month header
+                SizedBox(
+                  height: 14,
+                  child: Row(
+                    children: List.generate(weeks, (col) {
+                      final label = monthLabels[col];
+                      return SizedBox(
+                        width: cellSize + gap,
+                        child: label != null
+                            ? Text(
+                                label,
+                                style: GoogleFonts.inter(
+                                  fontSize: 9,
+                                  color: JarsColors.textTertiary,
+                                ),
+                              )
+                            : null,
+                      );
+                    }),
+                  ),
                 ),
-              );
-            }),
+                const SizedBox(height: 4),
+
+                // Grid — [weeks] columns × 7 rows
+                SizedBox(
+                  height: 7 * (cellSize + gap) - gap,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: List.generate(weeks, (col) {
+                      return Padding(
+                        padding:
+                            EdgeInsets.only(right: col < weeks - 1 ? gap : 0),
+                        child: Column(
+                          children: List.generate(7, (row) {
+                            final d = days[col * 7 + row];
+                            final key = DateTime(d.year, d.month, d.day);
+                            final pts = widget.dailyPoints[key] ?? 0;
+                            final fraction = pts / maxPts;
+
+                            final isFuture = d.isAfter(today);
+
+                            Color cellColor;
+                            if (isFuture || pts == 0) {
+                              cellColor = JarsColors.surface;
+                            } else {
+                              final opacity = 0.15 + fraction * 0.85;
+                              cellColor =
+                                  JarsColors.primary.withValues(alpha: opacity);
+                            }
+
+                            return Padding(
+                              padding: EdgeInsets.only(
+                                  bottom: row < 6 ? gap : 0),
+                              child: Tooltip(
+                                message: pts > 0
+                                    ? '${_dateLabel(d)}: ${pts.toStringAsFixed(0)} pts'
+                                    : _dateLabel(d),
+                                preferBelow: true,
+                                child: Container(
+                                  width: cellSize,
+                                  height: cellSize,
+                                  decoration: BoxDecoration(
+                                    color: cellColor,
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
 
@@ -215,6 +269,5 @@ class ConsistencyCalendar extends StatelessWidget {
 
   String _shortMonth(int m) => _months[m];
 
-  String _dateLabel(DateTime d) =>
-      '${_shortMonth(d.month)} ${d.day}';
+  String _dateLabel(DateTime d) => '${_shortMonth(d.month)} ${d.day}';
 }

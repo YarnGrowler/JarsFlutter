@@ -199,12 +199,9 @@ class _MemberProfileSheetState extends State<MemberProfileSheet> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConsistencyCalendar(
-                      dailyPoints: _dailyPoints,
-                      showHeader: false,
-                    ),
+                  ConsistencyCalendar(
+                    dailyPoints: _dailyPoints,
+                    showHeader: false,
                   ),
                   const SizedBox(height: 24),
 
