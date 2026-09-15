@@ -30,7 +30,9 @@ final consistencyProvider =
 });
 
 class RanksScreen extends ConsumerStatefulWidget {
-  const RanksScreen({super.key});
+  /// 0 Leaderboard · 1 Breakdown · 2 Analytics
+  final int initialTab;
+  const RanksScreen({super.key, this.initialTab = 0});
 
   @override
   ConsumerState<RanksScreen> createState() => _RanksScreenState();
@@ -73,7 +75,11 @@ class _RanksScreenState extends ConsumerState<RanksScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 2),
+    );
     // Refresh data when screen first mounts; zero stale daily_points in DB for this user.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final room = ref.read(activeRoomProvider);

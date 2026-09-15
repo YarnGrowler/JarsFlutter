@@ -304,6 +304,29 @@ class ProfileScreen extends ConsumerWidget {
                     );
                   },
                 ),
+                ListTile(
+                  leading: Icon(Icons.leaderboard_outlined,
+                      color: JarsColors.primary.withValues(alpha: 0.9)),
+                  title: Text(
+                    'Ranks & Analytics',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: JarsColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Crew leaderboard, score breakdown, and room analytics.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: JarsColors.textSecondary,
+                      height: 1.35,
+                    ),
+                  ),
+                  onTap: () {
+                    nav.pop();
+                    context.go('/ranks');
+                  },
+                ),
                 const Divider(height: 24),
                 ListTile(
                   leading: Icon(

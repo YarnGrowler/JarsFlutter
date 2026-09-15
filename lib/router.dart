@@ -320,9 +320,17 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/ranks',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: RanksScreen(),
-            ),
+            pageBuilder: (context, state) {
+              final tab = state.uri.queryParameters['tab'];
+              final initial = switch (tab) {
+                'breakdown' => 1,
+                'analytics' => 2,
+                _ => 0,
+              };
+              return NoTransitionPage(
+                child: RanksScreen(initialTab: initial),
+              );
+            },
           ),
           GoRoute(
             path: '/war',

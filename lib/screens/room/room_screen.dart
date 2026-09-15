@@ -169,7 +169,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             ),
             const SizedBox(height: 16),
 
-            // League standing (home hero — taps through to the League tab)
+            // League standing (home hero — taps through to Clan War)
             leagueAsync.when(
               data: (table) {
                 if (table == null) return const SizedBox.shrink();
@@ -190,6 +190,30 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               },
               loading: () => const SizedBox.shrink(),
               error: (_, __) => const SizedBox.shrink(),
+            ),
+            const SizedBox(height: 8),
+            // Ranks / Analytics — still available after War took the bottom tab
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _RoomShortcutChip(
+                      icon: Icons.leaderboard_outlined,
+                      label: 'Ranks',
+                      onTap: () => context.go('/ranks'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _RoomShortcutChip(
+                      icon: Icons.insights_outlined,
+                      label: 'Analytics',
+                      onTap: () => context.go('/ranks?tab=analytics'),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
 
@@ -641,6 +665,51 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     fontSize: 14,
                     color: JarsColors.textTertiary,
                   ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoomShortcutChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _RoomShortcutChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: JarsColors.surface,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: JarsColors.border),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: JarsColors.primary),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: JarsColors.textPrimary,
                 ),
               ),
             ],

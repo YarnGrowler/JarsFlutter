@@ -118,6 +118,12 @@ class _WarHubScreenState extends ConsumerState<WarHubScreen> {
             ],
           ),
         ),
+        IconButton(
+          tooltip: 'Ranks & Analytics',
+          onPressed: () => context.go('/ranks'),
+          icon: const Icon(Icons.leaderboard_outlined,
+              color: JarsColors.textSecondary),
+        ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
